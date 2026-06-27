@@ -77,24 +77,21 @@ firestore.rules             보안 규칙
 firebase.json / .firebaserc / apphosting.yaml   배포 설정
 ```
 
-## 배포 (GitHub → Firebase App Hosting)
+## 배포 (Vercel)
 
-1. **GitHub 저장소 생성 후 푸시**
-   ```bash
-   git add -A && git commit -m "feat: 경비 결재 시스템"
-   gh repo create expense-approval --private --source=. --push
-   ```
-2. **Firebase CLI 로그인 & 비밀값 등록** (Admin 키를 Secret Manager에)
-   ```bash
-   npm i -g firebase-tools
-   firebase login
-   firebase apphosting:secrets:set FB_ADMIN_CLIENT_EMAIL
-   firebase apphosting:secrets:set FB_ADMIN_PRIVATE_KEY
-   ```
-3. **Firestore 보안 규칙 배포**
+호스팅은 **Vercel**, 데이터/인증은 Firebase(company-payment-system, 무료 Spark 플랜)를 그대로 사용합니다.
+
+1. **GitHub 저장소** — 이미 푸시됨: `Leeuhyuk/expense-approval` (`main`)
+2. **Firestore 보안 규칙** — 이미 배포됨. 변경 시:
    ```bash
    firebase deploy --only firestore:rules
    ```
-4. **App Hosting 백엔드 생성** — 콘솔 → App Hosting → "백엔드 만들기" → GitHub 저장소 연결 → 리전 `asia-northeast3`(서울).
-   이후 main 브랜치 push마다 `apphosting.yaml` 설정으로 자동 빌드·배포됩니다.
-5. **인증 도메인 추가** — 콘솔 → Authentication → Settings → 승인된 도메인에 배포 URL 추가.
+3. **Vercel 프로젝트 생성** — [vercel.com](https://vercel.com) → Add New → Project → GitHub 저장소 `Leeuhyuk/expense-approval` import (Next.js 자동 감지).
+4. **환경 변수 등록** (Vercel → Settings → Environment Variables) — `.env.local`의 모든 값:
+   - `NEXT_PUBLIC_FB_*` 7개 (공개값)
+   - `FB_ADMIN_PROJECT_ID` / `FB_ADMIN_CLIENT_EMAIL` / `FB_ADMIN_PRIVATE_KEY`
+     (PRIVATE_KEY는 `.env.local`의 `\n` 포함 한 줄 값 그대로 — 코드가 `\n`을 복원함)
+5. **Deploy** → 배포 URL(`*.vercel.app`) 생성. 이후 push마다 자동 배포.
+6. **인증 도메인 추가** — Firebase 콘솔 → Authentication → Settings → 승인된 도메인에 Vercel 배포 URL 추가 (안 하면 배포본 로그인 차단).
+
+> Firebase App Hosting을 쓰려면 Blaze(종량제) 플랜이 필요합니다. `apphosting.yaml`은 그 경우를 위한 참고 설정으로 남겨두었습니다.
