@@ -24,12 +24,8 @@ export async function POST(req: NextRequest) {
       maxAge: EXPIRES_IN_MS / 1000,
     });
     return res;
-  } catch (e) {
-    const err = e as { name?: string; message?: string; code?: string };
-    return NextResponse.json(
-      { error: err?.message ?? "토큰 검증 실패", name: err?.name, code: err?.code },
-      { status: 401 },
-    );
+  } catch {
+    return NextResponse.json({ error: "인증에 실패했습니다." }, { status: 401 });
   }
 }
 
