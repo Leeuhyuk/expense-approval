@@ -1,0 +1,33 @@
+rules_version = '2';
+
+// 보안 모델:
+//  - 모든 "쓰기"는 서버(Firebase Admin SDK)를 통해서만 수행됩니다.
+//    Admin SDK는 보안 규칙을 우회하므로, 여기서는 클라이언트의 직접 쓰기를 전면 차단합니다.
+//    (결재 처리·시드·역할 부여 등은 Server Action / 스크립트에서만)
+//  - "읽기"는 로그인한 사용자만 허용합니다.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // 사용자 프로필: 본인 또는 관리/재무만 읽기
+    match /users/{uid} {
+      allow read: if signedIn() &&
+        (request.auth.uid == uid || request.auth.token.role in ['admin', 'finance']);
+      allow write: if false;
+    }
+
+    // 보고서 및 하위(항목/결재선): 로그인 시 읽기, 쓰기는 서버만
+    match /reports/{docNo} {
+      allow read: if signedIn();
+      allow write: if false;
+
+      match /{sub=**} {
+        allow read: if signedIn();
+        allow write: if false;
+      }
+    }
+  }
+}

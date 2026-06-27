@@ -1,0 +1,44 @@
+# Firebase App Hosting 설정 — GitHub 연동 시 push마다 이 설정으로 빌드·배포됩니다.
+# 문서: https://firebase.google.com/docs/app-hosting/configure
+
+runConfig:
+  minInstances: 0
+  maxInstances: 2
+
+env:
+  # ── 클라이언트 공개값(브라우저 노출) — 빌드+런타임 모두 필요 ──
+  - variable: NEXT_PUBLIC_FB_API_KEY
+    value: AIzaSyBI3CIxPs_J421i12WrSRrv73Ul7Xcaq2c
+    availability: [BUILD, RUNTIME]
+  - variable: NEXT_PUBLIC_FB_AUTH_DOMAIN
+    value: company-payment-system.firebaseapp.com
+    availability: [BUILD, RUNTIME]
+  - variable: NEXT_PUBLIC_FB_PROJECT_ID
+    value: company-payment-system
+    availability: [BUILD, RUNTIME]
+  - variable: NEXT_PUBLIC_FB_STORAGE_BUCKET
+    value: company-payment-system.firebasestorage.app
+    availability: [BUILD, RUNTIME]
+  - variable: NEXT_PUBLIC_FB_MESSAGING_SENDER_ID
+    value: "519025017277"
+    availability: [BUILD, RUNTIME]
+  - variable: NEXT_PUBLIC_FB_APP_ID
+    value: 1:519025017277:web:1a599eb116bda8379792d4
+    availability: [BUILD, RUNTIME]
+  - variable: NEXT_PUBLIC_FB_MEASUREMENT_ID
+    value: G-WGPWF0H1HQ
+    availability: [BUILD, RUNTIME]
+
+  # ── 서버 전용 비밀값 — Cloud Secret Manager 사용 (런타임만) ──
+  # 배포 전 1회 등록:
+  #   firebase apphosting:secrets:set FB_ADMIN_CLIENT_EMAIL
+  #   firebase apphosting:secrets:set FB_ADMIN_PRIVATE_KEY
+  - variable: FB_ADMIN_PROJECT_ID
+    value: company-payment-system
+    availability: [RUNTIME]
+  - variable: FB_ADMIN_CLIENT_EMAIL
+    secret: FB_ADMIN_CLIENT_EMAIL
+    availability: [RUNTIME]
+  - variable: FB_ADMIN_PRIVATE_KEY
+    secret: FB_ADMIN_PRIVATE_KEY
+    availability: [RUNTIME]
