@@ -1,5 +1,4 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getAdminAuth } from "@/lib/firebaseAdmin";
 import { SESSION_COOKIE } from "@/lib/auth";
 
 // 세션 쿠키 유효기간: 5일
@@ -12,6 +11,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "ID 토큰이 필요합니다." }, { status: 400 });
   }
   try {
+    const { getAdminAuth } = await import("@/lib/firebaseAdmin");
     const auth = getAdminAuth();
     await auth.verifyIdToken(idToken);
     const sessionCookie = await auth.createSessionCookie(idToken, { expiresIn: EXPIRES_IN_MS });
@@ -25,8 +25,11 @@ export async function POST(req: NextRequest) {
     });
     return res;
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "토큰 검증 실패";
-    return NextResponse.json({ error: msg }, { status: 401 });
+    const err = e as { name?: string; message?: string; code?: string };
+    return NextResponse.json(
+      { error: err?.message ?? "토큰 검증 실패", name: err?.name, code: err?.code },
+      { status: 401 },
+    );
   }
 }
 
