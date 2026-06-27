@@ -2,6 +2,9 @@
   "name": "expense-approval",
   "version": "0.1.0",
   "private": true,
+  "overrides": {
+    "jwks-rsa": "^3"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build --webpack",
