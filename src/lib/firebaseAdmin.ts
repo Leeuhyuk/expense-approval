@@ -6,11 +6,22 @@ import { getApps, initializeApp, cert, type App } from "firebase-admin/app";
 import { getFirestore, type Firestore } from "firebase-admin/firestore";
 import { getAuth, type Auth } from "firebase-admin/auth";
 
+/** Vercel/.env 등에서 들어온 private key 정규화 — 감싼 따옴표 제거 + \n 복원 */
+function normalizeKey(raw?: string): string | undefined {
+  if (!raw) return raw;
+  let k = raw.trim();
+  // 실수로 감싼 따옴표 제거
+  if ((k.startsWith('"') && k.endsWith('"')) || (k.startsWith("'") && k.endsWith("'"))) {
+    k = k.slice(1, -1);
+  }
+  // 리터럴 \n → 실제 줄바꿈
+  return k.replace(/\\n/g, "\n");
+}
+
 function createAdminApp(): App {
   const projectId = process.env.FB_ADMIN_PROJECT_ID;
   const clientEmail = process.env.FB_ADMIN_CLIENT_EMAIL;
-  // private key는 .env에서 \n 이스케이프로 저장 → 실제 줄바꿈으로 복원
-  const privateKey = process.env.FB_ADMIN_PRIVATE_KEY?.replace(/\\n/g, "\n");
+  const privateKey = normalizeKey(process.env.FB_ADMIN_PRIVATE_KEY);
 
   if (!projectId || !clientEmail || !privateKey) {
     throw new Error(
