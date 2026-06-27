@@ -19,8 +19,8 @@ export async function getSession(): Promise<Session | null> {
   const cookie = store.get(SESSION_COOKIE)?.value;
   if (!cookie) return null;
   try {
-    const { adminAuth } = await import("./firebaseAdmin");
-    const decoded = await adminAuth.verifySessionCookie(cookie, true);
+    const { getAdminAuth } = await import("./firebaseAdmin");
+    const decoded = await getAdminAuth().verifySessionCookie(cookie, true);
     return {
       uid: decoded.uid,
       email: decoded.email ?? null,

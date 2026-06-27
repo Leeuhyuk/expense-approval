@@ -33,7 +33,8 @@ export async function submitDecision(
     return { ok: false, message: "결재 권한이 없습니다." };
   }
 
-  const { adminDb } = await import("@/lib/firebaseAdmin");
+  const { getAdminDb } = await import("@/lib/firebaseAdmin");
+  const adminDb = getAdminDb();
   const reportRef = adminDb.collection("reports").doc(docNo);
   const approvalsCol = reportRef.collection("approvals");
 

@@ -13,8 +13,8 @@ export const DEFAULT_DOC_NO = SAMPLE_REPORT.docNo;
  *   reports/{docNo}/approvals/{idx}  결재선
  */
 export async function getReport(docNo: string): Promise<Report | null> {
-  const { adminDb } = await import("./firebaseAdmin");
-  const ref = adminDb.collection("reports").doc(docNo);
+  const { getAdminDb } = await import("./firebaseAdmin");
+  const ref = getAdminDb().collection("reports").doc(docNo);
 
   const snap = await ref.get();
   if (!snap.exists) return null;
