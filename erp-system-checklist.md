@@ -730,7 +730,8 @@
 - [x] P1: 다른 브라우저/기기에서 같은 사용자 즐겨찾기와 저장 필터가 동기화되는지 검증
   - 진행 메모(2026-07-07): 즐겨찾기와 저장 필터는 `FavoriteItem` API의 `list/create/update/delete` 원천을 사용하고, route state/filter/sort/shared metadata를 서버 row로 저장하도록 연결했다. localStorage는 화면 이동 편의 상태에만 사용하며, 같은 사용자 재조회 시 backend FavoriteItem 목록을 다시 동기화한다. 실제 다른 브라우저 재로그인 증빙은 테스트 단계에서 확인한다.
   - 진행 메모(2026-07-07): 즐겨찾기 툴바에 `동기화` 버튼을 추가하고, 화면 포커스 복귀/visibility 복귀 시 `GET /favorites`를 다시 호출해 같은 사용자 `FavoriteItem`과 저장 필터를 backend 기준으로 재동기화하도록 구성했다. 테스트 단계에서 두 브라우저 또는 탭 간 생성/수정/삭제 반영 증빙을 확인해야 한다.
-- [ ] P2: 비활성 메뉴, 권한 회수, 삭제된 필터 참조 시 대체 경로 처리
+- [x] P2: 비활성 메뉴, 권한 회수, 삭제된 필터 참조 시 대체 경로 처리
+  - 진행 메모(2026-07-09): 즐겨찾기 대상 화면별 필터 allow-list를 추가해 삭제되었거나 현재 화면에서 지원하지 않는 저장 필터를 복원 전에 제외하고 사용자에게 안내한다. 비활성 즐겨찾기는 열기와 신규 바로가기 추가를 차단하며, 대상 화면 권한이 회수된 경우 최근 사용 시각을 갱신하지 않고 `getDefaultPage(currentUser)` 기준 대체 화면으로 이동한다. `frontendFavoritesRemote` 회귀 테스트에 inactive, unauthorized, deleted filter fallback 검증을 추가했다.
 
 ### 23.11 대시보드 및 알림 연동
 

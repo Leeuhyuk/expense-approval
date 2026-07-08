@@ -793,8 +793,21 @@ function jsonText(value: unknown) {
   return "";
 }
 
+const favoriteFilterFieldsByPage: Record<PageKey, Set<string>> = {
+  dashboard: new Set(["검색어", "상태", "부서", "결재상태", "지급상태"]),
+  "payment-request": new Set(["검색어", "상태", "부서", "거래처", "요청자", "긴급여부", "요청일"]),
+  approval: new Set(["검색어", "결재상태", "부서", "요청자", "처리기한", "요청일", "긴급여부"]),
+  disbursement: new Set(["검색어", "지급상태", "부서", "거래처", "은행", "계좌확인", "지급예정일"]),
+  budget: new Set(["검색어", "상태", "부서", "예산항목", "회계연도", "기간", "잔액"]),
+  vendors: new Set(["검색어", "상태", "계좌확인", "구분", "은행", "거래처명"]),
+  reports: new Set(["검색어", "유형", "부서", "거래처", "기간", "보고서명"]),
+  settings: new Set(["검색어", "상태", "유형", "권한그룹", "사용자", "부서"]),
+  favorites: new Set(["검색어", "상태", "유형", "소유자"]),
+};
+
 function normalizeFavoriteFilterField(pageKey: PageKey, field: string) {
   const statusField = statusColumnByPage[pageKey] ?? "상태";
+  const [rawBase, operator] = field.split("__");
   const aliases: Record<string, string> = {
     status: statusField,
     상태: statusField,
@@ -823,13 +836,23 @@ function normalizeFavoriteFilterField(pageKey: PageKey, field: string) {
     search: "검색어",
     검색어: "검색어",
   };
-  return aliases[field.trim()] ?? field.trim();
+  const normalizedBase = aliases[rawBase.trim()] ?? rawBase.trim();
+  return operator ? `${normalizedBase}__${operator}` : normalizedBase;
+}
+
+function favoriteFilterBaseField(field: string) {
+  return field.split("__")[0] ?? field;
+}
+
+function isFavoriteFilterFieldSupported(pageKey: PageKey, field: string) {
+  return favoriteFilterFieldsByPage[pageKey].has(favoriteFilterBaseField(field));
 }
 
 function normalizeFavoriteFilters(pageKey: PageKey, filters: Record<string, unknown>) {
   return Object.entries(filters).reduce<Partial<Record<string, string>>>((acc, [field, value]) => {
     if (typeof value === "string" && value.trim()) {
-      acc[normalizeFavoriteFilterField(pageKey, field)] = value.trim();
+      const normalizedField = normalizeFavoriteFilterField(pageKey, field);
+      if (isFavoriteFilterFieldSupported(pageKey, normalizedField)) acc[normalizedField] = value.trim();
     }
     return acc;
   }, {});
@@ -839,7 +862,8 @@ function favoriteFiltersFromTags(tags: string[], pageKey: PageKey) {
   return tags.reduce<Partial<Record<string, string>>>((acc, tag) => {
     const match = tag.match(/^([^:：]+)[:：]\s*(.+)$/);
     if (!match) return acc;
-    acc[normalizeFavoriteFilterField(pageKey, match[1])] = match[2].trim();
+    const normalizedField = normalizeFavoriteFilterField(pageKey, match[1]);
+    if (isFavoriteFilterFieldSupported(pageKey, normalizedField)) acc[normalizedField] = match[2].trim();
     return acc;
   }, {});
 }
@@ -878,6 +902,18 @@ function favoriteRouteStateFromRow(row: TableRow, pageKey: PageKey): FavoriteRou
   };
 }
 
+function favoriteUnsupportedFilterFields(item: FavoriteItem) {
+  const pageKey = favoritePageForItem(item);
+  const tagFields = item.filterTags.flatMap((tag) => {
+    const match = tag.match(/^([^:：]+)[:：]\s*(.+)$/);
+    return match ? [match[1]] : [];
+  });
+  const structuredFields = Object.keys(item.savedFilters ?? {});
+  return [...new Set([...tagFields, ...structuredFields]
+    .map((field) => normalizeFavoriteFilterField(pageKey, field))
+    .filter((field) => !isFavoriteFilterFieldSupported(pageKey, field)))]
+    .sort((left, right) => left.localeCompare(right, "ko-KR"));
+}
 function favoriteRouteStateFromItem(item: FavoriteItem): FavoriteRouteState {
   const pageKey = favoritePageForItem(item);
   const filters = {
@@ -11836,9 +11872,17 @@ function FavoritesBody({ currentUser, page }: { currentUser: AuthUser; page: Pag
   const handleOpenFavorite = async () => {
     if (!selectedFavorite) return;
     if (selectedFavorite.status === "비활성") {
-      setFavoriteMessage("비활성 메뉴는 열기와 신규 바로가기 추가를 차단하고 조회만 허용합니다.");
+      setFavoriteMessage("비활성 메뉴는 열기와 신규 바로가기 추가를 차단하고 조회와 삭제만 허용합니다.");
       return;
     }
+    const route = favoritePageForItem(selectedFavorite);
+    if (!canAccessPage(currentUser, route)) {
+      const fallbackPage = getDefaultPage(currentUser);
+      setFavoriteMessage(`${selectedFavorite.title} 대상 화면 권한이 회수되어 ${pages[fallbackPage].title} 화면으로 이동합니다.`);
+      goToPage(fallbackPage);
+      return;
+    }
+    const unsupportedFilterFields = favoriteUnsupportedFilterFields(selectedFavorite);
     try {
       const response = await erpApi.updatePageRow("favorites", selectedFavorite.title, {
         최근사용: new Date().toISOString(),
@@ -11854,9 +11898,10 @@ function FavoritesBody({ currentUser, page }: { currentUser: AuthUser; page: Pag
       setFavoriteMessage(`즐겨찾기 사용 기록 저장 실패: ${error instanceof Error ? error.message : "요청을 처리하지 못했습니다."}`);
       return;
     }
-    const route = favoritePageForItem(selectedFavorite);
     applyFavoriteRouteState(selectedFavorite);
-    setFavoriteMessage(`${selectedFavorite.title} 바로가기를 열고 서버 저장 라우트, 필터, 정렬 조건을 적용했습니다.`);
+    setFavoriteMessage(unsupportedFilterFields.length > 0
+      ? `${selectedFavorite.title} 바로가기를 열었습니다. 삭제되었거나 현재 화면에서 지원하지 않는 필터 ${unsupportedFilterFields.join(", ")} 조건은 제외했습니다.`
+      : `${selectedFavorite.title} 바로가기를 열고 서버 저장 라우트, 필터, 정렬 조건을 적용했습니다.`);
     goToPage(route);
   };
 
@@ -12252,7 +12297,7 @@ function FavoriteDetailPanel({
           열기
           <span>↗</span>
         </button>
-        <button onClick={onAddShortcut} type="button">
+        <button disabled={favorite.status === "비활성"} onClick={onAddShortcut} type="button">
           바로가기 추가
           <span>+</span>
         </button>
