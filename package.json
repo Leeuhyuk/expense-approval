@@ -39,6 +39,7 @@
     "release:release-note": "node scripts/verify-release-note.mjs",
     "release:go-live-readiness": "node scripts/verify-go-live-readiness.mjs",
     "release:go-live-readiness-report": "node scripts/generate-go-live-readiness-report.mjs",
+    "release:submission": "node scripts/generate-release-submission.mjs",
     "release:check": "node scripts/verify-release-env.mjs"
   },
   "dependencies": {

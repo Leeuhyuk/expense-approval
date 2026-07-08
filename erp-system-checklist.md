@@ -1253,3 +1253,4 @@
 - [ ] P2: 향후 개선 backlog가 운영 릴리즈 계획에 편입
   - 진행 메모(2026-07-06): final acceptance evidence 템플릿이 remaining P1/P2 backlog, 운영 릴리즈 계획, hotfix procedure owner, improvement intake process, next review date를 요구하도록 했다.
 - 2026-07-08: 사용자의 전체 위임 승인 요청을 `docs/release-approval-exceptions.json`에 조건부 예외 승인으로 기록하고, `release:go-live-readiness`와 `release:go-live-readiness-report`가 완료/조건부 승인/미승인 P0를 분리하도록 보강했다. 실제 staging/prod 증빙이 없는 항목은 완료로 변경하지 않는다.
+- 2026-07-08: `npm run release:submission`과 `docs/release-submission-package.md`를 추가해 GitHub main 제출 대상, 위임 승인 ID, target별 조건부 readiness 결과, 남은 strict evidence를 추적 가능한 제출 패키지로 고정했다.
