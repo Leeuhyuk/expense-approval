@@ -13,7 +13,7 @@ import { runProductionEnvironmentInventoryChecks } from "./verify-production-env
 import { runRoleUatEvidenceChecks } from "./verify-role-uat-evidence.mjs";
 import { runReleaseNoteChecks } from "./verify-release-note.mjs";
 import { runStagingSmokeEvidenceChecks } from "./verify-staging-smoke-evidence.mjs";
-import { evaluateGoLiveReadiness, readGoLiveChecklist } from "./goLiveReadiness.mjs";
+import { evaluateGoLiveReadiness, readApprovalExceptions, readGoLiveChecklist } from "./goLiveReadiness.mjs";
 import { scanSensitiveDataExposureProject } from "./sensitiveDataExposureScanner.mjs";
 import { verifyReleaseManifest } from "./verify-release-manifest.mjs";
 
@@ -376,14 +376,24 @@ function validateProductionAccessApproval() {
 function validateProductionReadiness() {
   if (target !== "production") return;
 
-  const result = evaluateGoLiveReadiness(readGoLiveChecklist(), "production-candidate");
+  const approval = readApprovalExceptions();
+  const result = evaluateGoLiveReadiness(readGoLiveChecklist(), "production-candidate", { approvalExceptions: approval.exceptions });
+  if (result.exceptionErrors.length > 0) {
+    fail(`Production readiness approval exceptions are invalid: ${result.exceptionErrors.slice(0, 5).join(" | ")}`);
+    return;
+  }
+
   if (result.blockers.length === 0) {
-    pass("Production candidate readiness gate has no open P0 blockers in scope.");
+    if (result.approvedBlockers.length > 0) {
+      pass(`Production candidate readiness gate is conditionally cleared by ${result.approvedBlockers.length} approved P0 exception(s) from ${approval.path}.`);
+    } else {
+      pass("Production candidate readiness gate has no open P0 blockers in scope.");
+    }
     return;
   }
 
   const preview = result.blockers.slice(0, 5).map((item) => `${item.section} ${item.text}`).join(" | ");
-  fail(`Production readiness gate blocked by ${result.blockers.length} open P0 item(s): ${preview}`);
+  fail(`Production readiness gate blocked by ${result.blockers.length} unapproved open P0 item(s): ${preview}`);
 }
 
 function validateProductionGoLiveHandoff() {

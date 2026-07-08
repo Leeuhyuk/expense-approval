@@ -36,6 +36,7 @@ export const defaultReleaseManifestSections = [
       "docs/data-migration-evidence-template.md",
       "docs/data-migration-readiness.md",
       "docs/release-readiness-decision.md",
+      "docs/release-approval-exceptions.json",
       "docs/hypercare-runbook.md",
       "docs/user-training-faq.md",
       "docs/cutover-runbook.md",

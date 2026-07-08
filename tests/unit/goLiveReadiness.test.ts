@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, it } from "node:test";
 
-const { evaluateGoLiveReadiness, parseGoLiveChecklist } = await import("../../scripts/goLiveReadiness.mjs");
+const { evaluateGoLiveReadiness, parseApprovalExceptions, parseGoLiveChecklist } = await import("../../scripts/goLiveReadiness.mjs");
 
 describe("go-live readiness gate", () => {
   it("parses open P0 blockers from the operating checklist", () => {
@@ -63,5 +63,56 @@ describe("go-live readiness gate", () => {
     const goLiveReadyButNotStable = parseGoLiveChecklist(synthetic.replace("- [ ] P0: 운영 통제 미완료", "- [x] P0: 운영 통제 완료"));
     assert.equal(evaluateGoLiveReadiness(goLiveReadyButNotStable, "go-live").ok, true);
     assert.equal(evaluateGoLiveReadiness(goLiveReadyButNotStable, "stable-operation").ok, false);
+  });
+
+  it("conditionally clears scoped P0 blockers when delegated exceptions are complete", () => {
+    const synthetic = [
+      "## 23. 데이터 연동",
+      "- [ ] P0: remote DB E2E 증적 필요",
+      "## 24. 운영 준비",
+      "- [ ] P0: backup evidence 필요",
+      "## 25. 실사용 전환",
+      "### 25.1 현재 배포 가능성 판정",
+      "- [ ] P0: production platform 확정 필요",
+    ].join("\n");
+    const approval = parseApprovalExceptions(JSON.stringify({
+      approvalId: "APPROVAL-1",
+      approver: "Release Owner",
+      approvedAt: "2026-07-08T00:00:00+09:00",
+      decision: "conditional-go",
+      exceptions: [
+        {
+          id: "EXC-23",
+          decision: "conditional-approved",
+          targets: ["production-candidate"],
+          chapter: "23",
+          owner: "Release Owner",
+          dueDate: "2026-07-15",
+          userImpact: "Conditional until DB evidence is attached.",
+          mitigation: "Run DB-backed E2E before unrestricted use.",
+          approvalEvidence: "APPROVAL-1",
+        },
+        {
+          id: "EXC-25-1",
+          decision: "conditional-approved",
+          targets: ["production-candidate"],
+          sections: ["25.1"],
+          owner: "Deployment Owner",
+          dueDate: "2026-07-15",
+          userImpact: "Conditional until platform evidence is attached.",
+          mitigation: "Keep production inventory gate strict.",
+          approvalEvidence: "APPROVAL-1",
+        },
+      ],
+    }));
+    const items = parseGoLiveChecklist(synthetic);
+    const productionCandidate = evaluateGoLiveReadiness(items, "production-candidate", { approvalExceptions: approval.exceptions });
+    const goLive = evaluateGoLiveReadiness(items, "go-live", { approvalExceptions: approval.exceptions });
+
+    assert.equal(productionCandidate.ok, true);
+    assert.equal(productionCandidate.conditional, true);
+    assert.equal(productionCandidate.approvedBlockers.length, 2);
+    assert.equal(productionCandidate.blockers.length, 0);
+    assert.equal(goLive.ok, false, "chapter 24 remains unapproved for go-live scope");
   });
 });
