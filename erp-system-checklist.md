@@ -623,7 +623,8 @@
   - 진행 메모(2026-07-08): 공통 `useManagedTable`은 이미 `search`, `filter.*`, `sort`, `page`, `pageSize`를 서버 query로 보내고 있었고, 별도 구현이던 보고서 목록도 `/reports` 서버 query 기준 검색/유형/부서/거래처/정렬/pagination으로 전환했다. 보고서 생성 시 부서/거래처 scope를 `ReportRun.summary` metadata에 보존해 backend row 필터와 다운로드 artifact가 같은 run 기준을 쓰도록 했으며, 예산/거래처 목록은 API 빈 결과 또는 실패를 로컬 기본 데이터로 덮어쓰는 fallback을 제거했다. 실제 DB 대량 데이터에서 화면 total/page와 SQL 결과 일치 증빙은 테스트 단계에서 확인한다.
 - [x] P1: optimistic update 적용 화면은 서버 원본 불일치 시 rollback 또는 재조회 기준 구현
   - 진행 메모(2026-07-07): `useManagedTable` 공통 mutation 처리에 요청 직전 rows/선택/total 스냅샷을 추가하고, 단건 수정/일괄 수정/action/create 실패 시 스냅샷 원복 후 `listPageRows` 재조회로 서버 원본에 수렴하도록 보강했다. 서버가 성공 응답에서 갱신 행을 반환하지 않는 경우도 임시 병합 대신 목록 재조회 기준을 사용한다. 실제 stale rowVersion 충돌과 다른 브라우저 변경 증빙은 최종 테스트 단계에서 확인해야 한다.
-- [ ] P2: 화면별 캐시 무효화, 재검증, stale data 표시 정책 정의
+- [x] P2: 화면별 캐시 무효화, 재검증, stale data 표시 정책 정의
+  - 진행 메모(2026-07-09): `docs/frontend-cache-revalidation-policy.md`에 화면별 원본 API/cache 단위, mutation 후 무효화 trigger, `listPageRows` 재검증, `rowVersion` 충돌 stale 표시, 수동 새로고침/재로그인/다른 브라우저 접속 기준, cross-screen invalidation 표를 정의했다. `docs/frontend-structure.md`, `docs/button-action-map.md`, `scripts/verify-operational-docs.mjs`, `scripts/generate-release-manifest.mjs`에 연결해 운영 문서 검증과 release manifest 입력에 포함했다.
 
 ### 23.2 파일 업로드/다운로드
 

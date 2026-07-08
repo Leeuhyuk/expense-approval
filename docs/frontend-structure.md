@@ -103,6 +103,14 @@
 
 목록 상태 행은 테이블 구조를 유지하기 위해 `tbody` 안에서 전체 컬럼을 `colSpan`으로 차지한다.
 
+## 캐시, 재검증, stale data
+
+업무 데이터는 backend 응답을 원본으로 사용한다. `erp-table-state:{pageKey}` 같은 localStorage 값은 검색/필터/정렬/페이지 크기 복원처럼 화면 편의 상태에만 사용하고, 생성/수정/삭제/상태 변경 완료 판정에는 사용하지 않는다.
+
+`useManagedTable` 기반 화면은 mutation 실패 시 요청 직전 snapshot으로 복원한 뒤 `listPageRows`를 다시 호출한다. `rowVersion` 충돌, 권한 변경, 다른 브라우저 변경은 stale data로 표시하고 `requestId`와 수동 새로고침 경로를 노출한다.
+
+상세 정책과 화면별 cross-screen invalidation 기준은 `docs/frontend-cache-revalidation-policy.md`를 따른다.
+
 ## 결제 요청 입력 검증
 
 1차 적용 범위: 결제 요청 우측 상세 패널

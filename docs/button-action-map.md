@@ -52,7 +52,7 @@
 
 | 화면 | 항목 | 현재 상태 | Go-live 전 필요 작업 |
 | --- | --- | --- | --- |
-| 공통 표 | 검색/필터/정렬/페이지 크기 복원 | `erp-table-state:{pageKey}` localStorage | 업무 데이터 변경은 아니므로 허용 가능하나, 서버 저장 사용자 설정으로 전환할지 결정 필요 |
+| 공통 표 | 검색/필터/정렬/페이지 크기 복원 | `erp-table-state:{pageKey}` localStorage | 업무 데이터 변경은 아니므로 허용한다. 업무 row cache, stale data, 수동 새로고침, 재로그인 기준은 `docs/frontend-cache-revalidation-policy.md`를 따른다. |
 | 결제 요청 | 작성 중 autosave 복구 | 정상 경로는 `PaymentRequest` DRAFT row debounced PATCH, 실패 시 `erp-payment-draft:{requestId}` fallback | 다른 브라우저/재로그인 복구 증빙과 fallback 정리 정책 확인 |
 | 보고서 | 외부 발송 webhook 운영 검증 | 예약 job worker는 internal/webhook delivery, retry, dead-letter, circuit breaker까지 연결 | SMTP/메신저는 webhook 수신 서비스에서 처리하며, staging/prod webhook endpoint 배포와 발송 리허설 증적 필요 |
 | 대시보드 | staging/prod 집계 검증 | `/dashboard` row로 KPI, 긴급 결재, 최근 활동, 승인 추이, 부서별 지출을 계산하고 감사 로그 상세는 권한별 마스킹 | 실제 staging/prod 데이터 규모에서 집계 정확도와 권한별 표시 smoke 필요 |

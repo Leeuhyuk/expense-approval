@@ -29,6 +29,7 @@ const requiredDocs = [
   "docs/hypercare-runbook.md",
   "docs/user-training-faq.md",
   "docs/cutover-runbook.md",
+  "docs/frontend-cache-revalidation-policy.md",
 ];
 
 const docRequirements = [
@@ -90,6 +91,22 @@ const docRequirements = [
       "새로고침",
       "재로그인",
       "교육 완료 기준",
+    ],
+  },
+  {
+    file: "docs/frontend-cache-revalidation-policy.md",
+    label: "frontend cache revalidation policy covers per-screen invalidation, stale data, and localStorage boundaries",
+    terms: [
+      "useManagedTable",
+      "erp-table-state",
+      "listPageRows",
+      "rowVersion",
+      "stale",
+      "수동 새로고침",
+      "재로그인",
+      "파일 업로드",
+      "cross-screen invalidation",
+      "requestId",
     ],
   },
   {
