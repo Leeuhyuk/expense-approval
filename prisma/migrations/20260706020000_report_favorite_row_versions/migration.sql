@@ -1,0 +1,3 @@
+ALTER TABLE "report_runs" ADD COLUMN "rowVersion" INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE "report_schedules" ADD COLUMN "rowVersion" INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE "favorite_items" ADD COLUMN "rowVersion" INTEGER NOT NULL DEFAULT 1;

@@ -1,0 +1,490 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../backend/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum PaymentRequestStatus {
+  DRAFT
+  SUBMITTED
+  APPROVAL_PENDING
+  APPROVAL_IN_PROGRESS
+  APPROVED
+  REJECTED
+  HELD
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  HELD
+  SKIPPED
+}
+
+enum DisbursementStatus {
+  SCHEDULED
+  DUE_TODAY
+  COMPLETED
+  ERROR
+  HELD
+}
+
+enum AccountVerificationStatus {
+  VERIFIED
+  PENDING
+  MISMATCH
+  INACTIVE
+}
+
+enum BudgetStatus {
+  NORMAL
+  WARNING
+  EXCEEDED
+  CLOSED
+}
+
+enum BudgetAdjustmentStatus {
+  PENDING_APPROVAL
+  APPLIED
+  REJECTED
+  CANCELLED
+}
+
+enum VendorStatus {
+  ACTIVE
+  INACTIVE
+  BLOCKED
+}
+
+enum NotificationType {
+  APPROVAL_REQUESTED
+  APPROVAL_REJECTED
+  APPROVAL_HELD
+  APPROVAL_COMPLETED
+  DISBURSEMENT_SCHEDULED
+  DISBURSEMENT_COMPLETED
+  BUDGET_EXCEEDED
+  APPROVAL_DELAYED
+  SYSTEM_SETTING_CHANGED
+  OPERATIONAL_ALERT
+}
+
+enum ReportType {
+  COMPREHENSIVE
+  DISBURSEMENT
+  APPROVAL
+  BUDGET
+  VENDOR
+}
+
+enum ReportRunStatus {
+  READY
+  GENERATING
+  FAILED
+  EXPIRED
+}
+
+enum ReportScheduleFrequency {
+  DAILY
+  WEEKLY
+  MONTHLY
+  QUARTERLY
+}
+
+enum FavoriteKind {
+  MENU
+  FILTER
+  REPORT
+  SHORTCUT
+}
+
+model Department {
+  id              String           @id @default(uuid()) @db.Uuid
+  name            String
+  parentId        String?          @db.Uuid
+  isActive        Boolean          @default(true)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  parent          Department?      @relation("DepartmentTree", fields: [parentId], references: [id])
+  children        Department[]     @relation("DepartmentTree")
+  users           User[]
+  budgets         Budget[]
+  paymentRequests PaymentRequest[]
+
+  @@map("departments")
+}
+
+model User {
+  id              String         @id @default(uuid()) @db.Uuid
+  departmentId    String         @db.Uuid
+  name            String
+  email           String         @unique
+  passwordHash    String
+  isActive        Boolean        @default(true)
+  rowVersion      Int            @default(1)
+  lastLoginAt     DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  department      Department     @relation(fields: [departmentId], references: [id])
+  roles           UserRole[]
+  requestedItems  PaymentRequest[] @relation("Requester")
+  approvalSteps   ApprovalStep[]
+  uploadedFiles   Attachment[]
+  auditLogs        AuditLog[]
+  securityEvents   SecurityEvent[]
+  notifications    Notification[]
+  authSessions     AuthSession[]
+  reportDefinitions ReportDefinition[] @relation("ReportOwner")
+  reportRuns        ReportRun[]        @relation("ReportCreator")
+  reportSchedules   ReportSchedule[]
+  favoriteItems     FavoriteItem[]
+  budgetAdjustments BudgetAdjustment[] @relation("BudgetAdjustmentRequester")
+
+  @@map("users")
+}
+
+model Role {
+  id          String     @id @default(uuid()) @db.Uuid
+  code        String     @unique
+  name        String
+  permissions Json
+  isActive    Boolean    @default(true)
+  rowVersion  Int        @default(1)
+  users       UserRole[]
+
+  @@map("roles")
+}
+
+model UserRole {
+  userId     String   @db.Uuid
+  roleId     String   @db.Uuid
+  assignedAt DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id])
+  role       Role     @relation(fields: [roleId], references: [id])
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+model Vendor {
+  id                        String                    @id @default(uuid()) @db.Uuid
+  name                      String
+  businessNumber            String                    @unique
+  managerName               String                    @default("")
+  bankName                  String
+  bankAccountEncrypted      String
+  bankAccountMasked         String
+  taxInvoiceEmail           String                    @default("")
+  taxInvoiceIssueType       String                    @default("이메일 발행")
+  accountVerificationStatus AccountVerificationStatus @default(PENDING)
+  status                    VendorStatus              @default(ACTIVE)
+  isActive                  Boolean                   @default(true)
+  rowVersion                Int                       @default(1)
+  createdAt                 DateTime                  @default(now())
+  updatedAt                 DateTime                  @updatedAt
+  paymentRequests           PaymentRequest[]
+  disbursements             Disbursement[]
+
+  @@index([accountVerificationStatus, isActive])
+  @@map("vendors")
+}
+
+model Budget {
+  id              String       @id @default(uuid()) @db.Uuid
+  departmentId    String       @db.Uuid
+  fiscalYear      String
+  allocatedAmount Decimal      @db.Decimal(18, 2)
+  usedAmount      Decimal      @default(0) @db.Decimal(18, 2)
+  status          BudgetStatus @default(NORMAL)
+  rowVersion      Int          @default(1)
+  department      Department   @relation(fields: [departmentId], references: [id])
+  items           BudgetItem[]
+  adjustments     BudgetAdjustment[]
+
+  @@unique([departmentId, fiscalYear])
+  @@map("budgets")
+}
+
+model BudgetAdjustment {
+  id               String                 @id @default(uuid()) @db.Uuid
+  budgetId         String                 @db.Uuid
+  requestedBy      String                 @db.Uuid
+  amount           Decimal                @db.Decimal(18, 2)
+  reason           String
+  requiresApproval Boolean
+  status           BudgetAdjustmentStatus @default(PENDING_APPROVAL)
+  appliedAt        DateTime?
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  budget           Budget                 @relation(fields: [budgetId], references: [id])
+  requester        User                   @relation("BudgetAdjustmentRequester", fields: [requestedBy], references: [id])
+
+  @@index([budgetId, createdAt])
+  @@index([requestedBy, status])
+  @@map("budget_adjustments")
+}
+
+model BudgetItem {
+  id              String           @id @default(uuid()) @db.Uuid
+  budgetId        String           @db.Uuid
+  name            String
+  allocatedAmount Decimal          @db.Decimal(18, 2)
+  usedAmount      Decimal          @default(0) @db.Decimal(18, 2)
+  status          BudgetStatus     @default(NORMAL)
+  budget          Budget           @relation(fields: [budgetId], references: [id])
+  paymentRequests PaymentRequest[]
+
+  @@map("budget_items")
+}
+
+model PaymentRequest {
+  id              String               @id @default(uuid()) @db.Uuid
+  requestCode     String               @unique
+  requesterId     String               @db.Uuid
+  departmentId    String               @db.Uuid
+  vendorId        String               @db.Uuid
+  budgetItemId    String?              @db.Uuid
+  amount          Decimal              @db.Decimal(18, 2)
+  currency        String               @default("KRW")
+  status          PaymentRequestStatus @default(DRAFT)
+  reason          String
+  rowVersion      Int                  @default(1)
+  requestedAt     DateTime             @default(now())
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  requester       User                 @relation("Requester", fields: [requesterId], references: [id])
+  department      Department           @relation(fields: [departmentId], references: [id])
+  vendor          Vendor               @relation(fields: [vendorId], references: [id])
+  budgetItem      BudgetItem?          @relation(fields: [budgetItemId], references: [id])
+  approvalSteps   ApprovalStep[]
+  disbursements   Disbursement[]
+
+  @@index([status, requestedAt])
+  @@index([departmentId, requestedAt])
+  @@index([vendorId])
+  @@map("payment_requests")
+}
+
+model ApprovalStep {
+  id               String         @id @default(uuid()) @db.Uuid
+  paymentRequestId String         @db.Uuid
+  stepOrder        Int
+  approverId       String         @db.Uuid
+  status           ApprovalStatus @default(PENDING)
+  reason           String?
+  actedAt          DateTime?
+  rowVersion       Int            @default(1)
+  paymentRequest   PaymentRequest @relation(fields: [paymentRequestId], references: [id])
+  approver         User           @relation(fields: [approverId], references: [id])
+
+  @@unique([paymentRequestId, stepOrder])
+  @@index([approverId, status])
+  @@map("approval_steps")
+}
+
+model Disbursement {
+  id                        String                    @id @default(uuid()) @db.Uuid
+  disbursementCode          String                    @unique
+  paymentRequestId          String                    @db.Uuid
+  vendorId                  String                    @db.Uuid
+  amount                    Decimal                   @db.Decimal(18, 2)
+  status                    DisbursementStatus        @default(SCHEDULED)
+  accountVerificationStatus AccountVerificationStatus @default(PENDING)
+  scheduledDate             DateTime                  @db.Date
+  executedAt                DateTime?
+  rowVersion                Int                       @default(1)
+  paymentRequest            PaymentRequest            @relation(fields: [paymentRequestId], references: [id])
+  vendor                    Vendor                    @relation(fields: [vendorId], references: [id])
+
+  @@index([status, scheduledDate])
+  @@index([vendorId, scheduledDate])
+  @@map("disbursements")
+}
+
+model Attachment {
+  id          String   @id @default(uuid()) @db.Uuid
+  ownerType   String
+  ownerId     String   @db.Uuid
+  fileName    String
+  contentType String
+  byteSize    BigInt
+  storageKey  String   @unique
+  checksum    String
+  uploadedBy  String   @db.Uuid
+  createdAt   DateTime @default(now())
+  uploader    User     @relation(fields: [uploadedBy], references: [id])
+
+  @@index([ownerType, ownerId])
+  @@map("attachments")
+}
+
+model AuditLog {
+  id             String   @id @default(uuid()) @db.Uuid
+  entityType     String
+  entityId       String   @db.Uuid
+  actorId        String   @db.Uuid
+  action         String
+  beforeValue    Json?
+  afterValue     Json?
+  reason         String?
+  idempotencyKey String?  @unique
+  requestId      String
+  ipAddress      String?
+  userAgent      String?
+  createdAt      DateTime @default(now())
+  actor          User     @relation(fields: [actorId], references: [id])
+
+  @@index([entityType, entityId, createdAt])
+  @@index([actorId, createdAt])
+  @@index([action, createdAt])
+  @@index([requestId])
+  @@map("audit_logs")
+}
+
+model SecurityEvent {
+  id         String   @id @default(uuid()) @db.Uuid
+  eventType  String
+  severity   String
+  actorId    String?  @db.Uuid
+  targetType String?
+  targetId   String?
+  requestId  String
+  ipAddress  String?
+  userAgent  String?
+  method     String?
+  path       String?
+  statusCode Int
+  errorCode  String
+  message    String
+  metadata   Json?
+  createdAt  DateTime @default(now())
+  actor      User?    @relation(fields: [actorId], references: [id])
+
+  @@index([eventType, createdAt])
+  @@index([errorCode, createdAt])
+  @@index([actorId, createdAt])
+  @@map("security_events")
+}
+
+model Notification {
+  id         String           @id @default(uuid()) @db.Uuid
+  userId     String           @db.Uuid
+  type       NotificationType
+  title      String
+  message    String
+  entityType String?
+  entityId   String?
+  linkPath   String?
+  readAt     DateTime?
+  expiresAt  DateTime?
+  createdAt  DateTime         @default(now())
+  user       User             @relation(fields: [userId], references: [id])
+
+  @@index([userId, readAt, createdAt])
+  @@index([type, createdAt])
+  @@map("notifications")
+}
+
+model AuthSession {
+  id                String    @id @default(uuid()) @db.Uuid
+  userId            String    @db.Uuid
+  userAgent         String?
+  ipAddress         String?
+  createdAt         DateTime  @default(now())
+  lastSeenAt        DateTime  @default(now())
+  idleExpiresAt     DateTime
+  absoluteExpiresAt DateTime
+  rotatedAt         DateTime?
+  revokedAt         DateTime?
+  user              User      @relation(fields: [userId], references: [id])
+
+  @@index([userId, revokedAt])
+  @@index([idleExpiresAt])
+  @@index([absoluteExpiresAt])
+  @@map("auth_sessions")
+}
+
+model ReportDefinition {
+  id          String                  @id @default(uuid()) @db.Uuid
+  ownerId     String                  @db.Uuid
+  name        String
+  type        ReportType
+  description String?
+  filters     Json
+  isActive    Boolean                 @default(true)
+  createdAt   DateTime                @default(now())
+  updatedAt   DateTime                @updatedAt
+  owner       User                    @relation("ReportOwner", fields: [ownerId], references: [id])
+  runs        ReportRun[]
+  schedules   ReportSchedule[]
+
+  @@index([ownerId, type])
+  @@map("report_definitions")
+}
+
+model ReportRun {
+  id           String          @id @default(uuid()) @db.Uuid
+  definitionId String?         @db.Uuid
+  createdBy    String          @db.Uuid
+  name         String
+  type         ReportType
+  periodStart  DateTime?       @db.Date
+  periodEnd    DateTime?       @db.Date
+  status       ReportRunStatus @default(READY)
+  summary      String?
+  artifactKey  String?
+  rowCount     Int             @default(0)
+  rowVersion   Int             @default(1)
+  createdAt    DateTime        @default(now())
+  definition   ReportDefinition? @relation(fields: [definitionId], references: [id])
+  creator      User            @relation("ReportCreator", fields: [createdBy], references: [id])
+
+  @@index([createdBy, createdAt])
+  @@index([type, createdAt])
+  @@map("report_runs")
+}
+
+model ReportSchedule {
+  id           String                  @id @default(uuid()) @db.Uuid
+  definitionId String                  @db.Uuid
+  userId       String                  @db.Uuid
+  frequency    ReportScheduleFrequency
+  recipients   Json
+  isActive     Boolean                 @default(true)
+  nextRunAt    DateTime?
+  rowVersion   Int                     @default(1)
+  createdAt    DateTime                @default(now())
+  updatedAt    DateTime                @updatedAt
+  definition   ReportDefinition        @relation(fields: [definitionId], references: [id])
+  owner        User                    @relation(fields: [userId], references: [id])
+
+  @@index([userId, isActive])
+  @@index([definitionId, isActive])
+  @@map("report_schedules")
+}
+
+model FavoriteItem {
+  id         String       @id @default(uuid()) @db.Uuid
+  userId     String       @db.Uuid
+  kind       FavoriteKind
+  pageKey    String
+  label      String
+  targetPath String?
+  filters    Json?
+  sortOrder  Int          @default(0)
+  isActive   Boolean      @default(true)
+  lastUsedAt DateTime?
+  rowVersion Int          @default(1)
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+  user       User         @relation(fields: [userId], references: [id])
+
+  @@unique([userId, kind, label])
+  @@index([userId, kind, sortOrder])
+  @@map("favorite_items")
+}

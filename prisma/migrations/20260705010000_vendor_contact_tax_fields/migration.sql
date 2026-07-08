@@ -1,0 +1,4 @@
+ALTER TABLE "vendors"
+ADD COLUMN "managerName" TEXT NOT NULL DEFAULT '',
+ADD COLUMN "taxInvoiceEmail" TEXT NOT NULL DEFAULT '',
+ADD COLUMN "taxInvoiceIssueType" TEXT NOT NULL DEFAULT '이메일 발행';

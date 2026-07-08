@@ -1,0 +1,205 @@
+import {
+  BarChart3,
+  Bookmark,
+  Building2,
+  CheckSquare,
+  ClipboardCheck,
+  FileText,
+  LayoutDashboard,
+  PieChart,
+  Settings,
+  ShieldCheck,
+  Star,
+  Users,
+  WalletCards,
+} from "lucide-react";
+import type { KpiItem, NavItem, PageDefinition, PageKey, TableRow } from "./types";
+
+const emptyRows: TableRow[] = [];
+
+function zeroKpis(items: Array<[string, KpiItem["tone"]]>) {
+  return items.map(([label, tone]) => ({
+    label,
+    value: "0",
+    detail: "-",
+    tone,
+  }));
+}
+
+export const pageOrder: PageKey[] = [
+  "dashboard",
+  "payment-request",
+  "approval",
+  "disbursement",
+  "budget",
+  "vendors",
+  "reports",
+  "settings",
+  "favorites",
+];
+
+export const navItems = [
+  { key: "dashboard", label: "대시보드", icon: LayoutDashboard },
+  { key: "payment-request", label: "결제 요청", icon: FileText },
+  { key: "approval", label: "승인 관리", icon: ClipboardCheck },
+  { key: "disbursement", label: "지급 관리", icon: WalletCards },
+  { key: "budget", label: "예산 관리", icon: PieChart },
+  { key: "vendors", label: "거래처 관리", icon: Building2 },
+  { key: "reports", label: "보고서", icon: BarChart3 },
+  { key: "settings", label: "시스템 설정", icon: Settings },
+  { key: "favorites", label: "즐겨찾기", icon: Bookmark },
+] satisfies NavItem[];
+
+export const featureItems = [
+  { label: "간편한 요청 제출", icon: CheckSquare },
+  { label: "다단계 승인 프로세스", icon: Users },
+  { label: "예산 검증 및 통제", icon: BarChart3 },
+  { label: "컴플라이언스 강화", icon: ShieldCheck },
+];
+
+export const pages: Record<PageKey, PageDefinition> = {
+  dashboard: {
+    title: "대시보드",
+    subtitle: "결제 요청, 승인 흐름, 지급 현황을 한 화면에서 확인합니다.",
+    eyebrow: "Overview",
+    cta: "상세 보기",
+    icon: LayoutDashboard,
+    kpis: zeroKpis([
+      ["승인 대기", "amber"],
+      ["오늘 마감", "blue"],
+      ["이번 달 지급", "teal"],
+      ["예산 초과", "red"],
+    ]),
+    tableTitle: "최근 결제 요청",
+    tableColumns: ["요청번호", "제목", "요청자", "금액", "상태", "요청일"],
+    tableRows: emptyRows,
+  },
+  "payment-request": {
+    title: "결제 요청",
+    subtitle: "증빙 파일, 거래처, 예산 확인을 포함한 결제 요청을 작성합니다.",
+    eyebrow: "Request",
+    cta: "새 요청",
+    icon: FileText,
+    kpis: zeroKpis([
+      ["작성 중", "blue"],
+      ["승인 대기", "amber"],
+      ["승인 완료", "green"],
+      ["반려", "red"],
+    ]),
+    tableTitle: "요청 목록",
+    tableColumns: ["요청번호", "요청일", "거래처", "요청자", "부서", "금액", "상태"],
+    tableRows: emptyRows,
+  },
+  approval: {
+    title: "결제 요청 승인",
+    subtitle: "승인 대기 요청을 검토하고 결재선 진행 상태를 관리합니다.",
+    eyebrow: "Approval",
+    cta: "일괄 승인",
+    icon: ClipboardCheck,
+    kpis: zeroKpis([
+      ["승인 대기", "amber"],
+      ["오늘 마감", "blue"],
+      ["반려", "red"],
+      ["승인 완료", "green"],
+    ]),
+    tableTitle: "승인 요청 목록",
+    tableColumns: ["요청번호", "요청일", "부서", "요청자", "거래처", "금액", "결재상태", "예산확인", "결재선", "처리기한"],
+    tableRows: emptyRows,
+  },
+  disbursement: {
+    title: "지급 관리",
+    subtitle: "승인 완료 건의 계좌 검증, 지급 예정일, 지급 실행을 관리합니다.",
+    eyebrow: "Payment",
+    cta: "일괄 지급",
+    icon: WalletCards,
+    kpis: zeroKpis([
+      ["지급 예정", "blue"],
+      ["오늘 지급", "amber"],
+      ["지급 완료", "green"],
+      ["오류 건", "red"],
+    ]),
+    tableTitle: "지급 실행 목록",
+    tableColumns: ["지급번호", "지급예정일", "거래처", "은행", "계좌확인", "금액", "지급상태", "승인번호", "담당자"],
+    tableRows: emptyRows,
+  },
+  budget: {
+    title: "예산 관리",
+    subtitle: "부서별 예산 배정, 사용률, 초과 위험을 모니터링합니다.",
+    eyebrow: "Budget",
+    cta: "예산 조정",
+    icon: PieChart,
+    kpis: zeroKpis([
+      ["총 예산", "blue"],
+      ["사용 금액", "blue"],
+      ["잔여 예산", "teal"],
+      ["초과 위험", "red"],
+    ]),
+    tableTitle: "부서별 예산 사용률",
+    tableColumns: ["부서", "배정 예산", "사용 금액", "사용률", "잔액", "상태"],
+    tableRows: emptyRows,
+  },
+  vendors: {
+    title: "거래처 관리",
+    subtitle: "거래처 기본 정보, 계좌 검증, 지급 이력을 관리합니다.",
+    eyebrow: "Vendor",
+    cta: "거래처 추가",
+    icon: Building2,
+    kpis: zeroKpis([
+      ["등록 거래처", "teal"],
+      ["검증 대기", "amber"],
+      ["계좌 확인", "green"],
+      ["비활성", "red"],
+    ]),
+    tableTitle: "거래처 목록",
+    tableColumns: ["거래처명", "사업자번호", "담당자", "은행", "계좌확인", "최근지급일", "누적지급액", "상태"],
+    tableRows: emptyRows,
+  },
+  reports: {
+    title: "보고서",
+    subtitle: "결제 요청, 지급, 예산 사용 현황을 리포트로 생성합니다.",
+    eyebrow: "Report",
+    cta: "보고서 생성",
+    icon: BarChart3,
+    kpis: zeroKpis([
+      ["총 요청 금액", "blue"],
+      ["승인율", "green"],
+      ["평균 처리 시간", "amber"],
+      ["반려율", "red"],
+    ]),
+    tableTitle: "저장된 보고서",
+    tableColumns: ["보고서명", "유형", "기간", "생성일시", "생성자", "요약"],
+    tableRows: emptyRows,
+  },
+  settings: {
+    title: "시스템 설정",
+    subtitle: "결재 정책, 사용자 권한, 부서, 알림, 연동 설정을 관리합니다.",
+    eyebrow: "Admin",
+    cta: "저장",
+    icon: Settings,
+    kpis: zeroKpis([
+      ["승인 한도", "navy"],
+      ["권한 그룹", "blue"],
+      ["활성 사용자", "green"],
+      ["변경 이력", "amber"],
+    ]),
+    tableTitle: "사용자 권한",
+    tableColumns: ["사용자", "부서", "역할", "권한그룹", "상태"],
+    tableRows: emptyRows,
+  },
+  favorites: {
+    title: "즐겨찾기",
+    subtitle: "자주 쓰는 메뉴, 저장된 필터, 보고서를 빠르게 실행합니다.",
+    eyebrow: "Shortcut",
+    cta: "바로가기 추가",
+    icon: Star,
+    kpis: zeroKpis([
+      ["자주 쓰는 메뉴", "navy"],
+      ["저장된 필터", "teal"],
+      ["최근 사용", "green"],
+      ["공유 항목", "amber"],
+    ]),
+    tableTitle: "즐겨찾기 항목",
+    tableColumns: ["항목명", "유형", "설명", "최근사용", "소유자", "상태"],
+    tableRows: emptyRows,
+  },
+};

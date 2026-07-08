@@ -1,0 +1,181 @@
+name: ERP CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+
+jobs:
+  verify:
+    name: Test And Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install Frontend Dependencies
+        run: npm ci
+
+      - name: Install Backend Dependencies
+        run: npm --prefix backend ci
+
+      - name: Generate Prisma Client
+        run: npm --prefix backend run db:generate
+
+      - name: Verify Prisma Migrations
+        env:
+          REQUIRE_SHADOW_DATABASE_URL: "true"
+          SHADOW_DATABASE_URL: ${{ secrets.SHADOW_DATABASE_URL }}
+        run: npm run release:migration-check
+
+      - name: Generate Migration Review
+        env:
+          RELEASE_VERSION: ${{ github.sha }}
+        run: npm run release:migration-review
+
+      - name: Verify Migration Review
+        env:
+          EXPECTED_RELEASE_VERSION: ${{ github.sha }}
+        run: npm run release:verify-migration-review
+
+      - name: Verify Audit Log Append Only
+        run: npm run release:audit-append-only
+
+      - name: Verify Sensitive Data Exposure
+        run: npm run release:sensitive-data
+
+      - name: Verify Mutation Safety
+        run: npm run release:mutation-safety
+
+      - name: Verify Performance Capacity
+        run: npm run release:performance-capacity
+
+      - name: Verify Operational Documentation
+        run: npm run release:operational-docs
+
+      - name: Verify Production Environment Inventory Template
+        run: npm run release:environment-inventory
+
+      - name: Verify Environment Separation Matrix Template
+        run: npm run release:environment-separation
+
+      - name: Verify Staging Smoke Evidence Template
+        run: npm run release:staging-smoke-evidence
+
+      - name: Verify Backup Restore Evidence Template
+        run: npm run release:backup-restore-evidence
+
+      - name: Verify Data Migration Evidence Template
+        run: npm run release:data-migration-evidence
+
+      - name: Verify Role UAT Evidence Template
+        run: npm run release:role-uat-evidence
+
+      - name: Verify Production Go-Live Evidence Template
+        run: npm run release:production-go-live-evidence
+
+      - name: Verify Post Go-Live Stabilization Evidence Template
+        run: npm run release:post-go-live-stabilization-evidence
+
+      - name: Verify Final Acceptance Evidence Template
+        run: npm run release:final-acceptance-evidence
+
+      - name: Verify Go-Live Handoff Template
+        run: npm run release:go-live-handoff
+
+      - name: Verify Release Note Template
+        run: npm run release:release-note
+
+      - name: Run Release Gate
+        run: npm run release:check
+
+      - name: Go-Live Readiness Audit
+        run: npm run release:go-live-readiness
+
+      - name: Generate Go-Live Readiness Report
+        run: npm run release:go-live-readiness-report
+
+      - name: Require DB Test Evidence
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          REQUIRE_DB_TEST_EVIDENCE: "true"
+          ERP_TEST_DATABASE_URL: ${{ secrets.ERP_TEST_DATABASE_URL }}
+          RELEASE_VERSION: ${{ github.sha }}
+          RELEASE_SOURCE_REF: ${{ github.ref_name }}
+          RELEASE_GIT_COMMIT: ${{ github.sha }}
+          EXPECTED_RELEASE_VERSION: ${{ github.sha }}
+          EXPECTED_RELEASE_SOURCE_REF: ${{ github.ref_name }}
+          EXPECTED_RELEASE_GIT_COMMIT: ${{ github.sha }}
+        run: |
+          npm run release:db-test-evidence-run
+          npm run release:db-test-evidence
+
+      - name: Run Tests
+        env:
+          ERP_TEST_DATABASE_URL: ${{ secrets.ERP_TEST_DATABASE_URL }}
+        run: npm test
+
+      - name: Run DB Integration Tests
+        env:
+          ERP_TEST_DATABASE_URL: ${{ secrets.ERP_TEST_DATABASE_URL }}
+        run: |
+          if [ -z "$ERP_TEST_DATABASE_URL" ]; then
+            echo "ERP_TEST_DATABASE_URL is not configured; skipping DB integration tests."
+            exit 0
+          fi
+          npm run test:integration
+
+      - name: Build Frontend
+        env:
+          VITE_ERP_API_MODE: remote
+          VITE_RELEASE_VERSION: ${{ github.sha }}
+          VITE_RELEASE_SOURCE_REF: ${{ github.ref_name }}
+          VITE_RELEASE_GIT_COMMIT: ${{ github.sha }}
+        run: npm run build
+
+      - name: Frontend Production Artifact Scan
+        run: npm run release:frontend-artifact
+
+      - name: Build Backend
+        run: npm --prefix backend run build
+
+      - name: Backend Production Start Smoke
+        env:
+          RELEASE_VERSION: ${{ github.sha }}
+          RELEASE_SOURCE_REF: ${{ github.ref_name }}
+          RELEASE_GIT_COMMIT: ${{ github.sha }}
+          RELEASE_MANIFEST_SHA256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        run: npm run release:backend-smoke
+
+      - name: Generate Release Manifest
+        env:
+          RELEASE_TARGET: staging
+          RELEASE_SOURCE_REF: ${{ github.ref_name }}
+        run: npm run release:manifest
+
+      - name: Verify Release Manifest
+        env:
+          EXPECTED_RELEASE_GIT_COMMIT: ${{ github.sha }}
+          EXPECTED_RELEASE_SOURCE_REF: ${{ github.ref_name }}
+        run: npm run release:verify-manifest
+
+      - name: Upload Release Evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: erp-release-evidence
+          path: |
+            release/release-manifest.json
+            release/migration-review.json
+            release/db-test-evidence.json
+            release/go-live-readiness-report.json
+            release/go-live-readiness-report.md
