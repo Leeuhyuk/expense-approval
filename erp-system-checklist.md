@@ -775,8 +775,9 @@
 - [x] P0: 보고서와 즐겨찾기 mutation의 rowVersion/idempotencyKey/조건부 update 회귀 테스트 추가
 - [x] P0: mutation safety matrix와 파일 upload lifecycle idempotency 회귀 테스트 추가
 - [x] P0: 시스템 설정 스냅샷의 최신 AuditLog id/idempotencyKey 회귀 테스트 추가
-- [ ] P1: 네트워크 실패, 서버 500, validation 실패, 중복 클릭, timeout/retry 테스트 추가
-  - 진행 메모(2026-07-07): remote `requestRemoteEnvelope`에 15초 timeout, GET/HEAD/OPTIONS 한정 1회 재시도, 408/429/502/503/504 retry, 네트워크 오류/timeout/비JSON 서버 오류의 `ApiRequestError` 표준화를 추가했다. destructive mutation은 중복 처리 위험 때문에 자동 재시도하지 않는다. 실제 브라우저 network offline, 500 HTML, timeout, rate limit 응답 회귀 테스트는 테스트 단계에서 추가해야 한다.
+- [x] P1: 네트워크 실패, 서버 500, validation 실패, 중복 클릭, timeout/retry 테스트 추가
+  - 진행 메모(2026-07-09): `remoteFailureRecovery` 회귀 테스트를 추가해 remote API 15초 timeout, `AbortController` 기반 timeout 취소, `NETWORK_ERROR`/`NETWORK_TIMEOUT` 표준화, 비JSON/HTML 500 응답의 `SERVER_ERROR` 변환, GET/HEAD/OPTIONS 한정 retry, mutation 자동 retry 차단, backend validation 실패 envelope, UI `isMutating` 중복 클릭 차단과 idempotencyKey 전송을 고정했다.
+  - 진행 메모(2026-07-07): remote `requestRemoteEnvelope`에 15초 timeout, GET/HEAD/OPTIONS 한정 1회 재시도, 408/429/502/503/504 retry, 네트워크 오류/timeout/비JSON 서버 오류의 `ApiRequestError` 표준화를 추가했다. destructive mutation은 중복 처리 위험 때문에 자동 재시도하지 않는다. 2026-07-09에 정적 회귀 테스트를 추가했으며, 실제 브라우저 network offline, 500 HTML, timeout, rate limit 응답 증적은 staging remote-mode E2E에서 추가 확인한다.
 - [ ] P1: 사용자 A/B 간 알림, 즐겨찾기, 권한, 승인 대기 목록 격리 테스트 추가
 - [ ] P2: 대량 데이터 서버 페이지네이션, 보고서 생성 시간, 파일 업로드 성능 테스트 추가
 

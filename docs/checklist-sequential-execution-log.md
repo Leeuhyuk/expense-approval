@@ -23,3 +23,9 @@
 | 순서 | 체크리스트 항목 | 결과 | 확인 내용 | 다음 조치 |
 | --- | --- | --- | --- | --- |
 | 5 | P2: 비활성 메뉴, 권한 회수, 삭제된 필터 참조 시 대체 경로 처리 | 완료 | 비활성 즐겨찾기는 열기와 신규 바로가기 추가를 차단하고 조회/삭제만 허용한다. 대상 화면 권한이 회수된 즐겨찾기는 `getDefaultPage(currentUser)` 기준 안전 화면으로 이동하며, 삭제되었거나 현재 화면에서 지원하지 않는 저장 필터는 화면별 allow-list로 제외하고 사용자 메시지에 표시한다. | staging role smoke에서 권한 회수 전후 즐겨찾기 열기, 비활성 항목 버튼 상태, 삭제 필터 fallback을 실제 계정으로 확인한다. |
+
+## 23.13 테스트 자동화 및 품질 게이트
+
+| 순서 | 체크리스트 항목 | 결과 | 확인 내용 | 다음 조치 |
+| --- | --- | --- | --- | --- |
+| 6 | P1: 네트워크 실패, 서버 500, validation 실패, 중복 클릭, timeout/retry 테스트 추가 | 완료 | `tests/unit/remoteFailureRecovery.test.ts`를 추가해 remote API timeout, network error, non-JSON server failure, safe-method retry, destructive mutation retry 차단, validation envelope, UI duplicate-click/idempotency guard를 정적 회귀 테스트로 고정했다. | 실제 브라우저 network offline과 delayed response는 staging remote-mode E2E에서 추가 증적으로 확인한다. |
