@@ -13,6 +13,12 @@ import { auditRequestContext } from "./rowUtils.js";
 
 export const signedUrlTtlMs = 10 * 60 * 1000;
 
+const previewableAttachmentExtensions = new Set([".pdf", ".jpg", ".jpeg", ".png"]);
+
+function canPreviewAttachmentFile(fileName: string) {
+  return previewableAttachmentExtensions.has(attachmentExtension(fileName));
+}
+
 const presignUploadSchema = z.object({
   ownerType: z.string().min(1),
   ownerId: z.string().min(1),
@@ -36,6 +42,7 @@ const listFilesQuerySchema = z.object({
 
 const downloadQuerySchema = z.object({
   reason: z.string().trim().min(3).max(300),
+  disposition: z.enum(["attachment", "inline"]).optional().default("attachment"),
 });
 
 function signingSecret() {
@@ -87,10 +94,14 @@ export function verifyToken(fileId: string, purpose: "upload" | "download", toke
   return timingSafeEqual(actualBuffer, expectedBuffer);
 }
 
-export function makeSignedPath(fileId: string, purpose: "upload" | "download") {
+export function makeSignedPath(fileId: string, purpose: "upload" | "download", disposition: "attachment" | "inline" = "attachment") {
   const expiresAt = Date.now() + signedUrlTtlMs;
   const token = signToken(fileId, purpose, expiresAt);
-  const path = purpose === "upload" ? `/api/files/${fileId}/content?token=${encodeURIComponent(token)}` : `/api/files/${fileId}/content?download=1&token=${encodeURIComponent(token)}`;
+  const path = purpose === "upload"
+    ? `/api/files/${fileId}/content?token=${encodeURIComponent(token)}`
+    : disposition === "inline"
+      ? `/api/files/${fileId}/content?preview=1&token=${encodeURIComponent(token)}`
+      : `/api/files/${fileId}/content?download=1&token=${encodeURIComponent(token)}`;
   return {
     url: path,
     expiresAt: new Date(expiresAt).toISOString(),
@@ -191,7 +202,7 @@ function toFileDto(item: {
     storageKey: item.storageKey,
     checksum: item.checksum,
     scanStatus: attachmentScanStatus(item.checksum),
-    canPreview: attachmentExtension(item.fileName) === ".pdf",
+    canPreview: canPreviewAttachmentFile(item.fileName),
     createdAt: item.createdAt.toISOString(),
   };
 }
@@ -363,7 +374,7 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
 
   app.put("/files/:id/content", async (request, reply) => {
     const params = request.params as { id: string };
-    const query = request.query as { token?: string };
+    const query = request.query as { token?: string; download?: string; preview?: string };
     if (!verifyToken(params.id, "upload", query.token)) {
       return failFileSecurity(reply, request, {
         eventType: "file_signed_url_rejected",
@@ -710,7 +721,20 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
       });
     }
 
-    const download = makeSignedPath(item.id, "download");
+    if (input.data.disposition === "inline" && !canPreviewAttachmentFile(item.fileName)) {
+      return failFileSecurity(reply, request, {
+        user,
+        eventType: "file_access_denied",
+        errorCode: "VALIDATION_ERROR",
+        message: "미리보기를 지원하지 않는 파일 형식입니다.",
+        statusCode: 400,
+        targetType: "ATTACHMENT",
+        targetId: item.id,
+        metadata: { disposition: input.data.disposition, fileName: item.fileName },
+      });
+    }
+
+    const download = makeSignedPath(item.id, "download", input.data.disposition);
     const retentionPolicy = retentionPolicyFor("attachment_metadata");
     await prisma.auditLog.create({
       data: {
@@ -724,6 +748,7 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
           ownerId: item.ownerId,
           byteSize: Number(item.byteSize),
           downloadUrlExpiresAt: download.expiresAt,
+          disposition: input.data.disposition,
           retentionPolicy: retentionPolicy?.disposition ?? "첨부 metadata 보관 정책",
           accessLogRetention: retentionPolicyFor("audit_log")?.disposition ?? "감사 로그 보관 정책",
         },
@@ -742,7 +767,7 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
 
   app.get("/files/:id/content", async (request, reply) => {
     const params = request.params as { id: string };
-    const query = request.query as { token?: string };
+    const query = request.query as { token?: string; download?: string; preview?: string };
     if (!verifyToken(params.id, "download", query.token)) {
       return failFileSecurity(reply, request, {
         eventType: "file_signed_url_rejected",
@@ -779,8 +804,9 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
     }
 
     const body = await readStoredFile(item.storageKey);
+    const contentDisposition = query.preview === "1" && canPreviewAttachmentFile(item.fileName) ? "inline" : "attachment";
     reply.header("Content-Type", item.contentType);
-    reply.header("Content-Disposition", `attachment; filename="${encodeURIComponent(item.fileName)}"`);
+    reply.header("Content-Disposition", `${contentDisposition}; filename="${encodeURIComponent(item.fileName)}"`);
     return reply.send(body);
   });
 

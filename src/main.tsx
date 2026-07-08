@@ -19,6 +19,7 @@ import {
   CreditCard,
   Database,
   Download,
+  Eye,
   FileText,
   Filter,
   Gauge,
@@ -75,7 +76,7 @@ import {
 } from "./api/service";
 import { ApiRequestError } from "./api/errors";
 import { canAccessPage, canUseAction, getDefaultPage } from "./domain/accessControl";
-import { formatFileSize, prepareAttachmentDrafts } from "./domain/fileRules";
+import { canPreviewAttachment, formatFileSize, prepareAttachmentDrafts } from "./domain/fileRules";
 import { encodeSort, formatCurrencyWon, parseWon, type SortDirection } from "./domain/formatters";
 import {
   canExecuteDisbursement,
@@ -1783,7 +1784,7 @@ function getReportDrilldown(label: string, kind: "monthly" | "department" | "app
 }
 
 function getInitialDepartmentSettings(rows: TableRow[], roles: RolePermissionGroup[]) {
-  const sourceRows = rows.length > 0
+  const sourceRows: TableRow[] = rows.length > 0
     ? rows
     : paymentDepartmentOptions.map((department, index) => ({
       부서: department.replace(/^전체\s*/, "") || `신규 부서 ${index + 1}`,
@@ -1855,6 +1856,11 @@ function triggerUrlDownload(url: string, fileName: string) {
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
+}
+
+function triggerUrlPreview(url: string) {
+  const previewWindow = window.open(url, "_blank", "noopener,noreferrer");
+  return Boolean(previewWindow);
 }
 
 function canDownloadDirectly(url: string) {
@@ -4662,6 +4668,37 @@ function PaymentRequestInfoPanel({ currentUser, onClose, table }: { currentUser:
     setAttachmentMessage(`${attachment.fileName} 다운로드를 시작했습니다.`);
   };
 
+
+  const previewAttachment = async (attachment: AttachmentDraft) => {
+    if (attachment.status === "uploading") {
+      setAttachmentMessage("업로드가 완료된 뒤 미리보기할 수 있습니다.");
+      return;
+    }
+    if (!canPreviewAttachment(attachment.fileName)) {
+      setAttachmentMessage("PDF, JPG, PNG 파일만 미리보기를 지원합니다.");
+      return;
+    }
+    if (!attachment.remoteId) {
+      setAttachmentMessage("저장소 업로드가 완료된 파일만 미리보기할 수 있습니다.");
+      return;
+    }
+    try {
+      const ticket = await erpApi.getFileDownload(attachment.remoteId, {
+        reason: `결제 요청 ${requestId} 증빙 미리보기`,
+        disposition: "inline",
+      });
+      if (canDownloadDirectly(ticket.data.download.url)) {
+        const opened = triggerUrlPreview(ticket.data.download.url);
+        setAttachmentMessage(opened
+          ? `${ticket.data.file.fileName} 미리보기를 열었습니다. signed URL 만료: ${ticket.data.download.expiresAt.slice(0, 16)}. 접근 로그가 감사 로그에 기록되었습니다.`
+          : "브라우저가 미리보기 창을 차단했습니다. 팝업 허용 후 다시 시도하세요.");
+        return;
+      }
+      setAttachmentMessage("remote mode signed URL을 받을 수 있을 때 미리보기를 열 수 있습니다.");
+    } catch (error) {
+      setAttachmentMessage(error instanceof Error ? error.message : "첨부 파일 미리보기에 실패했습니다.");
+    }
+  };
   const toggleApprovalLineMode = () => {
     const modes = ["자동 결재선", "수동 편집", "부서장 추가"];
     const nextMode = modes[(modes.indexOf(approvalLineMode) + 1) % modes.length];
@@ -4823,6 +4860,13 @@ function PaymentRequestInfoPanel({ currentUser, onClose, table }: { currentUser:
               </button>
             )}
             {attachment.status !== "error" && <i className="upload-row-spacer" aria-hidden="true" />}
+            {canPreviewAttachment(attachment.fileName) ? (
+              <button aria-label={`${attachment.fileName} 미리보기`} disabled={attachment.status === "uploading" || attachment.status === "error"} onClick={() => previewAttachment(attachment)} type="button">
+                <Eye size={16} />
+              </button>
+            ) : (
+              <i className="upload-row-spacer" aria-hidden="true" />
+            )}
             <button aria-label={`${attachment.fileName} 다운로드`} disabled={attachment.status === "uploading"} onClick={() => downloadAttachment(attachment)} type="button">
               <Download size={16} />
             </button>
@@ -6886,7 +6930,7 @@ function VendorBody({ page }: { page: PageDefinition }) {
     if (vendorDocument.remoteId) {
       try {
         const ticket = await erpApi.getFileDownload(vendorDocument.remoteId, {
-          reason: `거래처 ${selectedVendorKey || vendorDocument.ownerId || "선택 거래처"} ${vendorDocument.category} 증빙 확인`,
+          reason: `거래처 ${selectedVendorKey || "선택 거래처"} ${vendorDocument.category} 증빙 확인`,
         });
         if (canDownloadDirectly(ticket.data.download.url)) {
           triggerUrlDownload(ticket.data.download.url, ticket.data.file.fileName);
@@ -6908,6 +6952,37 @@ function VendorBody({ page }: { page: PageDefinition }) {
     setVendorMessage(`${vendorDocument.fileName} 다운로드를 준비했습니다.`);
   };
 
+
+  const previewVendorDocument = async (vendorDocument: VendorDocument) => {
+    if (vendorDocument.status === "uploading") {
+      setVendorMessage("업로드가 완료된 뒤 미리보기할 수 있습니다.");
+      return;
+    }
+    if (!canPreviewAttachment(vendorDocument.fileName)) {
+      setVendorMessage("PDF, JPG, PNG 파일만 미리보기를 지원합니다.");
+      return;
+    }
+    if (!vendorDocument.remoteId) {
+      setVendorMessage("저장소 업로드가 완료된 파일만 미리보기할 수 있습니다.");
+      return;
+    }
+    try {
+      const ticket = await erpApi.getFileDownload(vendorDocument.remoteId, {
+        reason: `거래처 ${selectedVendorKey || "선택 거래처"} ${vendorDocument.category} 증빙 미리보기`,
+        disposition: "inline",
+      });
+      if (canDownloadDirectly(ticket.data.download.url)) {
+        const opened = triggerUrlPreview(ticket.data.download.url);
+        setVendorMessage(opened
+          ? `${ticket.data.file.fileName} 미리보기를 열었습니다. signed URL 만료: ${ticket.data.download.expiresAt.slice(0, 16)}. 접근 로그가 감사 로그에 기록되었습니다.`
+          : "브라우저가 미리보기 창을 차단했습니다. 팝업 허용 후 다시 시도하세요.");
+        return;
+      }
+      setVendorMessage("remote mode signed URL을 받을 수 있을 때 미리보기를 열 수 있습니다.");
+    } catch (error) {
+      setVendorMessage(error instanceof Error ? error.message : "거래처 증빙 파일 미리보기에 실패했습니다.");
+    }
+  };
   const deactivateVendor = async (reason = "운영자 수동 비활성화") => {
     if (vendorMutationInFlightRef.current) {
       setVendorMessage("거래처 변경 요청을 처리 중입니다. 잠시 후 다시 시도하세요.");
@@ -7036,6 +7111,7 @@ function VendorBody({ page }: { page: PageDefinition }) {
           onClose={() => setDetailOpen(false)}
           onDeactivate={deactivateVendor}
           onDownloadDocument={downloadVendorDocument}
+          onPreviewDocument={previewVendorDocument}
           onRecheckAccount={recheckVendorAccount}
           onRemoveDocument={removeVendorDocument}
           onRetryDocumentUpload={retryVendorDocumentUpload}
@@ -7215,6 +7291,7 @@ function VendorDetailPanel({
   onClose,
   onDeactivate,
   onDownloadDocument,
+  onPreviewDocument,
   onRecheckAccount,
   onRemoveDocument,
   onRetryDocumentUpload,
@@ -7227,6 +7304,7 @@ function VendorDetailPanel({
   onClose: () => void;
   onDeactivate: (reason?: string) => void | Promise<void>;
   onDownloadDocument: (document: VendorDocument) => void | Promise<void>;
+  onPreviewDocument: (document: VendorDocument) => void | Promise<void>;
   onRecheckAccount: () => void | Promise<void>;
   onRemoveDocument: (vendorName: string, documentId: string) => void | Promise<void>;
   onRetryDocumentUpload: (vendorName: string, documentId: string) => void | Promise<void>;
@@ -7380,6 +7458,13 @@ function VendorDetailPanel({
                   </button>
                 )}
                 {documentItem.status !== "error" && <i className="upload-row-spacer" aria-hidden="true" />}
+                {canPreviewAttachment(documentItem.fileName) ? (
+                  <button aria-label={`${documentItem.fileName} 미리보기`} disabled={documentItem.status === "uploading" || documentItem.status === "error"} onClick={() => onPreviewDocument(documentItem)} type="button">
+                    <Eye size={14} />
+                  </button>
+                ) : (
+                  <i className="upload-row-spacer" aria-hidden="true" />
+                )}
                 <button aria-label={`${documentItem.fileName} 다운로드`} disabled={documentItem.status === "uploading"} onClick={() => onDownloadDocument(documentItem)} type="button">
                   <Download size={14} />
                 </button>

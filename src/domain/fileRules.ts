@@ -5,6 +5,7 @@ export const maxAttachmentBytes = 10 * 1024 * 1024;
 export const attachmentSecurityPolicy = {
   virusScanRequired: true,
   pdfPreviewEnabled: true,
+  imagePreviewEnabled: true,
   taxInvoiceRetentionYears: 5,
   taxInvoiceRequiredKeywords: ["세금계산서", "tax-invoice", "invoice"],
 } as const;
@@ -42,7 +43,9 @@ export function shouldVirusScanAttachment(fileName: string) {
 }
 
 export function canPreviewAttachment(fileName: string) {
-  return attachmentSecurityPolicy.pdfPreviewEnabled && getExtension(fileName) === "pdf";
+  const extension = getExtension(fileName);
+  if (extension === "pdf") return attachmentSecurityPolicy.pdfPreviewEnabled;
+  return attachmentSecurityPolicy.imagePreviewEnabled && ["jpg", "jpeg", "png"].includes(extension);
 }
 
 export function classifyAttachmentFile(fileName: string) {

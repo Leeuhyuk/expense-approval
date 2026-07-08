@@ -3476,7 +3476,7 @@ button:disabled {
 
 .uploaded-file-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) repeat(3, 24px);
+  grid-template-columns: minmax(0, 1fr) repeat(4, 24px);
   align-items: center;
   gap: 8px;
   min-height: 42px;
@@ -5819,7 +5819,7 @@ button:disabled {
 
 .vendor-document-list article {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) repeat(3, 32px);
+  grid-template-columns: minmax(0, 1fr) repeat(4, 32px);
   align-items: center;
   gap: 8px;
   min-height: 48px;

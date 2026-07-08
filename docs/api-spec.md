@@ -303,9 +303,9 @@ type ApiResponse<T> =
 파일 처리 기준:
 
 - 업로드 완료 후 바이러스 검사 상태를 관리한다.
-- PDF 미리보기는 권한 검증 후 signed URL로 제공한다.
+- PDF/이미지 미리보기는 권한 검증 후 `disposition=inline` signed URL로 제공한다.
 - 세금계산서 파일은 거래처와 결제 요청 기준으로 별도 분류한다.
-- 다운로드 signed URL 발급은 `reason` query를 필수로 받고, `AuditLog(action=download_request)`에 파일 owner, 파일명, 만료 시각, 보관 정책, 접근 로그 보관 기준을 기록한다. signed URL token 원문은 감사 로그에 저장하지 않는다.
+- 다운로드/미리보기 signed URL 발급은 `reason` query를 필수로 받고, `AuditLog(action=download_request)`에 파일 owner, 파일명, 만료 시각, `disposition`, 보관 정책, 접근 로그 보관 기준을 기록한다. signed URL token 원문은 감사 로그에 저장하지 않는다.
 - `presign-upload`, `complete`, `DELETE /files/{id}`는 선택적 `idempotencyKey`를 받으며, 같은 key 재요청은 감사 로그 기준으로 replay하거나 다른 업무에 쓰인 key는 `IDEMPOTENCY_CONFLICT`로 차단한다.
 - signed upload content `PUT /files/{id}/content`는 bearer token 성격의 만료 URL과 storage checksum으로 보호하며, 인증 쿠키 대신 서명 토큰을 검증한다.
 - remote frontend는 signed upload를 `XMLHttpRequest`로 전송해 진행률을 표시하고, 실패 row는 원본 `File`이 브라우저 세션에 남아 있을 때 재시도할 수 있다. 화면 이탈 후에는 recovery metadata를 표시해 원본 파일 재선택 또는 삭제로 정리한다.

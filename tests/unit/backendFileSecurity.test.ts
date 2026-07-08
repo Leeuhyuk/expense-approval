@@ -102,6 +102,15 @@ describe("backend file storage and scanning", () => {
       assert.equal(downloadUrl.searchParams.get("download"), "1");
       assert.ok(downloadToken, "download signed path must carry a token");
       assert.equal(verifyToken(fileId, "download", downloadToken), true);
+
+      const preview = makeSignedPath(fileId, "download", "inline");
+      const previewUrl = new URL(preview.url, "https://erp.example.com");
+      const previewToken = previewUrl.searchParams.get("token");
+      assert.equal(previewUrl.pathname, `/api/files/${fileId}/content`);
+      assert.equal(previewUrl.searchParams.get("preview"), "1");
+      assert.equal(previewUrl.searchParams.has("download"), false);
+      assert.ok(previewToken, "preview signed path must carry a token");
+      assert.equal(verifyToken(fileId, "download", previewToken), true);
       assert.equal(verifyToken(fileId, "upload", downloadToken), false);
       assert.doesNotMatch(upload.url + download.url, /S3|s3\.|amazonaws|storage\.googleapis|blob\.core/i);
     } finally {
@@ -152,12 +161,14 @@ describe("backend file storage and scanning", () => {
     assert.match(issueDownloadBlock, /requireAuth\(/, "download URL issuance must authenticate the caller");
     assert.match(issueDownloadBlock, /canReadAttachment\(user, item\)/, "download URL issuance must verify per-file read permission");
     assert.match(issueDownloadBlock, /downloadQuerySchema\.safeParse\(request\.query\)/, "download URL issuance must require a business reason");
+    assert.match(issueDownloadBlock, /disposition: input\.data\.disposition/, "download access audits must preserve attachment vs inline preview disposition");
     assert.match(issueDownloadBlock, /action: "download_request"/, "download URL issuance must audit access before issuing a signed path");
     assert.match(issueDownloadBlock, /reason: input\.data\.reason/, "download access audits must preserve the user-provided reason");
-    assert.match(issueDownloadBlock, /const download = makeSignedPath\(item\.id, "download"\)/, "download route must issue an API signed path");
+    assert.match(issueDownloadBlock, /const download = makeSignedPath\(item\.id, "download", input\.data\.disposition\)/, "download route must issue an API signed path");
     assert.doesNotMatch(issueDownloadBlock, /readStoredFile|s3Url|S3_ENDPOINT|FILE_STORAGE_ENDPOINT/, "download URL issuance must not read storage or expose direct object storage details");
     assert.match(contentDownloadBlock, /verifyToken\(params\.id, "download", query\.token\)[\s\S]*readStoredFile\(item\.storageKey\)/, "content download must require a valid download token before reading storage");
     assert.match(contentDownloadBlock, /attachmentScanStatus\(item\.checksum\) === "blocked"/, "content download must reject quarantined files");
+    assert.match(contentDownloadBlock, /query\.preview === "1" && canPreviewAttachmentFile\(item\.fileName\) \? "inline" : "attachment"/, "content download must support inline preview disposition only for previewable files");
     assert.match(storageSource, /Authorization: `AWS4-HMAC-SHA256 Credential=/, "S3 access must be server-side signed with Authorization headers");
     assert.doesNotMatch(storageSource, /X-Amz-Signature|publicUrl|signedUrl|presignedUrl/, "storage adapter must not generate public or presigned direct object URLs");
   });

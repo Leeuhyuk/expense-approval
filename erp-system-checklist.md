@@ -636,7 +636,8 @@
 - [x] P0: 결제 요청 제출 시 화면 가짜 첨부가 아니라 backend `Attachment` 기준 업로드 완료 파일이 1개 이상인지 검증
 - [x] P1: 업로드 진행률, 실패 재시도, 대용량 파일, 중복 파일명, 업로드 중 화면 이탈 복구 처리
   - 진행 메모(2026-07-07): `uploadFileContent`에 실제 업로드 progress callback을 추가하고, 결제 요청/거래처 증빙 row에 진행률 표시, 실패 파일 재업로드 버튼, 세션 내 원본 `File` 보관, 화면 이탈 후 미완료 upload recovery metadata 표시, 같은 선택 묶음의 중복 파일명 안내를 구성했다. 대용량/실제 중단 복구 증빙은 테스트 단계에서 확인해야 한다.
-- [ ] P2: PDF/이미지 미리보기, 다운로드 만료, 접근 로그 조회 기능 검증
+- [x] P2: PDF/이미지 미리보기, 다운로드 만료, 접근 로그 조회 기능 검증
+  - 진행 메모(2026-07-09): backend `GET /files/{id}/download`에 `disposition=inline` signed URL 발급을 추가하고 PDF/JPG/JPEG/PNG만 inline 미리보기로 허용했다. `download_request` 감사 로그 afterValue에 signed URL 만료 시각과 disposition을 기록하며, content route는 preview 가능 파일만 `Content-Disposition: inline`으로 응답한다. 결제 요청/거래처 증빙 row에 `Eye` 미리보기 버튼을 추가했고, `tests/unit/backendFileSecurity.test.ts`, `tests/unit/fileRules.test.ts`, `tests/unit/frontendFilePreview.test.ts`와 `npm run build`로 검증했다.
 
 ### 23.3 결제 요청 데이터 연동
 

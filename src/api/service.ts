@@ -83,6 +83,7 @@ export type FileDeleteInput = {
 
 export type FileDownloadInput = {
   reason: string;
+  disposition?: "attachment" | "inline";
 };
 
 export type SignedFileUrl = {
@@ -1355,6 +1356,7 @@ const remoteService: ErpApiService = {
   },
   async getFileDownload(fileId, input) {
     const params = new URLSearchParams({ reason: input.reason });
+    if (input.disposition) params.set("disposition", input.disposition);
     const data = await requestRemote<FileDownloadTicket>(`/files/${encodeURIComponent(fileId)}/download?${params.toString()}`);
     return remoteResponse({ ...data, download: { ...data.download, url: normalizeApiUrl(data.download.url) } }, { fileId, downloadReasonLogged: true });
   },
