@@ -12,6 +12,7 @@ import { getManualRecoverySummary, ManualRecoveryError, requestManualRecovery, r
 import { getOperationalAlertSummary } from "../operations/operationalAlerts.js";
 import { getOperationModeStatus } from "../operations/operationMode.js";
 import { getPerformancePolicyStatus } from "../operations/performancePolicy.js";
+import { getPermissionReviewReport } from "../operations/permissionReviewReport.js";
 import { processDueReportSchedules, reportJobPolicy } from "../operations/reportJobWorker.js";
 import { auditRequestContext } from "./rowUtils.js";
 import { fail, success } from "../utils/response.js";
@@ -236,6 +237,17 @@ export const operationsRoutes: FastifyPluginAsync = async (app) => {
     }
 
     const report = await getFinancialControlReport();
+    return reply.code(report.ok ? 200 : 409).send(success(request, report));
+  });
+
+  app.get("/operations/permission-review", async (request, reply) => {
+    const user = await requireAuth(request, reply);
+    if (!user) return;
+    if (!hasPermission(user, "system:manage") && !hasPermission(user, "audit:read")) {
+      return fail(reply, "FORBIDDEN", "정기 권한 검토 리포트 조회 권한이 없습니다.", 403);
+    }
+
+    const report = await getPermissionReviewReport();
     return reply.code(report.ok ? 200 : 409).send(success(request, report));
   });
 

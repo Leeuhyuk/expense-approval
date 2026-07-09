@@ -65,6 +65,7 @@ import {
   type PaymentApprovalCandidate,
   type PaymentRequestMasterData,
   type PerformancePolicyStatus,
+  type PermissionReviewReport,
   type ReportDownloadFormat,
   type ReportJobRunResult,
   type RetentionPolicySummary,
@@ -457,14 +458,23 @@ const permissionCatalog: PermissionCatalogItem[] = [
 ];
 
 const allPermissionCodes = permissionCatalog.map((permission) => permission.code);
+const permissionExceptionPattern = /^exception:.+:\d{4}-\d{2}-\d{2}$/;
+
+function isPermissionExceptionCode(permission: string) {
+  return permissionExceptionPattern.test(permission.trim());
+}
 
 function normalizePermissionCodes(permissions: string[]) {
   const clean = [...new Set(permissions.map((permission) => permission.trim()).filter(Boolean))];
-  return clean.includes("*") ? ["*"] : clean;
+  const exceptionCodes = clean.filter(isPermissionExceptionCode);
+  const directCodes = clean.filter((permission) => !isPermissionExceptionCode(permission));
+  return directCodes.includes("*") ? ["*", ...exceptionCodes] : [...directCodes, ...exceptionCodes];
 }
 
 function expandedPermissionCodes(permissions: string[]) {
-  return permissions.includes("*") ? allPermissionCodes : normalizePermissionCodes(permissions);
+  const normalized = normalizePermissionCodes(permissions);
+  const exceptionCodes = normalized.filter(isPermissionExceptionCode);
+  return normalized.includes("*") ? [...allPermissionCodes, ...exceptionCodes] : normalized;
 }
 
 function rolePermissionCodesFromColumns(columns: Record<PermissionColumn, boolean>) {
@@ -476,7 +486,8 @@ function roleHasPermissionCode(group: Pick<RolePermissionGroup, "permissionCodes
 }
 
 function rolePermissionCodeCount(group: Pick<RolePermissionGroup, "permissionCodes">) {
-  return group.permissionCodes.includes("*") ? allPermissionCodes.length : normalizePermissionCodes(group.permissionCodes).length;
+  const directCodes = normalizePermissionCodes(group.permissionCodes).filter((permission) => !isPermissionExceptionCode(permission));
+  return directCodes.includes("*") ? allPermissionCodes.length : directCodes.length;
 }
 
 function rolePermissionsToColumns(permissions: string[]): Record<PermissionColumn, boolean> {
@@ -8680,6 +8691,8 @@ function SettingsBody({ currentUser, page }: { currentUser: AuthUser; page: Page
   const [manualRecoveryLoading, setManualRecoveryLoading] = useState(false);
   const [financialControlReport, setFinancialControlReport] = useState<FinancialControlReport | null>(null);
   const [financialControlLoading, setFinancialControlLoading] = useState(false);
+  const [permissionReviewReport, setPermissionReviewReport] = useState<PermissionReviewReport | null>(null);
+  const [permissionReviewLoading, setPermissionReviewLoading] = useState(false);
   const [operationModeStatus, setOperationModeStatus] = useState<OperationModeStatus | null>(null);
   const [operationModeLoading, setOperationModeLoading] = useState(false);
   const [reportJobStatus, setReportJobStatus] = useState<ReportJobRunResult | null>(null);
@@ -8927,6 +8940,24 @@ function SettingsBody({ currentUser, page }: { currentUser: AuthUser; page: Page
     }
   };
 
+  const refreshPermissionReviewReport = async (showMessage = true) => {
+    setPermissionReviewLoading(true);
+    try {
+      const response = await erpApi.getPermissionReviewReport();
+      setPermissionReviewReport(response.data);
+      if (showMessage) {
+        setSettingsMessage(
+          response.data.ok
+            ? `권한 검토 리포트 조회 완료: ${response.data.summary.checklistPassed}/${response.data.summary.checklistTotal}개 점검 통과.`
+            : `권한 검토 리포트 조회 완료: 예외 ${response.data.summary.exceptions}건, 특권 사용자 ${response.data.summary.privilegedUsers}명.`,
+        );
+      }
+    } catch (error) {
+      if (showMessage) setSettingsMessage(`권한 검토 리포트 조회 실패: ${error instanceof Error ? error.message : "리포트를 불러오지 못했습니다."}`);
+    } finally {
+      setPermissionReviewLoading(false);
+    }
+  };
   const refreshOperationMode = async (showMessage = true) => {
     setOperationModeLoading(true);
     try {
@@ -9010,8 +9041,9 @@ function SettingsBody({ currentUser, page }: { currentUser: AuthUser; page: Page
       refreshFinancialReconciliation(false),
       refreshManualRecoveries(false),
       refreshFinancialControlReport(false),
+      refreshPermissionReviewReport(false),
     ]);
-    setSettingsMessage("운영 모드, 보고서 예약 job, 성능/용량 기준, 보관 정책, 계정 수명주기, 재무 대사, 수동 복구 요청을 새로고침했습니다.");
+    setSettingsMessage("운영 모드, 보고서 예약 job, 성능/용량 기준, 보관 정책, 계정 수명주기, 재무 대사, 수동 복구, 권한 검토 리포트를 새로고침했습니다.");
   };
 
   const refreshPasswordPolicy = async (showMessage = true) => {
@@ -9176,6 +9208,13 @@ function SettingsBody({ currentUser, page }: { currentUser: AuthUser; page: Page
       })
       .catch(() => {
         if (active) setFinancialControlReport(null);
+      });
+    erpApi.getPermissionReviewReport()
+      .then((response) => {
+        if (active) setPermissionReviewReport(response.data);
+      })
+      .catch(() => {
+        if (active) setPermissionReviewReport(null);
       });
 
     erpApi.getOperationMode()
@@ -9906,6 +9945,11 @@ function SettingsBody({ currentUser, page }: { currentUser: AuthUser; page: Page
               onDeactivate={() => void runAccountLifecycleDeactivation()}
               onReasonChange={setAccountLifecycleReason}
               onRefresh={() => void refreshAccountLifecycle()}
+            />
+            <PermissionReviewReportCard
+              loading={permissionReviewLoading}
+              report={permissionReviewReport}
+              onRefresh={() => void refreshPermissionReviewReport()}
             />
             <FinancialReconciliationCard
               loading={financialReconciliationLoading}
@@ -11571,6 +11615,129 @@ function ManualRecoveryCard({
   );
 }
 
+function PermissionReviewReportCard({
+  loading,
+  report,
+  onRefresh,
+}: {
+  loading: boolean;
+  report: PermissionReviewReport | null;
+  onRefresh: () => void;
+}) {
+  const exceptions = report?.exceptions ?? [];
+  const privilegedUsers = report?.privilegedUsers ?? [];
+  const reviewDue = report ? report.period.reviewDueAt.slice(0, 10) : "-";
+  return (
+    <section className="erp-card permission-review-report-card">
+      <header>
+        <div>
+          <strong>정기 권한 검토 리포트</strong>
+          <span>{report ? `${report.period.month} · 특권 ${report.summary.privilegedUsers}명 · 예외 ${report.summary.exceptions}건 · 다음 검토 ${reviewDue}` : "특권 권한과 예외 만료일 조회 대기"}</span>
+        </div>
+        <button onClick={onRefresh} type="button">
+          <RefreshCw size={15} />
+          새로고침
+        </button>
+      </header>
+      {loading && <p>권한 검토 리포트를 생성하는 중입니다.</p>}
+      {!loading && !report && <p>권한 검토 리포트를 불러오지 못했습니다.</p>}
+      {report && (
+        <>
+          <div className="financial-control-summary">
+            <article>
+              <span>특권 사용자</span>
+              <strong>{report.summary.privilegedUsers}명</strong>
+            </article>
+            <article>
+              <span>만료</span>
+              <strong>{report.summary.expiredExceptions}건</strong>
+            </article>
+            <article>
+              <span>30일 이내</span>
+              <strong>{report.summary.expiringExceptions}건</strong>
+            </article>
+            <article>
+              <span>만료일 없음</span>
+              <strong>{report.summary.missingExpiryExceptions}건</strong>
+            </article>
+          </div>
+          <div className="retention-check-grid">
+            {report.checklist.map((item) => (
+              <article key={item.id} className={item.ok ? undefined : "attention"}>
+                <header>
+                  <strong>{item.label}</strong>
+                  <StatusPill value={item.ok ? "통과" : "확인"} />
+                </header>
+                <b>{item.owner}</b>
+                <span>{item.detail}</span>
+                <small>{item.evidence}</small>
+              </article>
+            ))}
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>사용자</th>
+                <th>역할</th>
+                <th>권한</th>
+                <th>만료</th>
+                <th>상태</th>
+              </tr>
+            </thead>
+            <tbody>
+              {exceptions.length === 0 ? (
+                <tr>
+                  <td colSpan={5}>검토 대상 예외 권한이 없습니다.</td>
+                </tr>
+              ) : exceptions.slice(0, 8).map((item) => (
+                <tr key={item.id}>
+                  <td>
+                    <b>{item.userName}</b>
+                    <small>{item.departmentName}</small>
+                  </td>
+                  <td>{item.roleName}</td>
+                  <td>
+                    <b>{item.permission}</b>
+                    <small>{item.action}</small>
+                  </td>
+                  <td>{item.expiresAt ? item.expiresAt.slice(0, 10) : "미지정"}</td>
+                  <td><StatusPill value={item.severity === "critical" ? "위험" : item.severity === "warning" ? "점검" : "정상"} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <table>
+            <thead>
+              <tr>
+                <th>특권 사용자</th>
+                <th>역할</th>
+                <th>고위험 권한</th>
+                <th>상태</th>
+              </tr>
+            </thead>
+            <tbody>
+              {privilegedUsers.length === 0 ? (
+                <tr>
+                  <td colSpan={4}>특권 권한을 가진 사용자가 없습니다.</td>
+                </tr>
+              ) : privilegedUsers.slice(0, 8).map((item) => (
+                <tr key={item.userId}>
+                  <td>
+                    <b>{item.userName}</b>
+                    <small>{item.departmentName}</small>
+                  </td>
+                  <td>{item.roles.join(", ") || "-"}</td>
+                  <td>{item.highRiskPermissions.join(", ")}</td>
+                  <td><StatusPill value={item.reviewStatus === "blocked" ? "위험" : item.reviewStatus === "review" ? "점검" : "정상"} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+    </section>
+  );
+}
 function FinancialControlReportCard({
   loading,
   report,

@@ -31,3 +31,13 @@
 | 6 | P1: 네트워크 실패, 서버 500, validation 실패, 중복 클릭, timeout/retry 테스트 추가 | 완료 | `tests/unit/remoteFailureRecovery.test.ts`를 추가해 remote API timeout, network error, non-JSON server failure, safe-method retry, destructive mutation retry 차단, validation envelope, UI duplicate-click/idempotency guard를 정적 회귀 테스트로 고정했다. | 실제 브라우저 network offline과 delayed response는 staging remote-mode E2E에서 추가 증적으로 확인한다. |
 | 7 | P1: 사용자 A/B 간 알림, 즐겨찾기, 권한, 승인 대기 목록 격리 테스트 추가 | 완료 | `tests/unit/userScopeIsolation.test.ts`를 추가해 알림, 즐겨찾기, 시스템 권한, 승인 대기 목록이 현재 인증 사용자 또는 관리자 권한 기준으로 분리되는지 route/source 회귀 테스트로 고정했다. | 실제 두 계정 동시 로그인 브라우저 증적은 staging remote-mode E2E/UAT에서 추가 확인한다. |
 | 8 | P2: 대량 데이터 서버 페이지네이션, 보고서 생성 시간, 파일 업로드 성능 테스트 추가 | 완료 | `scripts/verify-performance-capacity.mjs`에 서버 페이지 경계, 보고서 생성 집계, 파일 업로드 chunk/hash synthetic workload를 추가하고 `tests/unit/performanceCapacity.test.ts`와 `release:performance-capacity`에서 함께 검증했다. | 실제 staging/prod DB row count와 object storage 네트워크 조건의 부하 smoke는 배포 검증 단계에서 별도 증적으로 남긴다. |
+## 23.12 Backend/API/DB 완성도
+
+| 순서 | 체크리스트 항목 | 결과 | 확인 내용 | 다음 조치 |
+| --- | --- | --- | --- | --- |
+| 9 | P2: migration, backup/restore, data retention, 장애 복구 리허설 | 차단 유지 | migration review, backup/restore evidence template, data retention policy, rollback/break-glass runbook, `release:backup-restore-evidence` gate는 준비되어 있으나 실제 staging/prod DB, object storage, PITR/WAL, retention 대상 데이터로 수행한 리허설 결과가 없다. | staging 또는 production-like 환경에서 migration deploy/rollback rehearsal, DB restore/PITR, object restore, retention archive/delete dry-run, 장애 복구 smoke를 수행하고 evidence template을 placeholder 없이 채운 뒤 검증한다. |
+## 24.2 계정, 권한, 인증 보안
+
+| 순서 | 체크리스트 항목 | 결과 | 확인 내용 | 다음 조치 |
+| --- | --- | --- | --- | --- |
+| 10 | P2: 정기 권한 검토 리포트와 예외 권한 만료일 관리 | 완료 | `backend/src/operations/permissionReviewReport.ts`와 `GET /operations/permission-review`를 추가해 특권 사용자, 비활성 특권 계정, 예외 권한 만료/만료 예정/만료일 누락, `permission_review` 감사 로그 점검표를 생성한다. 설정 화면 보관 정책 탭에 권한 검토 리포트 카드를 연결하고 mock/remote 서비스 계약과 문서/테스트를 갱신했다. | 실제 production 권한 검토 시 `Role.permissions`의 `exception:<permission>:YYYY-MM-DD` marker, 권한 회수/예외 승인, `permission_review` 감사 로그 증적을 운영 승인 자료에 보관한다. |

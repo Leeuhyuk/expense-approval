@@ -13,6 +13,7 @@
 5. 권한 그룹 삭제는 배정된 사용자가 없는 경우에만 허용된다.
 6. 사용자 권한 변경은 다음 API 호출부터 backend permission check에 반영된다.
 7. production 계정 배정은 보안/운영 책임자 승인 후 `PRODUCTION_ACCESS_REVIEW_*` 증적을 release 환경에 설정한다.
+8. 시스템 설정의 보관 정책 탭에서 정기 권한 검토 리포트를 조회해 특권 사용자, 비활성 특권 계정, 예외 권한 만료/만료 예정/만료일 누락을 확인한다. 임시 예외는 `Role.permissions`에 `exception:<permission>:YYYY-MM-DD` marker를 함께 저장하고, 검토 완료 시 `permission_review` 감사 로그를 남긴다.
 
 ## 결재 정책과 업무 설정
 

@@ -15,6 +15,7 @@ import type {
   FinancialReconciliationNotifyResult,
   FinancialReconciliationSummary,
   FinancialControlReport,
+  PermissionReviewReport,
   IntegrationTestInput,
   IntegrationTestResult,
   ManualRecoveryItem,
@@ -398,6 +399,104 @@ function buildMockFinancialControlReport(): FinancialControlReport {
   };
 }
 
+function buildMockPermissionReviewReport(): PermissionReviewReport {
+  const now = new Date();
+  const month = now.toISOString().slice(0, 7);
+  const soon = new Date(now.getTime() + 14 * 86_400_000).toISOString();
+  const reviewDueAt = new Date(Date.UTC(now.getUTCFullYear(), Math.floor(now.getUTCMonth() / 3) * 3 + 3, 1)).toISOString();
+  const privilegedUsers: PermissionReviewReport["privilegedUsers"] = [
+    {
+      userId: "mock-user-admin",
+      userName: mockCurrentUser.name,
+      departmentName: mockCurrentUser.departmentName,
+      active: true,
+      lastLoginAt: now.toISOString(),
+      roles: ["관리자"],
+      highRiskPermissions: ["*", "system:manage", "disbursement:execute", "audit:read"],
+      missingExpiryCount: 1,
+      expiredExceptionCount: 0,
+      expiringExceptionCount: 1,
+      reviewStatus: "review",
+    },
+    {
+      userId: "mock-user-finance",
+      userName: "조현우",
+      departmentName: "재무팀",
+      active: true,
+      lastLoginAt: now.toISOString(),
+      roles: ["재무팀"],
+      highRiskPermissions: ["disbursement:execute", "payment_request:read_all"],
+      missingExpiryCount: 0,
+      expiredExceptionCount: 0,
+      expiringExceptionCount: 0,
+      reviewStatus: "ok",
+    },
+  ];
+  const exceptions: PermissionReviewReport["exceptions"] = [
+    {
+      id: "mock-admin-system-manage",
+      severity: "warning",
+      status: "expiry_missing",
+      userId: "mock-user-admin",
+      userName: mockCurrentUser.name,
+      departmentName: mockCurrentUser.departmentName,
+      roleId: "role-admin",
+      roleName: "관리자",
+      permission: "system:manage",
+      expiresAt: null,
+      daysUntilExpiry: null,
+      action: "예외 권한 만료일을 지정하고 정기 검토 승인 로그를 남기세요.",
+      evidence: "Role.permissions expiry marker missing",
+    },
+    {
+      id: "mock-admin-audit-read",
+      severity: "warning",
+      status: "expiring",
+      userId: "mock-user-admin",
+      userName: mockCurrentUser.name,
+      departmentName: mockCurrentUser.departmentName,
+      roleId: "role-admin",
+      roleName: "관리자",
+      permission: "audit:read",
+      expiresAt: soon,
+      daysUntilExpiry: 14,
+      action: "만료 전 재검토하고 유지/회수 결정을 기록하세요.",
+      evidence: `Role.permissions exception:audit:read:${soon.slice(0, 10)}`,
+    },
+  ];
+  const checklist: PermissionReviewReport["checklist"] = [
+    { id: "monthly_review_log_present", label: "정기 권한 검토 로그", ok: true, owner: "시스템 관리자", detail: `${month} mock 권한 검토 감사 로그 1건`, evidence: "AuditLog entityType=permission_review" },
+    { id: "inactive_privileged_users_clear", label: "비활성 특권 계정 회수", ok: true, owner: "보안 운영", detail: "비활성 특권 계정 0명", evidence: "User.isActive + Role.permissions" },
+    { id: "exception_expiry_current", label: "예외 권한 만료일 관리", ok: false, owner: "시스템 관리자", detail: "만료 0건, 만료일 없음 1건, 30일 이내 1건", evidence: "Role.permissions exception:<permission>:YYYY-MM-DD" },
+  ];
+  return {
+    ok: false,
+    generatedAt: now.toISOString(),
+    period: {
+      month,
+      start: `${month}-01T00:00:00.000Z`,
+      endExclusive: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)).toISOString(),
+      reviewDueAt,
+      expiringThresholdDays: 30,
+    },
+    summary: {
+      totalUsers: settingsRows.length,
+      activeUsers: settingsRows.length,
+      privilegedUsers: privilegedUsers.length,
+      inactivePrivilegedUsers: 0,
+      exceptions: exceptions.length,
+      expiredExceptions: 0,
+      expiringExceptions: 1,
+      missingExpiryExceptions: 1,
+      reviewLogs: 1,
+      checklistPassed: checklist.filter((item) => item.ok).length,
+      checklistTotal: checklist.length,
+    },
+    privilegedUsers,
+    exceptions,
+    checklist,
+  };
+}
 function buildMockManualRecoveryResult(recoveryId: string, idempotencyReplay = false): ManualRecoveryResult {
   return {
     idempotencyReplay,
@@ -1415,6 +1514,10 @@ export function createMockService(): ErpApiService {
     },
     async getFinancialControlReport() {
       return respond(buildMockFinancialControlReport(), { mode: "mock" });
+    },
+    async getPermissionReviewReport() {
+      const report = buildMockPermissionReviewReport();
+      return respond(report, { mode: "mock", ok: report.ok, exceptions: report.summary.exceptions });
     },
   };
 }

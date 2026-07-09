@@ -873,7 +873,8 @@
   - 진행 메모(2026-07-07): `PASSWORD_MIN_LENGTH`/`PASSWORD_MAX_AGE_DAYS` 기반 비밀번호 정책, `PASSWORD_EXPIRED` 로그인 차단, `POST /auth/password/change-expired`, `POST /auth/password/change`, `GET /auth/password-policy`를 추가했다. 변경 시 현재 비밀번호를 검증하고 새 scrypt hash 저장, 다른 활성 세션 revoke, `password_change` 감사 로그를 남긴다. 로그인 화면은 만료 시 새 비밀번호 설정 모드로 전환되고, 설정 화면에는 `보안` 탭과 본인 비밀번호 변경 카드가 추가되었다. HR 직접 API 연동은 향후 고도화로 남지만 운영 배치 입력 원천은 환경변수로 구성되어 있다.
 - [x] P1: 권한 변경 즉시 세션/토큰 권한이 갱신되거나 재로그인을 요구하는 기준 적용
   - 진행 메모(2026-07-07): 권한 그룹 permission/status 변경 시 해당 그룹 사용자들의 활성 `AuthSession`을 같은 트랜잭션에서 revoke하고 `settings_role_session_revoke` 감사 로그를 남기도록 했다. 사용자 권한 그룹/상태/부서 변경 시에도 대상 사용자 세션을 revoke하고 `settings_user_session_revoke` 감사 로그와 화면 메시지에 재로그인 필요 안내를 표시한다. 서버는 매 요청마다 최신 Role/UserRole을 읽으므로 남은 세션도 최신 권한 기준으로 평가되며, 권한 변경 대상은 다음 요청부터 재로그인이 필요하다. 실제 다중 브라우저 세션 차단 증빙은 테스트 단계에서 확인해야 한다.
-- [ ] P2: 정기 권한 검토 리포트와 예외 권한 만료일 관리
+- [x] P2: 정기 권한 검토 리포트와 예외 권한 만료일 관리
+  - 진행 메모(2026-07-09): `GET /operations/permission-review`를 추가해 `system:manage` 또는 `audit:read` 권한으로 특권 사용자, 비활성 특권 계정, 만료/30일 이내/만료일 없는 예외 권한, `permission_review` 감사 로그 점검표를 조회한다. 설정 화면 보관 정책 탭의 정기 권한 검토 리포트 카드가 remote/mock API를 호출하며, `Role.permissions`의 `exception:<permission>:YYYY-MM-DD` marker를 UI 권한 저장 중 보존한다. `tests/unit/permissionReviewReport.test.ts`, API spec, 관리자/배포 운영 문서, release manifest 입력을 함께 갱신했다.
 
 ### 24.3 개인정보, 계좌정보, 파일 보안
 

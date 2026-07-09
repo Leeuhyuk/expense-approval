@@ -317,6 +317,7 @@ Object storage와 report artifact:
 - 운영 DB에 seed가 자동 실행되지 않는다.
 - 운영 release 환경에 `ALLOW_PRODUCTION_SEED`가 없다.
 - 운영 계정 권한 승인 증빙(`PRODUCTION_ACCESS_REVIEW_APPROVED`, `PRODUCTION_ACCESS_REVIEW_ID`, `PRODUCTION_ACCESS_REVIEW_APPROVER`)이 release gate에 등록되어 있다.
+- `GET /api/operations/permission-review`에서 특권 사용자, 비활성 특권 계정, 예외 권한 만료/30일 이내 만료/만료일 누락, `permission_review` 감사 로그 점검 결과를 확인하고 미해결 항목을 go-live 예외 승인 또는 권한 회수로 처리한다.
 - 프론트 production 진입점이 `mockData` 또는 `mockApi`를 정적으로 import하지 않는다.
 - 감사 로그 삭제 API가 없다.
 - 파일 접근 거부와 signed URL 실패가 `security_events`에 남고, token/secret/cookie 값이 마스킹된다.

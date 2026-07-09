@@ -686,6 +686,72 @@ export type FinancialControlReport = {
   checklist: MonthEndChecklistItem[];
 };
 
+export type PermissionReviewException = {
+  id: string;
+  severity: "info" | "warning" | "critical";
+  status: "expiry_missing" | "expired" | "expiring" | "current";
+  userId: string;
+  userName: string;
+  departmentName: string;
+  roleId: string;
+  roleName: string;
+  permission: string;
+  expiresAt: string | null;
+  daysUntilExpiry: number | null;
+  action: string;
+  evidence: string;
+};
+
+export type PermissionReviewPrivilegedUser = {
+  userId: string;
+  userName: string;
+  departmentName: string;
+  active: boolean;
+  lastLoginAt: string | null;
+  roles: string[];
+  highRiskPermissions: string[];
+  missingExpiryCount: number;
+  expiredExceptionCount: number;
+  expiringExceptionCount: number;
+  reviewStatus: "ok" | "review" | "blocked";
+};
+
+export type PermissionReviewChecklistItem = {
+  id: string;
+  label: string;
+  ok: boolean;
+  owner: string;
+  detail: string;
+  evidence: string;
+};
+
+export type PermissionReviewReport = {
+  ok: boolean;
+  generatedAt: string;
+  period: {
+    month: string;
+    start: string;
+    endExclusive: string;
+    reviewDueAt: string;
+    expiringThresholdDays: number;
+  };
+  summary: {
+    totalUsers: number;
+    activeUsers: number;
+    privilegedUsers: number;
+    inactivePrivilegedUsers: number;
+    exceptions: number;
+    expiredExceptions: number;
+    expiringExceptions: number;
+    missingExpiryExceptions: number;
+    reviewLogs: number;
+    checklistPassed: number;
+    checklistTotal: number;
+  };
+  privilegedUsers: PermissionReviewPrivilegedUser[];
+  exceptions: PermissionReviewException[];
+  checklist: PermissionReviewChecklistItem[];
+};
 export type PaymentMasterVendor = {
   id?: string;
   name: string;
@@ -882,6 +948,7 @@ export type ErpApiService = {
   approveManualRecovery(recoveryId: string, input: ManualRecoveryReviewInput): Promise<MockApiResponse<ManualRecoveryResult>>;
   rejectManualRecovery(recoveryId: string, input: ManualRecoveryReviewInput): Promise<MockApiResponse<ManualRecoveryResult>>;
   getFinancialControlReport(): Promise<MockApiResponse<FinancialControlReport>>;
+  getPermissionReviewReport(): Promise<MockApiResponse<PermissionReviewReport>>;
 };
 
 const resourcePathByPage: Record<PageKey, string> = {
@@ -1505,6 +1572,10 @@ const remoteService: ErpApiService = {
     const data = await requestRemote<FinancialControlReport>("/operations/financial-control-report");
     return remoteResponse(data, { ok: data.ok, exceptions: data.summary.exceptions });
   },
+  async getPermissionReviewReport() {
+    const data = await requestRemote<PermissionReviewReport>("/operations/permission-review");
+    return remoteResponse(data, { ok: data.ok, exceptions: data.summary.exceptions, privilegedUsers: data.summary.privilegedUsers });
+  },
 };
 
 let mockServicePromise: Promise<ErpApiService> | null = null;
@@ -1585,4 +1656,5 @@ export const erpApi: ErpApiService = {
   approveManualRecovery: (recoveryId, input) => callService("approveManualRecovery", recoveryId, input),
   rejectManualRecovery: (recoveryId, input) => callService("rejectManualRecovery", recoveryId, input),
   getFinancialControlReport: () => callService("getFinancialControlReport"),
+  getPermissionReviewReport: () => callService("getPermissionReviewReport"),
 };
