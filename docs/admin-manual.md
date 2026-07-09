@@ -59,7 +59,7 @@
 
 ## 배포 운영
 
-- 배포 전 `npm test`, `npm run build`, `npm --prefix backend run build`, `npm run release:operational-docs`, `npm run release:environment-inventory`, `npm run release:staging-smoke-evidence`, `npm run release:backup-restore-evidence`, `npm run release:data-migration-evidence`, `npm run release:role-uat-evidence`, `npm run release:production-go-live-evidence`, `npm run release:post-go-live-stabilization-evidence`, `npm run release:final-acceptance-evidence`, `npm run release:release-note`, `npm run release:go-live-readiness`, `npm run release:go-live-readiness-report`, `npm run release:submission`, `npm run release:core-smoke`를 통과시킨다.
+- 배포 전 `npm test`, `npm run build`, `npm --prefix backend run build`, `npm run release:operational-docs`, `npm run release:environment-inventory`, `npm run release:staging-smoke-evidence`, `npm run release:backup-restore-evidence`, `npm run release:data-migration-evidence`, `npm run release:role-uat-evidence`, `npm run release:production-go-live-evidence`, `npm run release:post-go-live-stabilization-evidence`, `npm run release:final-acceptance-evidence`, `npm run release:release-note`, `npm run release:go-live-readiness`, `npm run release:go-live-readiness-report`, `npm run release:submission`, `npm run release:core-smoke`, `npm run release:synthetic-monitor`를 통과시킨다.
 - release candidate는 `npm run release:migration-check`, `npm run release:migration-review`, `npm run release:verify-migration-review`, `npm run release:audit-append-only`, `npm run release:mutation-safety`, `npm run release:sensitive-data`, `npm run release:db-test-evidence-run`, `npm run release:db-test-evidence`, `npm run release:performance-capacity`, `npm run release:environment-inventory`, `npm run release:staging-smoke-evidence`, `npm run release:backup-restore-evidence`, `npm run release:data-migration-evidence`, `npm run release:role-uat-evidence`, `npm run release:production-go-live-evidence`, `npm run release:post-go-live-stabilization-evidence`, `npm run release:final-acceptance-evidence`, `npm run release:manifest`, `npm run release:verify-manifest` 증적을 보관한다. `release/db-test-evidence.json`에는 폐기 가능한 test DB에서 실행한 DB integration, remote auth E2E, remote UI E2E가 모두 skip 없이 통과했다는 결과가 있어야 한다. Production 후보의 `npm run release:check`에는 `EXPECTED_RELEASE_MANIFEST_SHA256`와 `EXPECTED_RELEASE_SOURCE_REF`를 넣어 staging에서 보관한 manifest와 같은 release evidence만 승격되게 한다.
 - 운영 배포는 staging에서 동일 artifact와 동일 migration을 먼저 검증한 뒤 production에 승격하는 절차로 수행한다.
 - production 후보 전 `docs/production-environment-inventory-template.md`를 복사해 배포 플랫폼, production 도메인, DB, object storage, secret manager, monitoring, backup/PITR, WAF/CDN 증적을 채우고 `PRODUCTION_ENVIRONMENT_INVENTORY_PATH`로 지정한다. Production release gate는 미확정 placeholder가 남아 있으면 실패한다.
@@ -81,7 +81,7 @@
 
 - Cutover 당일에는 `docs/cutover-runbook.md`의 담당자 연락망, freeze window, 이관 실패/rerun, 수동 보정 감사 로그 기준을 따른다.
 - 사용자 교육, 운영 FAQ, 오류 신고 양식, requestId 수집 방법은 `docs/user-training-faq.md`를 따른다.
-- 운영 첫 주 daily check와 hypercare 리포트는 `docs/hypercare-runbook.md`를 따른다.
+- 운영 첫 주 daily check와 hypercare 리포트는 `docs/hypercare-runbook.md`를 따른다. `npm run release:synthetic-monitor`는 운영 monitor 또는 scheduler에서 5분/10분 주기로 실행하고 실패 requestId와 output JSON을 보관한다.
 - Release마다 `docs/release-readiness-decision.md`를 복사해 `release:go-live-readiness-report` 결과와 open blocker/backlog를 연결한다.
 - dev/staging/production 환경 분리 확인은 `docs/environment-separation-matrix-template.md`를 복사해 `ENVIRONMENT_SEPARATION_PATH`로 지정하고 release gate에서 검증한다.
 ## 백업과 이관

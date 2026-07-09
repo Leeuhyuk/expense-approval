@@ -47,3 +47,8 @@
 | 순서 | 체크리스트 항목 | 결과 | 확인 내용 | 다음 조치 |
 | --- | --- | --- | --- | --- |
 | 12 | P2: 감사 로그 무결성 검증 hash chain 또는 외부 보관소 연계 검토 | 완료 | `backend/src/operations/auditIntegrityReport.ts`와 `GET /operations/audit-integrity-report`를 추가해 월 단위 AuditLog hash chain, head/tail hash, checkpoint, 외부 보관소 연계 상태를 반환한다. 설정 화면 보관 정책 탭에 감사 로그 무결성 리포트 카드를 연결하고 mock/remote 서비스 계약과 문서/테스트를 갱신했다. | 운영 월마감 시 tail hash와 외부 WORM/감사 저장소 영수증 또는 `AUDIT_ARCHIVE_*` 설정 증적을 함께 보관한다. |
+## 24.6 백업, 복구, 재해 대응
+
+| 순서 | 체크리스트 항목 | 결과 | 확인 내용 | 다음 조치 |
+| --- | --- | --- | --- | --- |
+| 13 | P2: synthetic monitoring으로 로그인부터 지급 전 단계까지 주요 경로 주기 점검 | 완료 | `scripts/run-synthetic-business-monitor.mjs`와 `npm run release:synthetic-monitor`를 추가해 로그인, 주요 업무 조회, 지급 전 목록, 운영 상태를 읽기 전용으로 점검한다. 실패 requestId, latency, output JSON을 운영 monitor 증적으로 남기도록 문서화했다. | staging/prod scheduler에서 5분 또는 10분 주기로 실행하고, go-live 전 최소 24시간 오류율/latency 통과 증빙은 P1 항목에서 별도 보관한다. |

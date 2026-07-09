@@ -957,7 +957,8 @@
   - 진행 메모(2026-07-08): `docs/incident-response.md`에 P0/P1/P2 incident commander, 필수 호출 담당자, 최초 응답/업데이트 주기, 사용자 공지 기준, 사후 분석 템플릿을 추가하고 rollback/break-glass runbook과 교차 참조했다.
 - [x] P1: 운영 대시보드에 처리량, 오류율, p95 latency, 지급 실패, 보고서 실패, 업로드 실패를 표시
   - 진행 메모(2026-07-07): `/operations/alerts` 응답에 `metrics.eventsReviewed`, `ruleFailureRatePercent`, critical/warning triggered 수, slow query `durationMs` 기반 p95/p99/max latency와 DB latency를 추가했다. Dashboard는 `system:manage` 사용자에게 `DashboardOperationalMetrics` 카드를 표시하고 `getOperationalAlerts`, `getBusinessFailureAlerts`를 함께 조회해 처리량, 오류율, p95 latency, 지급 실패, 보고서 실패, 업로드 실패 count를 보여준다. 실제 production APM/분산 request count와의 대사는 운영 검증 단계에서 확인해야 한다.
-- [ ] P2: synthetic monitoring으로 로그인부터 지급 전 단계까지 주요 경로 주기 점검
+- [x] P2: synthetic monitoring으로 로그인부터 지급 전 단계까지 주요 경로 주기 점검
+  - 진행 메모(2026-07-09): `scripts/run-synthetic-business-monitor.mjs`와 `npm run release:synthetic-monitor`를 추가해 `/health`, `/auth/login`, `/auth/me`, dashboard, 결제 요청, 승인, 예산, 거래처, 보고서, 지급 전 목록, 운영 상태를 읽기 전용 synthetic path로 점검하도록 했다. 운영 scheduler는 `SYNTHETIC_MONITOR_REQUIRE_CONFIG=true`, `SYNTHETIC_MONITOR_MAX_LATENCY_MS`, `SYNTHETIC_MONITOR_OUTPUT`을 설정해 실패 requestId와 JSON 증적을 보관한다. 실제 staging에서 24시간 오류율/latency 기준 통과 증빙은 별도 P1 항목으로 유지한다.
 
 ### 24.8 데이터 이관 및 품질
 

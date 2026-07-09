@@ -28,3 +28,20 @@ npm run release:core-smoke
 ## Evidence
 
 각 성공/실패 라인은 `[core-smoke]` prefix와 `requestId`를 포함한다. Staging 또는 production 증빙 파일에는 실행 시각, release manifest hash, API base URL, smoke 계정 역할, 출력 로그 위치, 실패 시 requestId와 remediation owner를 기록한다.
+## Synthetic Monitoring
+
+`npm run release:synthetic-monitor`는 운영 monitor 또는 scheduler에서 로그인부터 지급 전 단계까지 읽기 전용 업무 경로를 주기 점검하는 CLI다. 실제 지급 실행, 은행 이체 파일 생성, 대사 mutation은 호출하지 않는다.
+
+```powershell
+$env:SYNTHETIC_MONITOR_API_BASE_URL="https://api.example.com/api"
+$env:SYNTHETIC_MONITOR_EMAIL="synthetic-monitor@example.com"
+$env:SYNTHETIC_MONITOR_PASSWORD="<secret-manager-value>"
+$env:SYNTHETIC_MONITOR_REQUIRE_CONFIG="true"
+$env:SYNTHETIC_MONITOR_MAX_LATENCY_MS="3000"
+$env:SYNTHETIC_MONITOR_OUTPUT="release/synthetic-monitor-report.json"
+npm run release:synthetic-monitor
+```
+
+점검 범위는 `/health`, `/health/db`, `/health/storage`, `/health/jobs`, `/auth/login`, `/auth/me`, `/dashboard`, `/payment-requests`, `/approvals`, `/budgets`, `/vendors`, `/reports`, `/disbursements`, `/operations/mode`다. `SYNTHETIC_MONITOR_INCLUDE_PRIVILEGED=true`이면 `/operations/data-quality`, `/operations/financial-reconciliation`, `/operations/business-failure-alerts`도 조회한다.
+
+Staging과 production에서는 5분 또는 10분 주기로 실행하고, 실패 건수, 최대 latency, requestId, output JSON 위치를 monitoring alert와 go-live evidence에 보관한다. 로컬이나 CI에서 API base URL/계정이 없으면 기본 SKIP으로 종료하지만, 운영 scheduler는 `SYNTHETIC_MONITOR_REQUIRE_CONFIG=true`를 설정해 미구성을 실패로 처리한다.

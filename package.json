@@ -13,6 +13,7 @@
     "test:integration": "tsx --test tests/integration/*.test.ts",
     "release:backend-smoke": "node scripts/verify-backend-production-start.mjs",
     "release:core-smoke": "node scripts/run-core-smoke-check.mjs",
+    "release:synthetic-monitor": "node scripts/run-synthetic-business-monitor.mjs",
     "release:frontend-artifact": "node scripts/verify-frontend-artifact.mjs",
     "release:manifest": "node scripts/generate-release-manifest.mjs",
     "release:verify-manifest": "node scripts/verify-release-manifest.mjs",
