@@ -96,6 +96,7 @@ type ApiResponse<T> =
 | `POST` | `/operations/manual-recoveries/{id}/reject` | 다른 관리자가 수동 복구 요청 반려 |
 | `GET` | `/operations/financial-control-report` | 재무 통제 예외와 월말 결산 점검표 생성 |
 | `GET` | `/operations/permission-review` | `system:manage` 또는 `audit:read` 권한으로 특권 사용자, 정기 권한 검토, 예외 권한 만료일 리포트 생성 |
+| `GET` | `/operations/privacy-access-report` | 개인정보 처리 inventory, 파일 접근 사유, 외부 감사 read-only 접근 리포트 생성 |
 | `GET` | `/operations/audit-logs` | `audit:read` 또는 `system:manage` 권한으로 감사 로그 요약 검색 |
 | `GET` | `/operations/retention-policy` | 감사 로그, 알림, 첨부 metadata, 보고서 산출물 보관/불변성 정책과 정리 대상 조회 |
 | `GET` | `/operations/account-lifecycle` | 휴면/퇴사자 계정 비활성화 후보 조회 |
@@ -119,6 +120,7 @@ type ApiResponse<T> =
 
 `/operations/financial-control-report`는 `system:manage` 권한이 필요하며, 재무 대사 불일치, 수동 복구 대기, 은행 결과 대사 감사 로그, 지급 변경 감사 로그, 보고서 스냅샷 검토 여부를 월 단위 결산 점검표로 반환한다. critical 예외 또는 미통과 결산 항목이 있으면 HTTP 409와 `data.ok=false`를 반환하고, 설정 화면 재무 통제 리포트 카드에서 예외 목록과 점검표를 함께 표시한다.
 `/operations/permission-review`는 `system:manage` 또는 `audit:read` 권한이 필요하며, `User`, `UserRole`, `Role.permissions`, `AuditLog(entityType=permission_review)`를 기준으로 특권 사용자, 비활성 특권 계정, 만료/30일 이내/만료일 없는 예외 권한, 정기 검토 로그 점검표를 반환한다. 예외 만료일은 `Role.permissions`에 `exception:<permission>:YYYY-MM-DD` marker로 기록하며, 미해결 예외가 있으면 HTTP 409와 `data.ok=false`를 반환하고 설정 화면 권한 검토 리포트 카드에서 조치 항목을 표시한다.
+`/operations/privacy-access-report`는 `system:manage` 또는 `audit:read` 권한이 필요하며, `User`, `Vendor`, `Attachment`, `ReportRun`, `AuditLog(action=download_request)`, 외부 감사 역할 접근 로그를 기준으로 개인정보 처리 inventory, 계좌 암호화/마스킹 현황, 파일 다운로드 사유 누락, 외부 감사 read-only 접근을 반환한다. 응답은 `beforeValue`, `afterValue`, 계좌 원문, signed URL token을 제외하고 설정 화면 개인정보 접근 리포트 카드에서 조치 항목을 표시한다.
 
 `/operations/audit-logs`는 `audit:read` 또는 `system:manage` 권한이 필요하다. `search`, `entityType`, `action`, `requestId`, `actor`, `from`, `to`, `page`, `pageSize` query를 받으며 `pageSize`는 최대 100이다. 응답은 actor, entity, action, reason, requestId, ip/userAgent, 요약, 보관/아카이브 정책을 포함하지만 `beforeValue`/`afterValue` 원문 JSON은 포함하지 않는다. `audit_logs`에는 `entityType/entityId/createdAt`, `actorId/createdAt`, `action/createdAt`, `requestId` 인덱스를 둔다.
 

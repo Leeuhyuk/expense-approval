@@ -752,6 +752,67 @@ export type PermissionReviewReport = {
   exceptions: PermissionReviewException[];
   checklist: PermissionReviewChecklistItem[];
 };
+export type PrivacyInventoryItem = {
+  id: string;
+  label: string;
+  count: number;
+  storage: string;
+  protection: string;
+  retention: string;
+  accessControl: string;
+};
+
+export type PrivacyAccessEvent = {
+  id: string;
+  time: string;
+  actorName: string;
+  actorDepartment: string;
+  entityType: string;
+  entityId: string;
+  action: string;
+  reason: string;
+  requestId: string;
+  scope: "file_download" | "external_auditor" | "privacy_review";
+  rawValuePolicy: string;
+};
+
+export type PrivacyAccessChecklistItem = {
+  id: string;
+  label: string;
+  ok: boolean;
+  owner: string;
+  detail: string;
+  evidence: string;
+};
+
+export type PrivacyAccessReport = {
+  ok: boolean;
+  generatedAt: string;
+  period: {
+    month: string;
+    start: string;
+    endExclusive: string;
+  };
+  summary: {
+    inventoryItems: number;
+    activeUsers: number;
+    inactiveUsers: number;
+    vendors: number;
+    encryptedVendors: number;
+    attachments: number;
+    reportRuns: number;
+    downloadAccessEvents: number;
+    externalAuditorEvents: number;
+    missingDownloadReasons: number;
+    checklistPassed: number;
+    checklistTotal: number;
+  };
+  inventory: PrivacyInventoryItem[];
+  accessEvents: PrivacyAccessEvent[];
+  externalAuditorEvents: PrivacyAccessEvent[];
+  checklist: PrivacyAccessChecklistItem[];
+  rawValuePolicy: string;
+};
 export type PaymentMasterVendor = {
   id?: string;
   name: string;
@@ -949,6 +1010,7 @@ export type ErpApiService = {
   rejectManualRecovery(recoveryId: string, input: ManualRecoveryReviewInput): Promise<MockApiResponse<ManualRecoveryResult>>;
   getFinancialControlReport(): Promise<MockApiResponse<FinancialControlReport>>;
   getPermissionReviewReport(): Promise<MockApiResponse<PermissionReviewReport>>;
+  getPrivacyAccessReport(): Promise<MockApiResponse<PrivacyAccessReport>>;
 };
 
 const resourcePathByPage: Record<PageKey, string> = {
@@ -1576,6 +1638,10 @@ const remoteService: ErpApiService = {
     const data = await requestRemote<PermissionReviewReport>("/operations/permission-review");
     return remoteResponse(data, { ok: data.ok, exceptions: data.summary.exceptions, privilegedUsers: data.summary.privilegedUsers });
   },
+  async getPrivacyAccessReport() {
+    const data = await requestRemote<PrivacyAccessReport>("/operations/privacy-access-report");
+    return remoteResponse(data, { ok: data.ok, downloadAccessEvents: data.summary.downloadAccessEvents, externalAuditorEvents: data.summary.externalAuditorEvents });
+  },
 };
 
 let mockServicePromise: Promise<ErpApiService> | null = null;
@@ -1657,4 +1723,5 @@ export const erpApi: ErpApiService = {
   rejectManualRecovery: (recoveryId, input) => callService("rejectManualRecovery", recoveryId, input),
   getFinancialControlReport: () => callService("getFinancialControlReport"),
   getPermissionReviewReport: () => callService("getPermissionReviewReport"),
+  getPrivacyAccessReport: () => callService("getPrivacyAccessReport"),
 };

@@ -892,7 +892,8 @@
 - [ ] P1: 운영 로그와 APM trace에서 secret, cookie, 계좌번호, 파일 URL이 마스킹되는지 확인
   - 진행 메모(2026-07-07): backend 기본 Fastify logger를 `createSafeLoggerOptions`로 전환해 signed file URL query, cookie, authorization, CSRF token, credential/secret/checksum/token 필드, 계좌번호 패턴을 redaction하도록 구성했다. 보안 이벤트는 기존 sanitize 경로를 유지한다. 실제 외부 APM/로그 수집기에 같은 redaction rule이 적용됐는지는 staging/production 관측 도구 연결 후 증적으로 확인해야 하므로 완료 처리는 보류한다.
   - 진행 메모(2026-07-08): `docs/production-environment-inventory-template.md`와 strict `release:environment-inventory` 검증에 APM/trace tool, trace redaction rule evidence, APM trace masking verification, sensitive data masking verification 필드를 추가했다. 운영 APM에서 secret/cookie/계좌번호/file URL 마스킹이 확인되지 않으면 production release gate가 실패하도록 했다.
-- [ ] P2: 개인정보 처리 현황과 외부 감사용 접근 리포트 생성
+- [x] P2: 개인정보 처리 현황과 외부 감사용 접근 리포트 생성
+  - 진행 메모(2026-07-09): `GET /operations/privacy-access-report`를 추가해 사용자/거래처/첨부/보고서 처리 inventory, 거래처 계좌 암호화/마스킹 현황, `download_request` 파일 접근 사유, 외부 감사 read-only 접근 이력을 조회한다. 설정 화면 보관 정책 탭의 개인정보 접근 리포트 카드가 remote/mock API를 호출하며, 응답은 `beforeValue`, `afterValue`, 계좌 원문, signed URL token을 제외한다. `tests/unit/privacyAccessReport.test.ts`, API spec, 관리자/배포 운영 문서, release manifest 입력을 함께 갱신했다.
 
 ### 24.4 재무 통제 및 중복 지급 방지
 

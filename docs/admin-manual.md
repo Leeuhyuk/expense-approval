@@ -14,6 +14,7 @@
 6. 사용자 권한 변경은 다음 API 호출부터 backend permission check에 반영된다.
 7. production 계정 배정은 보안/운영 책임자 승인 후 `PRODUCTION_ACCESS_REVIEW_*` 증적을 release 환경에 설정한다.
 8. 시스템 설정의 보관 정책 탭에서 정기 권한 검토 리포트를 조회해 특권 사용자, 비활성 특권 계정, 예외 권한 만료/만료 예정/만료일 누락을 확인한다. 임시 예외는 `Role.permissions`에 `exception:<permission>:YYYY-MM-DD` marker를 함께 저장하고, 검토 완료 시 `permission_review` 감사 로그를 남긴다.
+9. 같은 탭의 개인정보 접근 리포트에서 사용자/거래처/첨부/보고서 처리 현황, 계좌 암호화/마스킹 상태, 파일 다운로드 사유, 외부 감사 read-only 접근 이력을 확인한다. 리포트 응답에는 `beforeValue`, `afterValue`, 계좌 원문, signed URL token을 포함하지 않는다.
 
 ## 결재 정책과 업무 설정
 

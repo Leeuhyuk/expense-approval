@@ -16,6 +16,7 @@ import type {
   FinancialReconciliationSummary,
   FinancialControlReport,
   PermissionReviewReport,
+  PrivacyAccessReport,
   IntegrationTestInput,
   IntegrationTestResult,
   ManualRecoveryItem,
@@ -495,6 +496,80 @@ function buildMockPermissionReviewReport(): PermissionReviewReport {
     privilegedUsers,
     exceptions,
     checklist,
+  };
+}
+function buildMockPrivacyAccessReport(): PrivacyAccessReport {
+  const now = new Date();
+  const month = now.toISOString().slice(0, 7);
+  const accessEvents: PrivacyAccessReport["accessEvents"] = [
+    {
+      id: "mock-download-access-1",
+      time: now.toISOString(),
+      actorName: mockCurrentUser.name,
+      actorDepartment: mockCurrentUser.departmentName,
+      entityType: "attachment",
+      entityId: "mock-file-1",
+      action: "download_request",
+      reason: "거래처 증빙 검토",
+      requestId: "mock-request-privacy-1",
+      scope: "file_download",
+      rawValuePolicy: "beforeValue/afterValue 원문과 signed URL token은 접근 리포트 응답에 포함하지 않습니다.",
+    },
+  ];
+  const externalAuditorEvents: PrivacyAccessReport["externalAuditorEvents"] = [
+    {
+      id: "mock-auditor-read-1",
+      time: now.toISOString(),
+      actorName: "외부 감사",
+      actorDepartment: "감사",
+      entityType: "audit_log",
+      entityId: "mock-audit-log-1",
+      action: "read",
+      reason: "분기 감사 조회",
+      requestId: "mock-request-audit-1",
+      scope: "external_auditor",
+      rawValuePolicy: "외부 감사 접근 리포트는 요약 필드만 제공하고 원문 JSON을 제외합니다.",
+    },
+  ];
+  const inventory: PrivacyAccessReport["inventory"] = [
+    { id: "users", label: "사용자 계정/부서/권한", count: settingsRows.length, storage: "PostgreSQL users", protection: "세션 기반 접근 제어", retention: "감사 로그 보관 정책", accessControl: "system:manage" },
+    { id: "vendors", label: "거래처와 계좌 metadata", count: vendorRows.length, storage: "PostgreSQL vendors", protection: "계좌번호 AES-GCM 암호화와 마스킹", retention: "거래처 지급 이력 보관 정책", accessControl: "vendor:read" },
+    { id: "attachments", label: "첨부 metadata와 증빙 파일", count: mockFileStore.size, storage: "private object storage", protection: "signed API path와 malware scan", retention: "첨부 metadata 보관 정책", accessControl: "업무 owner별 파일 권한" },
+    { id: "report_runs", label: "보고서 산출물과 다운로드", count: reportRows.length, storage: "ReportRun summary/artifact", protection: "다운로드 제한과 감사 로그", retention: "보고서 산출물 보관 정책", accessControl: "report:read" },
+  ];
+  const checklist: PrivacyAccessReport["checklist"] = [
+    { id: "inventory_present", label: "개인정보 처리 현황", ok: true, owner: "개인정보 보호 책임자", detail: `처리 항목 ${inventory.length}개`, evidence: "mock inventory" },
+    { id: "vendor_bank_encrypted", label: "거래처 계좌 암호화/마스킹", ok: true, owner: "재무 보안", detail: `암호화/마스킹 계좌 ${vendorRows.length}/${vendorRows.length}건`, evidence: "mock vendor bank policy" },
+    { id: "download_reason_required", label: "파일 접근 사유 기록", ok: true, owner: "감사 운영", detail: `다운로드 접근 ${accessEvents.length}건, 사유 누락 0건`, evidence: "AuditLog action=download_request reason" },
+    { id: "auditor_read_only", label: "외부 감사 접근 분리", ok: true, owner: "보안 운영", detail: `외부 감사 접근 ${externalAuditorEvents.length}건`, evidence: "AuditLog actor role=AUDITOR" },
+  ];
+  return {
+    ok: true,
+    generatedAt: now.toISOString(),
+    period: {
+      month,
+      start: `${month}-01T00:00:00.000Z`,
+      endExclusive: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)).toISOString(),
+    },
+    summary: {
+      inventoryItems: inventory.length,
+      activeUsers: settingsRows.length,
+      inactiveUsers: 0,
+      vendors: vendorRows.length,
+      encryptedVendors: vendorRows.length,
+      attachments: mockFileStore.size,
+      reportRuns: reportRows.length,
+      downloadAccessEvents: accessEvents.length,
+      externalAuditorEvents: externalAuditorEvents.length,
+      missingDownloadReasons: 0,
+      checklistPassed: checklist.filter((item) => item.ok).length,
+      checklistTotal: checklist.length,
+    },
+    inventory,
+    accessEvents,
+    externalAuditorEvents,
+    checklist,
+    rawValuePolicy: "개인정보 처리/외부 감사 접근 리포트는 beforeValue, afterValue, 계좌 원문, signed URL token을 반환하지 않습니다.",
   };
 }
 function buildMockManualRecoveryResult(recoveryId: string, idempotencyReplay = false): ManualRecoveryResult {
@@ -1518,6 +1593,10 @@ export function createMockService(): ErpApiService {
     async getPermissionReviewReport() {
       const report = buildMockPermissionReviewReport();
       return respond(report, { mode: "mock", ok: report.ok, exceptions: report.summary.exceptions });
+    },
+    async getPrivacyAccessReport() {
+      const report = buildMockPrivacyAccessReport();
+      return respond(report, { mode: "mock", ok: report.ok, downloadAccessEvents: report.summary.downloadAccessEvents });
     },
   };
 }

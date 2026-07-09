@@ -66,6 +66,7 @@ import {
   type PaymentRequestMasterData,
   type PerformancePolicyStatus,
   type PermissionReviewReport,
+  type PrivacyAccessReport,
   type ReportDownloadFormat,
   type ReportJobRunResult,
   type RetentionPolicySummary,
@@ -8693,6 +8694,8 @@ function SettingsBody({ currentUser, page }: { currentUser: AuthUser; page: Page
   const [financialControlLoading, setFinancialControlLoading] = useState(false);
   const [permissionReviewReport, setPermissionReviewReport] = useState<PermissionReviewReport | null>(null);
   const [permissionReviewLoading, setPermissionReviewLoading] = useState(false);
+  const [privacyAccessReport, setPrivacyAccessReport] = useState<PrivacyAccessReport | null>(null);
+  const [privacyAccessLoading, setPrivacyAccessLoading] = useState(false);
   const [operationModeStatus, setOperationModeStatus] = useState<OperationModeStatus | null>(null);
   const [operationModeLoading, setOperationModeLoading] = useState(false);
   const [reportJobStatus, setReportJobStatus] = useState<ReportJobRunResult | null>(null);
@@ -8958,6 +8961,24 @@ function SettingsBody({ currentUser, page }: { currentUser: AuthUser; page: Page
       setPermissionReviewLoading(false);
     }
   };
+  const refreshPrivacyAccessReport = async (showMessage = true) => {
+    setPrivacyAccessLoading(true);
+    try {
+      const response = await erpApi.getPrivacyAccessReport();
+      setPrivacyAccessReport(response.data);
+      if (showMessage) {
+        setSettingsMessage(
+          response.data.ok
+            ? `개인정보 접근 리포트 조회 완료: 점검 ${response.data.summary.checklistPassed}/${response.data.summary.checklistTotal}개 통과.`
+            : `개인정보 접근 리포트 조회 완료: 다운로드 사유 누락 ${response.data.summary.missingDownloadReasons}건.`,
+        );
+      }
+    } catch (error) {
+      if (showMessage) setSettingsMessage(`개인정보 접근 리포트 조회 실패: ${error instanceof Error ? error.message : "리포트를 불러오지 못했습니다."}`);
+    } finally {
+      setPrivacyAccessLoading(false);
+    }
+  };
   const refreshOperationMode = async (showMessage = true) => {
     setOperationModeLoading(true);
     try {
@@ -9042,8 +9063,9 @@ function SettingsBody({ currentUser, page }: { currentUser: AuthUser; page: Page
       refreshManualRecoveries(false),
       refreshFinancialControlReport(false),
       refreshPermissionReviewReport(false),
+      refreshPrivacyAccessReport(false),
     ]);
-    setSettingsMessage("운영 모드, 보고서 예약 job, 성능/용량 기준, 보관 정책, 계정 수명주기, 재무 대사, 수동 복구, 권한 검토 리포트를 새로고침했습니다.");
+    setSettingsMessage("운영 모드, 보고서 예약 job, 성능/용량 기준, 보관 정책, 계정 수명주기, 재무 대사, 수동 복구, 권한 검토, 개인정보 접근 리포트를 새로고침했습니다.");
   };
 
   const refreshPasswordPolicy = async (showMessage = true) => {
@@ -9215,6 +9237,13 @@ function SettingsBody({ currentUser, page }: { currentUser: AuthUser; page: Page
       })
       .catch(() => {
         if (active) setPermissionReviewReport(null);
+      });
+    erpApi.getPrivacyAccessReport()
+      .then((response) => {
+        if (active) setPrivacyAccessReport(response.data);
+      })
+      .catch(() => {
+        if (active) setPrivacyAccessReport(null);
       });
 
     erpApi.getOperationMode()
@@ -9950,6 +9979,11 @@ function SettingsBody({ currentUser, page }: { currentUser: AuthUser; page: Page
               loading={permissionReviewLoading}
               report={permissionReviewReport}
               onRefresh={() => void refreshPermissionReviewReport()}
+            />
+            <PrivacyAccessReportCard
+              loading={privacyAccessLoading}
+              report={privacyAccessReport}
+              onRefresh={() => void refreshPrivacyAccessReport()}
             />
             <FinancialReconciliationCard
               loading={financialReconciliationLoading}
@@ -11615,6 +11649,121 @@ function ManualRecoveryCard({
   );
 }
 
+function PrivacyAccessReportCard({
+  loading,
+  report,
+  onRefresh,
+}: {
+  loading: boolean;
+  report: PrivacyAccessReport | null;
+  onRefresh: () => void;
+}) {
+  const inventory = report?.inventory ?? [];
+  const accessEvents = report?.accessEvents ?? [];
+  const auditorEvents = report?.externalAuditorEvents ?? [];
+  return (
+    <section className="erp-card privacy-access-report-card">
+      <header>
+        <div>
+          <strong>개인정보 접근 리포트</strong>
+          <span>{report ? `${report.period.month} · 처리 ${report.summary.inventoryItems}개 · 다운로드 ${report.summary.downloadAccessEvents}건 · 외부 감사 ${report.summary.externalAuditorEvents}건` : "개인정보 처리 현황과 외부 감사 접근 조회 대기"}</span>
+        </div>
+        <button onClick={onRefresh} type="button">
+          <RefreshCw size={15} />
+          새로고침
+        </button>
+      </header>
+      {loading && <p>개인정보 접근 리포트를 생성하는 중입니다.</p>}
+      {!loading && !report && <p>개인정보 접근 리포트를 불러오지 못했습니다.</p>}
+      {report && (
+        <>
+          <div className="financial-control-summary">
+            <article>
+              <span>처리 항목</span>
+              <strong>{report.summary.inventoryItems}개</strong>
+            </article>
+            <article>
+              <span>거래처 계좌</span>
+              <strong>{report.summary.encryptedVendors}/{report.summary.vendors}</strong>
+            </article>
+            <article>
+              <span>다운로드 접근</span>
+              <strong>{report.summary.downloadAccessEvents}건</strong>
+            </article>
+            <article>
+              <span>외부 감사</span>
+              <strong>{report.summary.externalAuditorEvents}건</strong>
+            </article>
+          </div>
+          <div className="retention-check-grid">
+            {report.checklist.map((item) => (
+              <article key={item.id} className={item.ok ? undefined : "attention"}>
+                <header>
+                  <strong>{item.label}</strong>
+                  <StatusPill value={item.ok ? "통과" : "확인"} />
+                </header>
+                <b>{item.owner}</b>
+                <span>{item.detail}</span>
+                <small>{item.evidence}</small>
+              </article>
+            ))}
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>처리 항목</th>
+                <th>건수</th>
+                <th>보호 조치</th>
+                <th>접근 통제</th>
+              </tr>
+            </thead>
+            <tbody>
+              {inventory.map((item) => (
+                <tr key={item.id}>
+                  <td>
+                    <b>{item.label}</b>
+                    <small>{item.storage}</small>
+                  </td>
+                  <td>{item.count.toLocaleString()}건</td>
+                  <td>{item.protection}</td>
+                  <td>{item.accessControl}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <table>
+            <thead>
+              <tr>
+                <th>접근자</th>
+                <th>대상</th>
+                <th>사유</th>
+                <th>범위</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[...accessEvents, ...auditorEvents].slice(0, 8).length === 0 ? (
+                <tr>
+                  <td colSpan={4}>이번 기간 접근 리포트 대상 이력이 없습니다.</td>
+                </tr>
+              ) : [...accessEvents, ...auditorEvents].slice(0, 8).map((item) => (
+                <tr key={`${item.scope}-${item.id}`}>
+                  <td>
+                    <b>{item.actorName}</b>
+                    <small>{item.actorDepartment}</small>
+                  </td>
+                  <td>{item.entityType}</td>
+                  <td>{item.reason || "사유 누락"}</td>
+                  <td><StatusPill value={item.scope === "external_auditor" ? "외부 감사" : "파일 접근"} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p>{report.rawValuePolicy}</p>
+        </>
+      )}
+    </section>
+  );
+}
 function PermissionReviewReportCard({
   loading,
   report,

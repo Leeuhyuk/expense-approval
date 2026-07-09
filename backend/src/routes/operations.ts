@@ -13,6 +13,7 @@ import { getOperationalAlertSummary } from "../operations/operationalAlerts.js";
 import { getOperationModeStatus } from "../operations/operationMode.js";
 import { getPerformancePolicyStatus } from "../operations/performancePolicy.js";
 import { getPermissionReviewReport } from "../operations/permissionReviewReport.js";
+import { getPrivacyAccessReport } from "../operations/privacyAccessReport.js";
 import { processDueReportSchedules, reportJobPolicy } from "../operations/reportJobWorker.js";
 import { auditRequestContext } from "./rowUtils.js";
 import { fail, success } from "../utils/response.js";
@@ -251,6 +252,16 @@ export const operationsRoutes: FastifyPluginAsync = async (app) => {
     return reply.code(report.ok ? 200 : 409).send(success(request, report));
   });
 
+  app.get("/operations/privacy-access-report", async (request, reply) => {
+    const user = await requireAuth(request, reply);
+    if (!user) return;
+    if (!hasPermission(user, "system:manage") && !hasPermission(user, "audit:read")) {
+      return fail(reply, "FORBIDDEN", "개인정보 처리/외부 감사 접근 리포트 조회 권한이 없습니다.", 403);
+    }
+
+    const report = await getPrivacyAccessReport();
+    return reply.code(report.ok ? 200 : 409).send(success(request, report));
+  });
   app.get("/operations/audit-logs", async (request, reply) => {
     const user = await requireAuth(request, reply);
     if (!user) return;
