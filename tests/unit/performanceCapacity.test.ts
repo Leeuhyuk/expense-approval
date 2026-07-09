@@ -4,20 +4,37 @@ import { resolve } from "node:path";
 import { describe, it } from "node:test";
 import {
   runPerformanceCapacityChecks,
+  syntheticFileUploadWorkload,
   syntheticListCapacityWorkload,
   syntheticReportDownloadWorkload,
+  syntheticReportGenerationWorkload,
+  syntheticServerPaginationWorkload,
 } from "../../scripts/verify-performance-capacity.mjs";
 
 describe("performance capacity release gate", () => {
-  it("runs production-volume list and report download workloads within configured budgets", () => {
+  it("runs production-volume list, server pagination, report, and upload workloads within configured budgets", () => {
     const list = syntheticListCapacityWorkload({ rowCount: 20_000, maxMs: 2_000 });
     assert.equal(list.ok, true);
     assert.equal(list.returned, 100);
     assert.ok(list.total >= 100);
 
+    const serverPage = syntheticServerPaginationWorkload({ rowCount: 20_000, maxMs: 2_000 });
+    assert.equal(serverPage.ok, true);
+    assert.equal(serverPage.returned, 100);
+    assert.equal(serverPage.hasOverlap, false);
+
+    const generatedReport = syntheticReportGenerationWorkload({ rowCount: 750, maxMs: 2_000 });
+    assert.equal(generatedReport.ok, true);
+    assert.ok(generatedReport.departmentCount > 1);
+
     const report = syntheticReportDownloadWorkload({ rowCount: 750, maxMs: 2_000, maxBytes: 1_000_000 });
     assert.equal(report.ok, true);
     assert.ok(report.bytes > 0);
+
+    const upload = syntheticFileUploadWorkload({ bytes: 2 * 1024 * 1024, maxMs: 2_000 });
+    assert.equal(upload.ok, true);
+    assert.equal(upload.uploadedBytes, upload.bytes);
+    assert.equal(upload.checksum.length, 64);
   });
 
   it("validates route pagination, Prisma indexes, upload size, body limit, and rate limit evidence", () => {

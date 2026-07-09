@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { createHash } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -9,6 +10,10 @@ const defaultReportRows = 5_000;
 const defaultMaxListMs = 3_000;
 const defaultMaxReportMs = 2_000;
 const defaultMaxReportBytes = 3 * 1024 * 1024;
+const defaultMaxReportGenerationMs = 2_000;
+const defaultUploadBytes = 10 * 1024 * 1024;
+const defaultUploadChunkBytes = 1024 * 1024;
+const defaultMaxUploadMs = 2_000;
 
 function integerOption(name, fallback) {
   const value = Number(process.env[name]);
@@ -110,6 +115,65 @@ export function syntheticListCapacityWorkload({ rowCount = defaultExpectedRows, 
   };
 }
 
+export function syntheticServerPaginationWorkload({ rowCount = defaultExpectedRows, maxMs = defaultMaxListMs } = {}) {
+  const rows = generateOperationalRows(rowCount);
+  const query = {
+    page: 50,
+    pageSize: 100,
+    search: "",
+    sort: "요청번호:asc",
+    filters: {},
+  };
+
+  const startedAt = performance.now();
+  const firstPage = paginateRows(filterAndSortRows(rows, { ...query, page: 1 }), { ...query, page: 1 });
+  const targetPage = paginateRows(filterAndSortRows(rows, query), query);
+  const elapsedMs = performance.now() - startedAt;
+  const firstIds = new Set(firstPage.rows.map((row) => row.요청번호));
+  const hasOverlap = targetPage.rows.some((row) => firstIds.has(row.요청번호));
+
+  return {
+    ok: targetPage.rows.length <= query.pageSize && targetPage.total === rowCount && !hasOverlap && elapsedMs <= maxMs,
+    elapsedMs,
+    maxMs,
+    rowCount,
+    total: targetPage.total,
+    page: targetPage.page,
+    pageSize: targetPage.pageSize,
+    returned: targetPage.rows.length,
+    hasOverlap,
+  };
+}
+
+export function syntheticReportGenerationWorkload({ rowCount = defaultReportRows, maxMs = defaultMaxReportGenerationMs } = {}) {
+  const rows = generateOperationalRows(rowCount);
+  const startedAt = performance.now();
+  const byDepartment = new Map();
+  const byStatus = new Map();
+  const byMonth = new Map();
+  let totalAmount = 0;
+
+  for (const row of rows) {
+    const amount = parseWon(row.금액) ?? 0;
+    totalAmount += amount;
+    byDepartment.set(row.부서, (byDepartment.get(row.부서) ?? 0) + amount);
+    byStatus.set(row.상태, (byStatus.get(row.상태) ?? 0) + 1);
+    byMonth.set(String(row.생성일시).slice(0, 7), (byMonth.get(String(row.생성일시).slice(0, 7)) ?? 0) + amount);
+  }
+
+  const elapsedMs = performance.now() - startedAt;
+  return {
+    ok: rows.length === rowCount && totalAmount > 0 && byDepartment.size > 1 && byStatus.size > 1 && byMonth.size >= 1 && elapsedMs <= maxMs,
+    elapsedMs,
+    maxMs,
+    rowCount,
+    totalAmount,
+    departmentCount: byDepartment.size,
+    statusCount: byStatus.size,
+    monthCount: byMonth.size,
+  };
+}
+
 function escapeCsvCell(value) {
   return `"${String(value ?? "").replaceAll("\"", "\"\"")}"`;
 }
@@ -141,6 +205,35 @@ export function syntheticReportDownloadWorkload({
   };
 }
 
+export function syntheticFileUploadWorkload({ bytes = defaultUploadBytes, chunkBytes = defaultUploadChunkBytes, maxMs = defaultMaxUploadMs } = {}) {
+  const chunkSize = Math.max(1, chunkBytes);
+  const chunk = Buffer.alloc(Math.min(chunkSize, Math.max(1, bytes)), 7);
+  const startedAt = performance.now();
+  const hash = createHash("sha256");
+  let uploadedBytes = 0;
+  let chunks = 0;
+
+  while (uploadedBytes < bytes) {
+    const size = Math.min(chunk.length, bytes - uploadedBytes);
+    hash.update(size === chunk.length ? chunk : chunk.subarray(0, size));
+    uploadedBytes += size;
+    chunks += 1;
+  }
+
+  const checksum = hash.digest("hex");
+  const elapsedMs = performance.now() - startedAt;
+  return {
+    ok: uploadedBytes === bytes && chunks === Math.ceil(bytes / chunkSize) && checksum.length === 64 && elapsedMs <= maxMs,
+    elapsedMs,
+    maxMs,
+    bytes,
+    uploadedBytes,
+    chunkBytes: chunkSize,
+    chunks,
+    checksum,
+  };
+}
+
 function readProjectFile(projectRoot, relativePath) {
   const path = resolve(projectRoot, relativePath);
   if (!existsSync(path)) throw new Error(`Missing required file: ${relativePath}`);
@@ -168,6 +261,9 @@ export function runPerformanceCapacityChecks({
   reportRows = integerOption("PERFORMANCE_CAPACITY_REPORT_ROWS", defaultReportRows),
   maxReportMs = integerOption("PERFORMANCE_CAPACITY_MAX_REPORT_MS", defaultMaxReportMs),
   maxReportBytes = integerOption("PERFORMANCE_CAPACITY_MAX_REPORT_BYTES", defaultMaxReportBytes),
+  maxReportGenerationMs = integerOption("PERFORMANCE_CAPACITY_MAX_REPORT_GENERATION_MS", defaultMaxReportGenerationMs),
+  uploadBytes = integerOption("PERFORMANCE_CAPACITY_UPLOAD_BYTES", defaultUploadBytes),
+  maxUploadMs = integerOption("PERFORMANCE_CAPACITY_MAX_UPLOAD_MS", defaultMaxUploadMs),
 } = {}) {
   const root = resolve(projectRoot);
   const checks = [];
@@ -195,11 +291,11 @@ export function runPerformanceCapacityChecks({
   checkPattern(checks, "shared list pagination slices bounded pages", rowUtils, /rows\.slice\(start,\s*start \+ pageSize\)/, "shared pagination must return one bounded page");
   checkPattern(checks, "shared filtering and sorting remains centralized", rowUtils, /export function filterAndSortRows[\s\S]*query\.sort/, "list filter/sort behavior must stay centralized");
   checkPattern(checks, "payment request list uses database pagination", paymentRequests, /prisma\.paymentRequest\.findMany\(\{[\s\S]*skip:\s*\(query\.page - 1\) \* query\.pageSize,[\s\S]*take:\s*query\.pageSize,[\s\S]*prisma\.paymentRequest\.count/s, "largest request list must use DB skip/take and count");
-  checkPattern(checks, "report download is server-generated and audited", pageResources, /app\.get\("\/reports\/:reportName\/download"[\s\S]*buildReportDownload\(item, format\)[\s\S]*auditLog\.create/s, "report CSV/PDF downloads must be generated by the backend and audited");
+  checkPattern(checks, "report download is server-generated and audited", pageResources, /app\.get\("\/reports\/:reportName\/download"[\s\S]*ensureReportArtifact\(item\)[\s\S]*readReportArtifactDownload\(artifactItem, format\)[\s\S]*auditLog\.create/s, "report CSV/PDF downloads must be generated by the backend and audited");
   checkPattern(checks, "performance policy defines p95 and p99 targets", performancePolicy, /PERFORMANCE_P95_TARGET_MS[\s\S]*PERFORMANCE_P99_TARGET_MS/, "response latency targets must be explicit and environment configurable");
   checkPattern(checks, "performance policy defines report job processing budget", performancePolicy, /REPORT_JOB_MAX_PROCESSING_MS/, "report job max processing time must be explicit and environment configurable");
   checkPattern(checks, "performance policy defines report download row and byte limits", performancePolicy, /REPORT_DOWNLOAD_MAX_ROWS[\s\S]*REPORT_DOWNLOAD_MAX_BYTES/, "large report download limits must be explicit and environment configurable");
-  checkPattern(checks, "report download enforces policy before response", pageResources, /reportDownloadLimitIssue\(\{ rowCount: item\.rowCount \}\)[\s\S]*buildReportDownload\(item, format\)[\s\S]*reportDownloadLimitIssue\(\{ rowCount: item\.rowCount, contentBytes: download\.limits\.contentBytes \}\)/s, "report downloads must reject row or payload sizes above policy");
+  checkPattern(checks, "report download enforces policy before response", pageResources, /const rowLimitIssue = reportDownloadLimitIssue\(\{ rowCount: item\.rowCount \}\)[\s\S]*const sizeLimitIssue = reportDownloadLimitIssue\(\{ rowCount: artifactItem\.rowCount, contentBytes: download\.limits\.contentBytes \}\)/s, "report downloads must reject row or payload sizes above policy");
   checkPattern(checks, "file upload policy enforces 10MB maximum", attachmentPolicy, /maxAttachmentBytes\s*=\s*10 \* 1024 \* 1024/, "upload file size policy must remain at 10MB");
   checkPattern(checks, "API body limit is environment controlled", rateLimit, /API_BODY_LIMIT_BYTES[\s\S]*defaultBodyLimitBytes/, "Fastify body limit must remain configurable");
   checkPattern(checks, "release gate verifies API body limit and rate limit", releaseEnv, /API_BODY_LIMIT_BYTES[\s\S]*RATE_LIMIT_DISABLED[\s\S]*RATE_LIMIT_WINDOW_MS[\s\S]*RATE_LIMIT_MAX/s, "release gate must reject unsafe body or rate limit settings");
@@ -226,11 +322,32 @@ export function runPerformanceCapacityChecks({
     detail: `${listWorkload.rowCount} rows -> ${listWorkload.total} matches, ${listWorkload.returned} returned in ${listWorkload.elapsedMs.toFixed(1)}ms (limit ${listWorkload.maxMs}ms)`,
   });
 
+  const serverPaginationWorkload = syntheticServerPaginationWorkload({ rowCount: expectedRows, maxMs: maxListMs });
+  checks.push({
+    label: "synthetic server pagination page boundary workload",
+    ok: serverPaginationWorkload.ok,
+    detail: `${serverPaginationWorkload.rowCount} rows page ${serverPaginationWorkload.page}/${serverPaginationWorkload.pageSize} returned ${serverPaginationWorkload.returned} rows in ${serverPaginationWorkload.elapsedMs.toFixed(1)}ms`,
+  });
+
+  const reportGenerationWorkload = syntheticReportGenerationWorkload({ rowCount: reportRows, maxMs: maxReportGenerationMs });
+  checks.push({
+    label: "synthetic report generation aggregation workload",
+    ok: reportGenerationWorkload.ok,
+    detail: `${reportGenerationWorkload.rowCount} rows aggregated into ${reportGenerationWorkload.departmentCount} departments, ${reportGenerationWorkload.statusCount} statuses, ${reportGenerationWorkload.monthCount} month buckets in ${reportGenerationWorkload.elapsedMs.toFixed(1)}ms`,
+  });
+
   const reportWorkload = syntheticReportDownloadWorkload({ rowCount: reportRows, maxMs: maxReportMs, maxBytes: maxReportBytes });
   checks.push({
     label: "synthetic report download payload workload",
     ok: reportWorkload.ok,
     detail: `${reportWorkload.rowCount} rows -> ${reportWorkload.bytes} base64 bytes in ${reportWorkload.elapsedMs.toFixed(1)}ms (limits ${reportWorkload.maxMs}ms, ${reportWorkload.maxBytes} bytes)`,
+  });
+
+  const uploadWorkload = syntheticFileUploadWorkload({ bytes: uploadBytes, maxMs: maxUploadMs });
+  checks.push({
+    label: "synthetic file upload chunk/hash workload",
+    ok: uploadWorkload.ok,
+    detail: `${uploadWorkload.uploadedBytes} bytes across ${uploadWorkload.chunks} chunks in ${uploadWorkload.elapsedMs.toFixed(1)}ms (limit ${uploadWorkload.maxMs}ms)`,
   });
 
   const failures = checks.filter((check) => !check.ok);
@@ -240,7 +357,10 @@ export function runPerformanceCapacityChecks({
     failures,
     metrics: {
       listWorkload,
+      serverPaginationWorkload,
+      reportGenerationWorkload,
       reportWorkload,
+      uploadWorkload,
     },
   };
 }

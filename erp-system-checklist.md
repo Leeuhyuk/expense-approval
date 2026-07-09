@@ -780,7 +780,8 @@
   - 진행 메모(2026-07-07): remote `requestRemoteEnvelope`에 15초 timeout, GET/HEAD/OPTIONS 한정 1회 재시도, 408/429/502/503/504 retry, 네트워크 오류/timeout/비JSON 서버 오류의 `ApiRequestError` 표준화를 추가했다. destructive mutation은 중복 처리 위험 때문에 자동 재시도하지 않는다. 2026-07-09에 정적 회귀 테스트를 추가했으며, 실제 브라우저 network offline, 500 HTML, timeout, rate limit 응답 증적은 staging remote-mode E2E에서 추가 확인한다.
 - [x] P1: 사용자 A/B 간 알림, 즐겨찾기, 권한, 승인 대기 목록 격리 테스트 추가
   - 진행 메모(2026-07-09): `userScopeIsolation` 회귀 테스트를 추가해 알림 list/read/read-all의 `user.id` scope, 즐겨찾기 list/get/update/delete의 `userId + label` scope와 생성 소유자 지정, 시스템 권한 화면의 `system:manage` guard, 승인 목록/상세/처리의 assigned approver 또는 read_all/system manager 조건을 고정했다.
-- [ ] P2: 대량 데이터 서버 페이지네이션, 보고서 생성 시간, 파일 업로드 성능 테스트 추가
+- [x] P2: 대량 데이터 서버 페이지네이션, 보고서 생성 시간, 파일 업로드 성능 테스트 추가
+  - 진행 메모(2026-07-09): `verify-performance-capacity`에 `syntheticServerPaginationWorkload`, `syntheticReportGenerationWorkload`, `syntheticFileUploadWorkload`를 추가해 20,000건 서버 페이지 경계, 보고서 집계 생성 시간, 10MB 파일 업로드 chunk/hash 처리 시간을 release gate에서 검증한다. `performanceCapacity` unit test와 `npm run release:performance-capacity` 통과를 확인했다.
 
 ## 24. 운영 준비, 보안, 장애 대응, 재무 통제 검증 리스트
 
