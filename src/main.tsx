@@ -53,6 +53,7 @@ import {
   erpApi,
   type AccountLifecycleSummary,
   type AuditLogSearchResult,
+  type AuditIntegrityReport,
   type BusinessFailureAlertSummary,
   type FileDto,
   type FileOwnerType,
@@ -8696,6 +8697,8 @@ function SettingsBody({ currentUser, page }: { currentUser: AuthUser; page: Page
   const [permissionReviewLoading, setPermissionReviewLoading] = useState(false);
   const [privacyAccessReport, setPrivacyAccessReport] = useState<PrivacyAccessReport | null>(null);
   const [privacyAccessLoading, setPrivacyAccessLoading] = useState(false);
+  const [auditIntegrityReport, setAuditIntegrityReport] = useState<AuditIntegrityReport | null>(null);
+  const [auditIntegrityLoading, setAuditIntegrityLoading] = useState(false);
   const [operationModeStatus, setOperationModeStatus] = useState<OperationModeStatus | null>(null);
   const [operationModeLoading, setOperationModeLoading] = useState(false);
   const [reportJobStatus, setReportJobStatus] = useState<ReportJobRunResult | null>(null);
@@ -8979,6 +8982,24 @@ function SettingsBody({ currentUser, page }: { currentUser: AuthUser; page: Page
       setPrivacyAccessLoading(false);
     }
   };
+  const refreshAuditIntegrityReport = async (showMessage = true) => {
+    setAuditIntegrityLoading(true);
+    try {
+      const response = await erpApi.getAuditIntegrityReport();
+      setAuditIntegrityReport(response.data);
+      if (showMessage) {
+        setSettingsMessage(
+          response.data.ok
+            ? `감사 로그 무결성 리포트 조회 완료: 체인 ${response.data.summary.chainLength}건, tail ${response.data.summary.tailHash.slice(0, 12)}...`
+            : `감사 로그 무결성 리포트 조회 완료: 점검 ${response.data.summary.checkpointsPassed}/${response.data.summary.checkpointsTotal}개 통과.`,
+        );
+      }
+    } catch (error) {
+      if (showMessage) setSettingsMessage(`감사 로그 무결성 리포트 조회 실패: ${error instanceof Error ? error.message : "리포트를 불러오지 못했습니다."}`);
+    } finally {
+      setAuditIntegrityLoading(false);
+    }
+  };
   const refreshOperationMode = async (showMessage = true) => {
     setOperationModeLoading(true);
     try {
@@ -9064,8 +9085,9 @@ function SettingsBody({ currentUser, page }: { currentUser: AuthUser; page: Page
       refreshFinancialControlReport(false),
       refreshPermissionReviewReport(false),
       refreshPrivacyAccessReport(false),
+      refreshAuditIntegrityReport(false),
     ]);
-    setSettingsMessage("운영 모드, 보고서 예약 job, 성능/용량 기준, 보관 정책, 계정 수명주기, 재무 대사, 수동 복구, 권한 검토, 개인정보 접근 리포트를 새로고침했습니다.");
+    setSettingsMessage("운영 모드, 보고서 예약 job, 성능/용량 기준, 보관 정책, 계정 수명주기, 재무 대사, 수동 복구, 권한 검토, 개인정보 접근, 감사 로그 무결성 리포트를 새로고침했습니다.");
   };
 
   const refreshPasswordPolicy = async (showMessage = true) => {
@@ -9246,6 +9268,13 @@ function SettingsBody({ currentUser, page }: { currentUser: AuthUser; page: Page
         if (active) setPrivacyAccessReport(null);
       });
 
+    erpApi.getAuditIntegrityReport()
+      .then((response) => {
+        if (active) setAuditIntegrityReport(response.data);
+      })
+      .catch(() => {
+        if (active) setAuditIntegrityReport(null);
+      });
     erpApi.getOperationMode()
       .then((response) => {
         if (active) setOperationModeStatus(response.data);
@@ -9984,6 +10013,11 @@ function SettingsBody({ currentUser, page }: { currentUser: AuthUser; page: Page
               loading={privacyAccessLoading}
               report={privacyAccessReport}
               onRefresh={() => void refreshPrivacyAccessReport()}
+            />
+            <AuditIntegrityReportCard
+              loading={auditIntegrityLoading}
+              report={auditIntegrityReport}
+              onRefresh={() => void refreshAuditIntegrityReport()}
             />
             <FinancialReconciliationCard
               loading={financialReconciliationLoading}
@@ -11649,6 +11683,101 @@ function ManualRecoveryCard({
   );
 }
 
+function AuditIntegrityReportCard({
+  loading,
+  report,
+  onRefresh,
+}: {
+  loading: boolean;
+  report: AuditIntegrityReport | null;
+  onRefresh: () => void;
+}) {
+  const sampledLinks = report?.sampledLinks ?? [];
+  const tailHash = report?.summary.tailHash ?? "";
+  return (
+    <section className="erp-card audit-integrity-report-card">
+      <header>
+        <div>
+          <strong>감사 로그 무결성 리포트</strong>
+          <span>{report ? `${report.period.month} · 체인 ${report.summary.chainLength}건 · tail ${tailHash.slice(0, 12)}...` : "감사 로그 hash chain 생성 대기"}</span>
+        </div>
+        <button onClick={onRefresh} type="button">
+          <RefreshCw size={15} />
+          새로고침
+        </button>
+      </header>
+      {loading && <p>감사 로그 무결성 리포트를 생성하는 중입니다.</p>}
+      {!loading && !report && <p>감사 로그 무결성 리포트를 불러오지 못했습니다.</p>}
+      {report && (
+        <>
+          <div className="financial-control-summary">
+            <article>
+              <span>감사 로그</span>
+              <strong>{report.summary.auditLogsReviewed}/{report.summary.totalAuditLogs}</strong>
+            </article>
+            <article>
+              <span>체인 길이</span>
+              <strong>{report.summary.chainLength}건</strong>
+            </article>
+            <article>
+              <span>외부 보관</span>
+              <strong>{report.externalArchive.configured ? "연계" : "미연계"}</strong>
+            </article>
+            <article>
+              <span>점검</span>
+              <strong>{report.summary.checkpointsPassed}/{report.summary.checkpointsTotal}</strong>
+            </article>
+          </div>
+          <div className="retention-check-grid">
+            {report.checkpoints.map((item) => (
+              <article key={item.id} className={item.ok ? undefined : "attention"}>
+                <header>
+                  <strong>{item.label}</strong>
+                  <StatusPill value={item.ok ? "통과" : item.severity === "critical" ? "차단" : "확인"} />
+                </header>
+                <b>{item.owner}</b>
+                <span>{item.detail}</span>
+                <small>{item.evidence}</small>
+              </article>
+            ))}
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>순서</th>
+                <th>대상</th>
+                <th>payload hash</th>
+                <th>chain hash</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sampledLinks.length === 0 ? (
+                <tr>
+                  <td colSpan={4}>이번 기간 감사 로그가 없어 genesis hash만 생성되었습니다.</td>
+                </tr>
+              ) : sampledLinks.map((item) => (
+                <tr key={item.id}>
+                  <td>
+                    <b>#{item.position}</b>
+                    <small>{item.time.slice(0, 16).replace("T", " ")}</small>
+                  </td>
+                  <td>
+                    <b>{item.entityType}</b>
+                    <small>{item.action} · {item.requestId}</small>
+                  </td>
+                  <td>{item.payloadHash.slice(0, 16)}...</td>
+                  <td>{item.recordHash.slice(0, 16)}...</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p>{report.externalArchive.action}</p>
+          <p>{report.rawValuePolicy}</p>
+        </>
+      )}
+    </section>
+  );
+}
 function PrivacyAccessReportCard({
   loading,
   report,

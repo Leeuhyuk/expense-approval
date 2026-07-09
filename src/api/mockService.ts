@@ -5,6 +5,7 @@ import type {
   AccountLifecycleDeactivateResult,
   AccountLifecycleSummary,
   AuditLogSearchResult,
+  AuditIntegrityReport,
   BudgetAdjustmentActionResult,
   BudgetAdjustmentInput,
   BudgetAdjustmentResult,
@@ -400,6 +401,81 @@ function buildMockFinancialControlReport(): FinancialControlReport {
   };
 }
 
+function buildMockAuditIntegrityReport(): AuditIntegrityReport {
+  const now = new Date();
+  const month = now.toISOString().slice(0, 7);
+  const totalAuditLogs = Math.max(2, mockSystemSettingHistoryStore.length + 2);
+  const firstHash = "1".repeat(64);
+  const secondHash = "2".repeat(64);
+  const tailHash = "3".repeat(64);
+  const sampledLinks: AuditIntegrityReport["sampledLinks"] = [
+    {
+      id: "mock-audit-integrity-1",
+      position: 1,
+      time: now.toISOString(),
+      entityType: "system_setting",
+      entityId: "00000000-0000-0000-0000-000000000001",
+      action: "update",
+      actorId: "00000000-0000-0000-0000-000000000011",
+      requestId: "mock-request-audit-integrity-1",
+      payloadHash: firstHash,
+      previousHash: "0".repeat(64),
+      recordHash: secondHash,
+    },
+    {
+      id: "mock-audit-integrity-tail",
+      position: totalAuditLogs,
+      time: now.toISOString(),
+      entityType: "download_request",
+      entityId: "00000000-0000-0000-0000-000000000002",
+      action: "download_request",
+      actorId: "00000000-0000-0000-0000-000000000012",
+      requestId: "mock-request-audit-integrity-tail",
+      payloadHash: secondHash,
+      previousHash: secondHash,
+      recordHash: tailHash,
+    },
+  ];
+  const checkpoints: AuditIntegrityReport["checkpoints"] = [
+    { id: "append_only_controls", label: "감사 로그 append-only 통제", ok: true, severity: "critical", owner: "보안 운영", detail: "수정/삭제 API 금지와 append-only gate가 적용되어 있습니다.", evidence: "release:audit-append-only" },
+    { id: "hash_chain_generated", label: "월 감사 로그 해시 체인", ok: true, severity: "info", owner: "감사 운영", detail: `${month} mock 감사 로그 ${totalAuditLogs}/${totalAuditLogs}건 체인화`, evidence: "algorithm=sha256, version=audit-log-chain:v1" },
+    { id: "hash_chain_or_archive", label: "해시 체인 또는 외부 보관", ok: true, severity: "warning", owner: "운영 책임자", detail: "mock 모드는 내부 해시 체인 tail hash를 제공합니다.", evidence: "AuditLog payload hash chain" },
+    { id: "raw_values_excluded", label: "원문 JSON 미노출", ok: true, severity: "critical", owner: "개인정보 보호 책임자", detail: "beforeValue/afterValue 원문 대신 hash만 표시합니다.", evidence: "sampledLinks payloadHash/recordHash only" },
+  ];
+  return {
+    ok: true,
+    generatedAt: now.toISOString(),
+    algorithm: "sha256",
+    version: "audit-log-chain:v1",
+    payloadFields: ["id", "entityType", "entityId", "actorId", "action", "beforeValue", "afterValue", "reason", "idempotencyKey", "requestId", "ipAddress", "userAgent", "createdAt"],
+    period: {
+      month,
+      start: `${month}-01T00:00:00.000Z`,
+      endExclusive: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)).toISOString(),
+    },
+    summary: {
+      totalAuditLogs,
+      auditLogsReviewed: totalAuditLogs,
+      chainLength: totalAuditLogs,
+      truncated: false,
+      checkpointsPassed: checkpoints.filter((item) => item.ok).length,
+      checkpointsTotal: checkpoints.length,
+      headHash: sampledLinks[0].recordHash,
+      tailHash,
+      externalArchiveConfigured: false,
+    },
+    externalArchive: {
+      configured: false,
+      mode: "hash_chain_only",
+      target: "not configured",
+      evidence: "외부 보관소 연계 설정이 없습니다.",
+      action: "운영 환경에서 AUDIT_ARCHIVE_ENDPOINT, AUDIT_ARCHIVE_BUCKET 또는 AUDIT_ARCHIVE_EVIDENCE를 설정합니다.",
+    },
+    checkpoints,
+    sampledLinks,
+    rawValuePolicy: "감사 로그 무결성 리포트는 beforeValue/afterValue 원문 JSON을 응답하지 않고 payloadHash, previousHash, recordHash만 제공합니다.",
+  };
+}
 function buildMockPermissionReviewReport(): PermissionReviewReport {
   const now = new Date();
   const month = now.toISOString().slice(0, 7);
@@ -1597,6 +1673,10 @@ export function createMockService(): ErpApiService {
     async getPrivacyAccessReport() {
       const report = buildMockPrivacyAccessReport();
       return respond(report, { mode: "mock", ok: report.ok, downloadAccessEvents: report.summary.downloadAccessEvents });
+    },
+    async getAuditIntegrityReport() {
+      const report = buildMockAuditIntegrityReport();
+      return respond(report, { mode: "mock", ok: report.ok, chainLength: report.summary.chainLength });
     },
   };
 }

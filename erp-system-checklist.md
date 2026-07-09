@@ -926,7 +926,8 @@
   - 진행 메모(2026-07-07): `audit_logs`에 `action, createdAt`과 `requestId` 인덱스를 추가하고, `GET /operations/audit-logs`를 `audit:read` 또는 `system:manage` 읽기 전용 route로 구현했다. 검색 query는 `search`, `entityType`, `action`, `requestId`, `actor`, 기간, page/pageSize를 지원하고, 응답에는 actor/entity/action/reason/requestId/ip/userAgent/요약과 감사 로그 보관·아카이브 정책을 포함한다. `beforeValue`/`afterValue` 원문 JSON은 외부 감사 조회 응답에서 제외한다. 보고서 화면에는 `AuditLogSearchCard`를 추가해 외부 감사자가 시스템 설정 권한 없이 감사 로그를 조회할 수 있게 했다. 실제 외부 감사 계정 UAT 증빙은 운영 전 UAT 단계에서 확인해야 한다.
 - [x] P1: 운영자 직접 DB 수정 금지 원칙과 break-glass 절차 문서화
   - 진행 메모(2026-07-08): `docs/admin-manual.md`와 `docs/rollback-break-glass-runbook.md`에 운영자 직접 DB 수정 금지, time-boxed credential, 다중 승인, backup/PITR 확인, before/after 대사, AuditLog/security_events 직접 수정 금지, 권한 revoke 기준을 문서화했다.
-- [ ] P2: 감사 로그 무결성 검증 hash chain 또는 외부 보관소 연계 검토
+- [x] P2: 감사 로그 무결성 검증 hash chain 또는 외부 보관소 연계 검토
+  - 진행 메모(2026-07-09): `backend/src/operations/auditIntegrityReport.ts`와 `GET /operations/audit-integrity-report`를 추가해 월 단위 `AuditLog`를 `createdAt asc, id asc` 순서로 `sha256` hash chain화하고 head/tail hash, checkpoint, 외부 보관소 연계 상태를 반환하도록 했다. 응답은 `beforeValue`/`afterValue` 원문 JSON을 제외하고 `payloadHash`, `previousHash`, `recordHash`만 표시하며, 설정 화면 `보관 정책` 탭에 감사 로그 무결성 리포트 카드를 연결했다. 실제 외부 WORM/감사 저장소 보관 영수증은 운영 환경의 `AUDIT_ARCHIVE_*` 설정과 월마감 증적으로 확인한다.
 
 ### 24.6 백업, 복구, 재해 대응
 

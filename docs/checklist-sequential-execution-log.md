@@ -42,3 +42,8 @@
 | --- | --- | --- | --- | --- |
 | 10 | P2: 정기 권한 검토 리포트와 예외 권한 만료일 관리 | 완료 | `backend/src/operations/permissionReviewReport.ts`와 `GET /operations/permission-review`를 추가해 특권 사용자, 비활성 특권 계정, 예외 권한 만료/만료 예정/만료일 누락, `permission_review` 감사 로그 점검표를 생성한다. 설정 화면 보관 정책 탭에 권한 검토 리포트 카드를 연결하고 mock/remote 서비스 계약과 문서/테스트를 갱신했다. | 실제 production 권한 검토 시 `Role.permissions`의 `exception:<permission>:YYYY-MM-DD` marker, 권한 회수/예외 승인, `permission_review` 감사 로그 증적을 운영 승인 자료에 보관한다. |
 | 11 | P2: 개인정보 처리 현황과 외부 감사용 접근 리포트 생성 | 완료 | `backend/src/operations/privacyAccessReport.ts`와 `GET /operations/privacy-access-report`를 추가해 개인정보 처리 inventory, 계좌 암호화/마스킹 상태, 파일 다운로드 사유, 외부 감사 read-only 접근 이력을 생성한다. 설정 화면 보관 정책 탭에 개인정보 접근 리포트 카드를 연결하고 mock/remote 서비스 계약과 문서/테스트를 갱신했다. | 실제 운영 감사 시 리포트 결과와 접근 사유 누락 0건, 외부 감사 read-only 접근, 원문 개인정보/계좌/signed URL token 미포함 증적을 보관한다. |
+## 24.5 감사 로그 및 컴플라이언스
+
+| 순서 | 체크리스트 항목 | 결과 | 확인 내용 | 다음 조치 |
+| --- | --- | --- | --- | --- |
+| 12 | P2: 감사 로그 무결성 검증 hash chain 또는 외부 보관소 연계 검토 | 완료 | `backend/src/operations/auditIntegrityReport.ts`와 `GET /operations/audit-integrity-report`를 추가해 월 단위 AuditLog hash chain, head/tail hash, checkpoint, 외부 보관소 연계 상태를 반환한다. 설정 화면 보관 정책 탭에 감사 로그 무결성 리포트 카드를 연결하고 mock/remote 서비스 계약과 문서/테스트를 갱신했다. | 운영 월마감 시 tail hash와 외부 WORM/감사 저장소 영수증 또는 `AUDIT_ARCHIVE_*` 설정 증적을 함께 보관한다. |

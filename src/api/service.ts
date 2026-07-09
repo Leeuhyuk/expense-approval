@@ -813,6 +813,67 @@ export type PrivacyAccessReport = {
   checklist: PrivacyAccessChecklistItem[];
   rawValuePolicy: string;
 };
+export type AuditIntegritySeverity = "info" | "warning" | "critical";
+
+export type AuditIntegrityCheckpoint = {
+  id: string;
+  label: string;
+  ok: boolean;
+  severity: AuditIntegritySeverity;
+  owner: string;
+  detail: string;
+  evidence: string;
+};
+
+export type AuditIntegrityHashLink = {
+  id: string;
+  position: number;
+  time: string;
+  entityType: string;
+  entityId: string;
+  action: string;
+  actorId: string;
+  requestId: string;
+  payloadHash: string;
+  previousHash: string;
+  recordHash: string;
+};
+
+export type AuditArchiveStatus = {
+  configured: boolean;
+  mode: string;
+  target: string;
+  evidence: string;
+  action: string;
+};
+
+export type AuditIntegrityReport = {
+  ok: boolean;
+  generatedAt: string;
+  algorithm: string;
+  version: string;
+  payloadFields: string[];
+  period: {
+    month: string;
+    start: string;
+    endExclusive: string;
+  };
+  summary: {
+    totalAuditLogs: number;
+    auditLogsReviewed: number;
+    chainLength: number;
+    truncated: boolean;
+    checkpointsPassed: number;
+    checkpointsTotal: number;
+    headHash: string;
+    tailHash: string;
+    externalArchiveConfigured: boolean;
+  };
+  externalArchive: AuditArchiveStatus;
+  checkpoints: AuditIntegrityCheckpoint[];
+  sampledLinks: AuditIntegrityHashLink[];
+  rawValuePolicy: string;
+};
 export type PaymentMasterVendor = {
   id?: string;
   name: string;
@@ -1011,6 +1072,7 @@ export type ErpApiService = {
   getFinancialControlReport(): Promise<MockApiResponse<FinancialControlReport>>;
   getPermissionReviewReport(): Promise<MockApiResponse<PermissionReviewReport>>;
   getPrivacyAccessReport(): Promise<MockApiResponse<PrivacyAccessReport>>;
+  getAuditIntegrityReport(): Promise<MockApiResponse<AuditIntegrityReport>>;
 };
 
 const resourcePathByPage: Record<PageKey, string> = {
@@ -1642,6 +1704,10 @@ const remoteService: ErpApiService = {
     const data = await requestRemote<PrivacyAccessReport>("/operations/privacy-access-report");
     return remoteResponse(data, { ok: data.ok, downloadAccessEvents: data.summary.downloadAccessEvents, externalAuditorEvents: data.summary.externalAuditorEvents });
   },
+  async getAuditIntegrityReport() {
+    const data = await requestRemote<AuditIntegrityReport>("/operations/audit-integrity-report");
+    return remoteResponse(data, { ok: data.ok, chainLength: data.summary.chainLength, tailHash: data.summary.tailHash });
+  },
 };
 
 let mockServicePromise: Promise<ErpApiService> | null = null;
@@ -1724,4 +1790,5 @@ export const erpApi: ErpApiService = {
   getFinancialControlReport: () => callService("getFinancialControlReport"),
   getPermissionReviewReport: () => callService("getPermissionReviewReport"),
   getPrivacyAccessReport: () => callService("getPrivacyAccessReport"),
+  getAuditIntegrityReport: () => callService("getAuditIntegrityReport"),
 };
