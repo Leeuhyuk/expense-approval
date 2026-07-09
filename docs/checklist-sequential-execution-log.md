@@ -29,3 +29,4 @@
 | 순서 | 체크리스트 항목 | 결과 | 확인 내용 | 다음 조치 |
 | --- | --- | --- | --- | --- |
 | 6 | P1: 네트워크 실패, 서버 500, validation 실패, 중복 클릭, timeout/retry 테스트 추가 | 완료 | `tests/unit/remoteFailureRecovery.test.ts`를 추가해 remote API timeout, network error, non-JSON server failure, safe-method retry, destructive mutation retry 차단, validation envelope, UI duplicate-click/idempotency guard를 정적 회귀 테스트로 고정했다. | 실제 브라우저 network offline과 delayed response는 staging remote-mode E2E에서 추가 증적으로 확인한다. |
+| 7 | P1: 사용자 A/B 간 알림, 즐겨찾기, 권한, 승인 대기 목록 격리 테스트 추가 | 완료 | `tests/unit/userScopeIsolation.test.ts`를 추가해 알림, 즐겨찾기, 시스템 권한, 승인 대기 목록이 현재 인증 사용자 또는 관리자 권한 기준으로 분리되는지 route/source 회귀 테스트로 고정했다. | 실제 두 계정 동시 로그인 브라우저 증적은 staging remote-mode E2E/UAT에서 추가 확인한다. |

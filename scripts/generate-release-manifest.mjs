@@ -98,6 +98,7 @@ export const defaultReleaseManifestSections = [
       "tests/unit/frontendFilePreview.test.ts",
       "tests/unit/frontendFavoritesRemote.test.ts",
       "tests/unit/remoteFailureRecovery.test.ts",
+      "tests/unit/userScopeIsolation.test.ts",
       "tests/e2e/remote-auth-smoke.test.mjs",
       "tests/e2e/remote-ui-persistence.test.mjs",
       "tests/integration/backendDataPersistence.test.ts",
