@@ -1,0 +1,88 @@
+name: Operations improvement
+description: Request an ERP operations, reliability, security, or workflow improvement.
+title: "[Ops] "
+labels:
+  - operations
+body:
+  - type: dropdown
+    id: request_type
+    attributes:
+      label: Request type
+      options:
+        - Reliability
+        - Security or permission
+        - Payment or reconciliation
+        - Data quality or migration
+        - File or report handling
+        - Usability or workflow
+    validations:
+      required: true
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Environment
+      options:
+        - Development
+        - Staging
+        - Production
+        - Multiple environments
+    validations:
+      required: true
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - P0 - Critical operation blocked or unsafe
+        - P1 - Major impact, next release required
+        - P2 - Planned improvement
+        - P3 - Candidate backlog
+    validations:
+      required: true
+  - type: textarea
+    id: current_behavior
+    attributes:
+      label: Current behavior and impact
+      description: Do not include raw account numbers, cookies, secrets, or signed URLs.
+    validations:
+      required: true
+  - type: textarea
+    id: expected_behavior
+    attributes:
+      label: Expected behavior and acceptance criteria
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Add safe requestId values, screen/API names, monitoring links, or incident IDs.
+    validations:
+      required: true
+  - type: textarea
+    id: risk
+    attributes:
+      label: Security, financial, data, and operations risk
+    validations:
+      required: true
+  - type: input
+    id: workaround
+    attributes:
+      label: Current workaround
+  - type: input
+    id: target_release
+    attributes:
+      label: Requested target release
+  - type: input
+    id: owner
+    attributes:
+      label: Proposed owner
+    validations:
+      required: true
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: Data safety confirmation
+      options:
+        - label: I removed personal data, raw account numbers, credentials, cookies, and signed URL tokens.
+          required: true

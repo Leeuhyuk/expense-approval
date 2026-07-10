@@ -1010,7 +1010,8 @@
   - 진행 메모(2026-07-08): `docs/user-training-faq.md`를 추가해 역할별 교육 실습, 운영 FAQ, 오류 신고 양식, requestId 수집/전달 방법, 교육 완료 기준을 문서화했다.
 - [x] P1: 운영 첫 주 hypercare 점검표와 일일 상태 보고 기준 운영
   - 진행 메모(2026-07-08): `docs/hypercare-runbook.md`를 추가해 첫 주 daily check, 일일 상태 보고 템플릿, hypercare 리포트 포함 항목, 2주차 안정화 회고 기준을 문서화했다. 실제 첫 주 실행 증빙은 post go-live P0/P1 항목에서 유지한다.
-- [ ] P2: 정기 점검 일정, 릴리즈 캘린더, 개선 요청 backlog 관리 방식 정의
+- [x] P2: 정기 점검 일정, 릴리즈 캘린더, 개선 요청 backlog 관리 방식 정의
+  - 진행 메모(2026-07-10): `docs/maintenance-release-backlog-policy.md`에 일/주/월/분기/연간 점검, 월간 release calendar, scope freeze, GitHub intake, backlog 상태와 target release 기준을 정의하고 초기 운영 backlog를 실제 남은 환경 증적 항목으로 구성했다.
 
 ## 25. 배포 및 실사용 전환 단계 검토 리스트
 
@@ -1246,7 +1247,8 @@
   - 진행 메모(2026-07-06): post go-live stabilization evidence 템플릿이 hypercare report period, processing count, failure count, average processing time, major inquiry summary, remediation plan, owner/deadline, 사용자 커뮤니케이션 요약을 요구하도록 했다.
 - [ ] P1: go-live 2주 후 운영 안정화 회고와 남은 P1/P2 backlog 우선순위 재조정
   - 진행 메모(2026-07-06): post go-live stabilization evidence 템플릿이 go-live +2 week review, remaining P1/P2 backlog, backlog priority decision, hotfix/next release plan, operations handoff decision, review sign-off를 요구하도록 했다.
-- [ ] P2: 정기 릴리즈 주기, 긴급 hotfix 절차, 운영 개선 요청 intake 프로세스 확정
+- [x] P2: 정기 릴리즈 주기, 긴급 hotfix 절차, 운영 개선 요청 intake 프로세스 확정
+  - 진행 메모(2026-07-10): 매월 둘째 화요일 정기 릴리즈, RC/staging/go-no-go 일정, P0 hotfix dual approval·rollback·집중 관찰·사후 검토, `.github/ISSUE_TEMPLATE/operations-improvement.yml` 구조화 intake를 운영 정책과 release evidence에 연결했다.
 
 ### 25.9 실사용 가능 최종 판정 기준
 
@@ -1264,7 +1266,8 @@
   - 진행 메모(2026-07-06): final acceptance evidence 템플릿이 배포, 모니터링, 백업, 장애 대응, 사용자 지원, 권한/보안 운영 인수 증적과 운영 책임자 sign-off를 요구하도록 했다. 실제 운영 책임자 서명/인수 ID는 아직 없으므로 완료 처리는 보류한다.
 - [ ] P1: 실사용 시작 후 측정한 KPI와 오류율이 go-live 승인 기준 이내
   - 진행 메모(2026-07-06): final acceptance evidence 템플릿이 KPI measurement window, go-live 승인 기준, actual processing KPI, actual error rate, API 5xx rate, approval/disbursement/file/report failure rate, KPI/error-rate decision을 요구하도록 했다.
-- [ ] P2: 향후 개선 backlog가 운영 릴리즈 계획에 편입
+- [x] P2: 향후 개선 backlog가 운영 릴리즈 계획에 편입
+  - 진행 메모(2026-07-10): remote DB E2E, staging 환경 분리, backup/PITR, 역할별 UAT, 첫 업무/KPI 안정화 항목을 OPS-001~OPS-005 초기 운영 backlog로 등록하고 priority, target milestone, owner role, acceptance evidence를 지정했다.
   - 진행 메모(2026-07-06): final acceptance evidence 템플릿이 remaining P1/P2 backlog, 운영 릴리즈 계획, hotfix procedure owner, improvement intake process, next review date를 요구하도록 했다.
 - 2026-07-08: 사용자의 전체 위임 승인 요청을 `docs/release-approval-exceptions.json`에 조건부 예외 승인으로 기록하고, `release:go-live-readiness`와 `release:go-live-readiness-report`가 완료/조건부 승인/미승인 P0를 분리하도록 보강했다. 실제 staging/prod 증빙이 없는 항목은 완료로 변경하지 않는다.
 - 2026-07-08: `npm run release:submission`과 `docs/release-submission-package.md`를 추가해 GitHub main 제출 대상, 위임 승인 ID, target별 조건부 readiness 결과, 남은 strict evidence를 추적 가능한 제출 패키지로 고정했다.

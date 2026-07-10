@@ -30,11 +30,32 @@ const requiredDocs = [
   "docs/user-training-faq.md",
   "docs/cutover-runbook.md",
   "docs/frontend-cache-revalidation-policy.md",
+  "docs/maintenance-release-backlog-policy.md",
   "docs/capacity-planning.md",
   "docs/disaster-recovery-failover-runbook.md",
 ];
 
 const docRequirements = [
+  {
+    file: "docs/maintenance-release-backlog-policy.md",
+    label: "maintenance release policy covers recurring checks, hotfixes, intake, and release-bound backlog",
+    terms: [
+      "Daily",
+      "Weekly",
+      "Monthly",
+      "Quarterly",
+      "Annually",
+      "정기 릴리즈",
+      "scope freeze",
+      "Emergency Hotfix",
+      "Improvement Intake",
+      "operations-improvement.yml",
+      "Backlog Workflow",
+      "target release",
+      "30일",
+      "Initial Operating Backlog",
+    ],
+  },
   {
     file: "docs/capacity-planning.md",
     label: "capacity planning covers monthly forecasts, measured baselines, thresholds, and operator review",

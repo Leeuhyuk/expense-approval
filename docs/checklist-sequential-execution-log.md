@@ -61,3 +61,10 @@
 | 순서 | 체크리스트 항목 | 결과 | 확인 내용 | 다음 조치 |
 | --- | --- | --- | --- | --- |
 | 17 | P2: capacity planning과 월별 데이터 증가량 예측 리포트 작성 | 완료 | DB aggregate count와 첨부 byte baseline, 환경별 증가율·한도, 현재+12개월 forecast, 첫 경고/위험 월, capacity headroom, 권장 조치 API와 시스템 설정 카드를 구현하고 release gate·문서·테스트에 연결했다. | staging/production provider 실제 사용량과 월 1회 대사하고 오차 15% 초과 또는 경고 월 3개월 이내일 때 증설·partition·lifecycle 변경을 승인한다. |
+## 24.10/25.8/25.9 운영 릴리즈와 개선 backlog
+
+| 순서 | 체크리스트 항목 | 결과 | 확인 내용 | 다음 조치 |
+| --- | --- | --- | --- | --- |
+| 18 | P2: 정기 점검 일정, 릴리즈 캘린더, 개선 요청 backlog 관리 방식 정의 | 완료 | 일/주/월/분기/연간 점검, 월간 release calendar, scope freeze, backlog workflow와 target release 기준을 운영 정책으로 정의했다. | 실제 담당자 이름과 연락 채널은 go-live handoff에서 확정한다. |
+| 19 | P2: 정기 릴리즈 주기, 긴급 hotfix 절차, 운영 개선 요청 intake 프로세스 확정 | 완료 | 정기 릴리즈 일정, P0 hotfix dual approval/rollback/monitoring/postmortem, 구조화 GitHub operations improvement form을 추가했다. | 첫 staging/production release에서 issue, PR, release evidence를 연결한다. |
+| 20 | P2: 향후 개선 backlog가 운영 릴리즈 계획에 편입 | 완료 | 남은 실제 환경 증적을 OPS-001~OPS-005로 묶고 priority, target milestone, owner role, acceptance evidence를 지정했다. | 월간 점검과 go-live +2주 회고에서 target release와 우선순위를 갱신한다. |

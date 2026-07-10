@@ -77,6 +77,7 @@
 - staging에서 DB migration과 `/api/health`, `/api/health/version`, `/api/health/db`, `/api/health/storage`, `/api/health/file-security`, `/api/health/jobs`, `/api/health/integrations`, `/api/operations/data-quality`를 먼저 확인한다.
 - 운영 DB에는 seed를 자동 실행하지 않는다.
 - 장애 대응은 `docs/deployment-operations.md`의 절차를 따른다.
+- 정기 점검, 월간 release calendar, emergency hotfix, 운영 개선 intake와 backlog target release 지정은 `docs/maintenance-release-backlog-policy.md`를 따른다. 개선 요청은 `.github/ISSUE_TEMPLATE/operations-improvement.yml`로 접수한다.
 
 ## 운영 인수 보조 문서
 
