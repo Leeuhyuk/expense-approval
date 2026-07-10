@@ -87,6 +87,7 @@ type ApiResponse<T> =
 | `GET` | `/operations/report-jobs` | 보고서 예약 job due schedule, retry/dead-letter/circuit breaker 상태 dry-run 조회 |
 | `POST` | `/operations/report-jobs/run` | 보고서 예약 job을 batch 실행하고 성공/재시도/dead-letter 결과 기록 |
 | `GET` | `/operations/performance-policy` | p95/p99 latency 목표, report job 최대 처리 시간, 대량 다운로드 제한 기준 조회 |
+| `GET` | `/operations/capacity-planning` | DB aggregate count와 첨부 byte 기준 현재+12개월 월별 용량 예측, 첫 경고/위험 월 조회 |
 | `GET` | `/operations/data-quality` | 이관/운영 전 사용자, 권한, 거래처, 예산, 결제 요청, 지급, 첨부파일 정합성 점검 |
 | GET | /operations/data-quality/runs | 데이터 품질 배치 정책과 최근 실행 이력 조회 |
 | POST | /operations/data-quality/run | 즉시 정합성 배치 실행, DataQualityRun 저장, critical 관리자 알림 |
@@ -115,6 +116,8 @@ type ApiResponse<T> =
 `/operations/report-jobs`와 `/operations/report-jobs/run`은 `system:manage` 권한이 필요하다. worker는 `ReportSchedule.nextRunAt <= now`인 활성 예약을 batch로 읽고, 성공 시 `ReportRun(READY)`, 다음 실행 시각, `report_schedule_job_delivered` 감사 로그와 내부 알림을 남긴다. 실패 시 `REPORT_JOB_RETRY_BASE_SECONDS`와 `REPORT_JOB_RETRY_MAX_SECONDS` 기반 exponential backoff로 `nextRunAt`을 재설정하고 `report_schedule_job_failed` 감사 로그를 남기며, `REPORT_JOB_MAX_ATTEMPTS`를 넘으면 schedule을 비활성화하고 `report_schedule_dead_letter` 감사 로그와 운영 알림을 만든다. 최근 실패가 `REPORT_JOB_CIRCUIT_FAILURE_THRESHOLD`/`REPORT_JOB_CIRCUIT_WINDOW_MINUTES` 기준을 넘으면 circuit breaker가 열려 신규 실행을 건너뛴다. `REPORT_DELIVERY_MODE=internal|webhook`, `REPORT_DELIVERY_WEBHOOK_URL`, `REPORT_DELIVERY_WEBHOOK_TOKEN`, `REPORT_JOB_TIMEOUT_MS`, `REPORT_JOB_BATCH_SIZE`로 운영 정책을 조정한다.
 
 `/operations/performance-policy`는 `system:manage` 권한이 필요하며, `PERFORMANCE_P95_TARGET_MS`, `PERFORMANCE_P99_TARGET_MS`, `REPORT_JOB_MAX_PROCESSING_MS`, `REPORT_DOWNLOAD_MAX_ROWS`, `REPORT_DOWNLOAD_MAX_BYTES` 기준과 현재 latency 상태를 반환한다. 보고서 직접 다운로드는 `ReportRun.rowCount`가 `REPORT_DOWNLOAD_MAX_ROWS`를 초과하거나 base64 payload가 `REPORT_DOWNLOAD_MAX_BYTES`를 초과하면 HTTP 413과 `REPORT_DOWNLOAD_ROW_LIMIT_EXCEEDED` 또는 `REPORT_DOWNLOAD_SIZE_LIMIT_EXCEEDED`로 차단한다.
+
+`/operations/capacity-planning`은 `system:manage` 권한이 필요하다. 결제 요청, 승인 단계, 지급, 거래처, 알림, 보고서, 데이터 품질 실행, 감사 로그는 count로 집계하고 첨부는 `Attachment.byteSize` 합계만 사용한다. `CAPACITY_*` 증가율, 평균 row byte, DB/object storage 한도, 경고/위험 임계치로 현재 월과 최대 36개월 forecast, 첫 경고/위험 월, capacity headroom, 권장 조치를 반환하며 원시 개인정보, 계좌 값, 파일 본문은 포함하지 않는다.
 
 `/operations/data-quality`는 `system:manage` 권한이 필요하며, 사용자/역할/부서, 거래처 계좌·세금계산서 정보, 예산 배정/사용액, 미결 결제 요청, 결재 단계, 지급, 첨부파일 orphan 여부, production test marker를 점검한다. critical 실패가 있으면 HTTP 409와 `data.ok=false`를 반환하고, 대사용 총액·건수·상태별 집계를 함께 제공한다. 계좌번호 원문은 응답에 포함하지 않는다.
 | GET | /operations/data-quality/runs | 데이터 품질 배치 정책과 최근 실행 이력 조회 |

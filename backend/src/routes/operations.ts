@@ -5,6 +5,7 @@ import { getRetentionPolicySummary, retentionPolicyFor } from "../domain/retenti
 import { prisma } from "../db/prisma.js";
 import { accountLifecycleScope, getAccountLifecycleCandidates, getAccountLifecycleSummary } from "../operations/accountLifecycle.js";
 import { getBusinessFailureAlertSummary, notifyBusinessFailureOwners } from "../operations/businessFailureAlerts.js";
+import { getCapacityPlanningReport } from "../operations/capacityPlanningReport.js";
 import { getDataQualitySummary } from "../operations/dataQuality.js";
 import { dataQualityJobPolicy, getDataQualityRunArtifact, listDataQualityRuns, runDataQualityJob } from "../operations/dataQualityJobWorker.js";
 import { getFinancialControlReport } from "../operations/financialControlReport.js";
@@ -140,6 +141,16 @@ export const operationsRoutes: FastifyPluginAsync = async (app) => {
     return reply.code(status.ok ? 200 : 503).send(success(request, status));
   });
 
+  app.get("/operations/capacity-planning", async (request, reply) => {
+    const user = await requireAuth(request, reply);
+    if (!user) return;
+    if (!hasPermission(user, "system:manage")) {
+      return fail(reply, "FORBIDDEN", "용량 계획 리포트 조회 권한이 없습니다.", 403);
+    }
+
+    const report = await getCapacityPlanningReport();
+    return reply.send(success(request, report));
+  });
   app.get("/operations/data-quality", async (request, reply) => {
     const user = await requireAuth(request, reply);
     if (!user) return;

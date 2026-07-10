@@ -380,6 +380,16 @@ test("ERP notification and report download smoke flow", async (t) => {
     assert.match(await page.locator(".settings-history-panel").innerText(), /결재 정책 저장/);
     assert.match(await page.locator(".settings-scope-card").innerText(), /신규 결제 요청/);
     assert.match(await page.locator(".settings-scope-card").innerText(), /스냅샷/);
+    await page.locator(".settings-top-tabs button", { hasText: "보관 정책" }).click();
+    await page.waitForSelector(".capacity-planning-card", { timeout: 10_000 });
+    assert.equal(await page.locator(".capacity-planning-card tbody tr").count(), 13);
+    assert.match(await page.locator(".capacity-planning-card").innerText(), /첫 경고 월/);
+    await page.locator(".capacity-planning-card header button").click();
+    await page.waitForFunction(
+      () => document.querySelector(".settings-message")?.textContent?.includes("용량 계획 조회 완료"),
+      null,
+      { timeout: 10_000 },
+    );
     await page.screenshot({ fullPage: true, path: join(artifactDir, "ui-smoke-settings.png") });
 
     await page.goto(`${appUrl}/#favorites`, { waitUntil: "networkidle" });

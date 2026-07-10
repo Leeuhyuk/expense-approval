@@ -273,6 +273,8 @@ export function runPerformanceCapacityChecks({
   const paymentRequests = readProjectFile(root, "backend/src/routes/paymentRequests.ts");
   const rowUtils = readProjectFile(root, "backend/src/routes/rowUtils.ts");
   const performancePolicy = readProjectFile(root, "backend/src/operations/performancePolicy.ts");
+  const capacityPlanning = readProjectFile(root, "backend/src/operations/capacityPlanningReport.ts");
+  const operationsRoutes = readProjectFile(root, "backend/src/routes/operations.ts");
   const attachmentPolicy = readProjectFile(root, "backend/src/security/attachmentPolicy.ts");
   const rateLimit = readProjectFile(root, "backend/src/security/rateLimit.ts");
   const releaseEnv = readProjectFile(root, "scripts/verify-release-env.mjs");
@@ -295,6 +297,10 @@ export function runPerformanceCapacityChecks({
   checkPattern(checks, "performance policy defines p95 and p99 targets", performancePolicy, /PERFORMANCE_P95_TARGET_MS[\s\S]*PERFORMANCE_P99_TARGET_MS/, "response latency targets must be explicit and environment configurable");
   checkPattern(checks, "performance policy defines report job processing budget", performancePolicy, /REPORT_JOB_MAX_PROCESSING_MS/, "report job max processing time must be explicit and environment configurable");
   checkPattern(checks, "performance policy defines report download row and byte limits", performancePolicy, /REPORT_DOWNLOAD_MAX_ROWS[\s\S]*REPORT_DOWNLOAD_MAX_BYTES/, "large report download limits must be explicit and environment configurable");
+  checkPattern(checks, "capacity report projects current plus monthly forecast", capacityPlanning, /CAPACITY_FORECAST_MONTHS[^]*Array[.]from[(][{] length: forecastMonths [+] 1 [}]/, "capacity planning must project a bounded current-plus-monthly forecast");
+  checkPattern(checks, "capacity report uses aggregate counts and attachment bytes only", capacityPlanning, /prisma[.]paymentRequest[.]count[(][)][^]*prisma[.]auditLog[.]count[(][)][^]*prisma[.]attachment[.]aggregate[(][{] _count:[^]*_sum: [{] byteSize: true [}]/, "capacity baseline must use aggregate counts and attachment bytes without raw business data");
+  checkPattern(checks, "capacity report defines database and object storage limits", capacityPlanning, /CAPACITY_DATABASE_LIMIT_BYTES[^]*CAPACITY_OBJECT_STORAGE_LIMIT_BYTES[^]*CAPACITY_WARNING_PERCENT[^]*CAPACITY_CRITICAL_PERCENT/, "capacity thresholds must be environment configurable");
+  checkPattern(checks, "capacity planning API requires system management", operationsRoutes, /app[.]get[(]"[/]operations[/]capacity-planning"[^]*hasPermission[(]user, "system:manage"[)][^]*getCapacityPlanningReport[(][)]/, "capacity planning report must be restricted to system managers");
   checkPattern(checks, "report download enforces policy before response", pageResources, /const rowLimitIssue = reportDownloadLimitIssue\(\{ rowCount: item\.rowCount \}\)[\s\S]*const sizeLimitIssue = reportDownloadLimitIssue\(\{ rowCount: artifactItem\.rowCount, contentBytes: download\.limits\.contentBytes \}\)/s, "report downloads must reject row or payload sizes above policy");
   checkPattern(checks, "file upload policy enforces 10MB maximum", attachmentPolicy, /maxAttachmentBytes\s*=\s*10 \* 1024 \* 1024/, "upload file size policy must remain at 10MB");
   checkPattern(checks, "API body limit is environment controlled", rateLimit, /API_BODY_LIMIT_BYTES[\s\S]*defaultBodyLimitBytes/, "Fastify body limit must remain configurable");

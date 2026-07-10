@@ -55,6 +55,7 @@ import {
   type AuditLogSearchResult,
   type AuditIntegrityReport,
   type BusinessFailureAlertSummary,
+  type CapacityPlanningReport,
   type DataQualityRunList,
   type FileDto,
   type FileOwnerType,
@@ -8726,6 +8727,8 @@ function SettingsBody({ currentUser, page }: { currentUser: AuthUser; page: Page
   const [reportJobLoading, setReportJobLoading] = useState(false);
   const [performancePolicy, setPerformancePolicy] = useState<PerformancePolicyStatus | null>(null);
   const [performancePolicyLoading, setPerformancePolicyLoading] = useState(false);
+  const [capacityPlanningReport, setCapacityPlanningReport] = useState<CapacityPlanningReport | null>(null);
+  const [capacityPlanningLoading, setCapacityPlanningLoading] = useState(false);
   const [manualRecoveryDraft, setManualRecoveryDraft] = useState({
     targetCode: "",
     nextStatus: "오류",
@@ -9144,11 +9147,30 @@ function SettingsBody({ currentUser, page }: { currentUser: AuthUser; page: Page
     }
   };
 
+  const refreshCapacityPlanning = async (showMessage = true) => {
+    setCapacityPlanningLoading(true);
+    try {
+      const response = await erpApi.getCapacityPlanningReport();
+      setCapacityPlanningReport(response.data);
+      if (showMessage) {
+        setSettingsMessage(
+          response.data.actionRequired
+            ? `용량 계획 조회 완료: 첫 경고 ${response.data.summary.firstWarningMonth ?? "-"}, 첫 위험 ${response.data.summary.firstCriticalMonth ?? "-"}입니다.`
+            : `용량 계획 조회 완료: ${response.data.assumptions.forecastMonths}개월 예측 범위에서 임계치 미만입니다.`,
+        );
+      }
+    } catch (error) {
+      if (showMessage) setSettingsMessage(`용량 계획 조회 실패: ${error instanceof Error ? error.message : "리포트를 불러오지 못했습니다."}`);
+    } finally {
+      setCapacityPlanningLoading(false);
+    }
+  };
   const refreshOperationPolicies = async () => {
     await Promise.allSettled([
       refreshOperationMode(false),
       refreshReportJobs(false),
       refreshPerformancePolicy(false),
+      refreshCapacityPlanning(false),
       refreshDataQualityRuns(false),
       refreshRetentionPolicy(false),
       refreshAccountLifecycle(false),
@@ -9159,7 +9181,7 @@ function SettingsBody({ currentUser, page }: { currentUser: AuthUser; page: Page
       refreshPrivacyAccessReport(false),
       refreshAuditIntegrityReport(false),
     ]);
-    setSettingsMessage("운영 모드, 보고서 예약 job, 성능/용량 기준, 데이터 품질 배치, 보관 정책, 계정 수명주기, 재무 대사, 수동 복구, 권한 검토, 개인정보 접근, 감사 로그 무결성 리포트를 새로고침했습니다.");
+    setSettingsMessage("운영 모드, 보고서 예약 job, 성능/용량 기준, 12개월 용량 계획, 데이터 품질 배치, 보관 정책, 계정 수명주기, 재무 대사, 수동 복구, 권한 검토, 개인정보 접근, 감사 로그 무결성 리포트를 새로고침했습니다.");
   };
 
   const refreshPasswordPolicy = async (showMessage = true) => {
@@ -9379,6 +9401,13 @@ function SettingsBody({ currentUser, page }: { currentUser: AuthUser; page: Page
         if (active) setPerformancePolicy(null);
       });
 
+    erpApi.getCapacityPlanningReport()
+      .then((response) => {
+        if (active) setCapacityPlanningReport(response.data);
+      })
+      .catch(() => {
+        if (active) setCapacityPlanningReport(null);
+      });
     erpApi.getPasswordPolicy()
       .then((response) => {
         if (active) setPasswordPolicy(response.data);
@@ -10070,7 +10099,13 @@ function SettingsBody({ currentUser, page }: { currentUser: AuthUser; page: Page
               loading={performancePolicyLoading}
               status={performancePolicy}
               onRefresh={() => void refreshPerformancePolicy()}
-            />            <DataQualityRunCard
+            />
+            <CapacityPlanningCard
+              loading={capacityPlanningLoading}
+              report={capacityPlanningReport}
+              onRefresh={() => void refreshCapacityPlanning()}
+            />
+            <DataQualityRunCard
               data={dataQualityRuns}
               loading={dataQualityLoading}
               onDownload={(runId) => void downloadDataQualityReport(runId)}
@@ -11311,6 +11346,107 @@ function PerformancePolicyCard({
   );
 }
 
+function capacityLevelLabel(level: CapacityPlanningReport["forecast"][number]["level"]) {
+  if (level === "critical") return "위험";
+  if (level === "warning") return "주의";
+  return "정상";
+}
+
+function CapacityPlanningCard({
+  loading,
+  report,
+  onRefresh,
+}: {
+  loading: boolean;
+  report: CapacityPlanningReport | null;
+  onRefresh: () => void;
+}) {
+  const current = report?.forecast[0];
+  return (
+    <section className={report?.actionRequired ? "erp-card capacity-planning-card attention" : "erp-card capacity-planning-card"}>
+      <header>
+        <div>
+          <strong>12개월 용량 계획</strong>
+          <span>{report ? `${report.baselineMonth} baseline · 다음 검토 ${report.summary.nextReviewMonth}` : "월별 데이터 증가량 예측 대기"}</span>
+        </div>
+        <button disabled={loading} onClick={onRefresh} type="button">
+          <RefreshCw size={15} />
+          {loading ? "집계 중" : "새로고침"}
+        </button>
+      </header>
+      {loading && <p>DB 행 수와 첨부 용량을 집계해 월별 증가량을 예측하는 중입니다.</p>}
+      {!loading && !report && <p>용량 계획 리포트를 불러오지 못했습니다.</p>}
+      {report && current && (
+        <>
+          <div className="performance-policy-grid capacity-planning-summary">
+            <article>
+              <span>업무 데이터</span>
+              <strong>{report.baseline.businessRows.toLocaleString("ko-KR")}행</strong>
+              <small>요청·승인·지급·운영 row</small>
+            </article>
+            <article>
+              <span>감사 로그</span>
+              <strong>{report.baseline.auditLogs.toLocaleString("ko-KR")}행</strong>
+              <small>월 증가율 {report.assumptions.auditGrowthPercent}%</small>
+            </article>
+            <article>
+              <span>첨부 저장량</span>
+              <strong>{formatFileSize(report.baseline.attachmentBytes)}</strong>
+              <small>{report.baseline.attachments.toLocaleString("ko-KR")}개 파일</small>
+            </article>
+            <article>
+              <span>첫 경고 월</span>
+              <strong>{report.summary.firstWarningMonth ?? "없음"}</strong>
+              <small>위험 {report.summary.firstCriticalMonth ?? "예측 범위 밖"}</small>
+            </article>
+            <article>
+              <span>용량 여유</span>
+              <strong>{report.summary.capacityHeadroomMonths > report.assumptions.forecastMonths ? "12개월+" : `${report.summary.capacityHeadroomMonths}개월`}</strong>
+              <small>위험 임계치 {report.assumptions.criticalPercent}%</small>
+            </article>
+            <article>
+              <span>현재 상태</span>
+              <strong>{capacityLevelLabel(current.level)}</strong>
+              <small>DB {current.databaseUtilizationPercent}% · 저장소 {current.objectStorageUtilizationPercent}%</small>
+            </article>
+          </div>
+          <div className="capacity-forecast-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>월</th>
+                  <th>업무 행</th>
+                  <th>감사 로그</th>
+                  <th>첨부</th>
+                  <th>DB 사용률</th>
+                  <th>저장소 사용률</th>
+                  <th>상태</th>
+                </tr>
+              </thead>
+              <tbody>
+                {report.forecast.map((item) => (
+                  <tr key={item.month}>
+                    <td>{item.month}</td>
+                    <td>{item.businessRows.toLocaleString("ko-KR")}</td>
+                    <td>{item.auditLogs.toLocaleString("ko-KR")}</td>
+                    <td>{formatFileSize(item.objectStorageBytes)}</td>
+                    <td>{item.databaseUtilizationPercent}%</td>
+                    <td>{item.objectStorageUtilizationPercent}%</td>
+                    <td><StatusPill value={capacityLevelLabel(item.level)} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <ul className="capacity-planning-actions">
+            {report.recommendedActions.map((action) => <li key={action}>{action}</li>)}
+          </ul>
+          <small className="capacity-planning-source">{report.source}</small>
+        </>
+      )}
+    </section>
+  );
+}
 function RetentionPolicyCard({
   loading,
   summary,

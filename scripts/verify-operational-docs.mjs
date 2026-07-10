@@ -30,10 +30,28 @@ const requiredDocs = [
   "docs/user-training-faq.md",
   "docs/cutover-runbook.md",
   "docs/frontend-cache-revalidation-policy.md",
+  "docs/capacity-planning.md",
   "docs/disaster-recovery-failover-runbook.md",
 ];
 
 const docRequirements = [
+  {
+    file: "docs/capacity-planning.md",
+    label: "capacity planning covers monthly forecasts, measured baselines, thresholds, and operator review",
+    terms: [
+      "월별",
+      "Prisma count",
+      "Attachment.byteSize",
+      "CAPACITY_FORECAST_MONTHS",
+      "CAPACITY_DATABASE_LIMIT_BYTES",
+      "CAPACITY_OBJECT_STORAGE_LIMIT_BYTES",
+      "첫 경고 월",
+      "system:manage",
+      "staging",
+      "production",
+      "15%",
+    ],
+  },
   {
     file: "docs/disaster-recovery-failover-runbook.md",
     label: "disaster recovery runbook covers DR failover, DNS, communication, data reconciliation, and failback",

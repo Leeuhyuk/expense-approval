@@ -6707,6 +6707,7 @@ button:disabled {
 .operation-mode-card,
 .report-job-worker-card,
 .performance-policy-card,
+.capacity-planning-card,
 .manual-recovery-card,
 .financial-control-report-card,
 .financial-reconciliation-card {
@@ -6726,6 +6727,7 @@ button:disabled {
 .operation-mode-card header,
 .report-job-worker-card header,
 .performance-policy-card header,
+.capacity-planning-card header,
 .manual-recovery-card header,
 .financial-control-report-card header,
 .financial-reconciliation-card header {
@@ -6749,6 +6751,7 @@ button:disabled {
 .operation-mode-card header div,
 .report-job-worker-card header div,
 .performance-policy-card header div,
+.capacity-planning-card header div,
 .manual-recovery-card header div,
 .financial-control-report-card header div,
 .financial-reconciliation-card header div {
@@ -6771,6 +6774,7 @@ button:disabled {
 .operation-mode-card strong,
 .report-job-worker-card strong,
 .performance-policy-card strong,
+.capacity-planning-card strong,
 .manual-recovery-card strong,
 .financial-control-report-card strong,
 .financial-reconciliation-card strong {
@@ -6793,6 +6797,7 @@ button:disabled {
 .operation-mode-card header span,
 .report-job-worker-card header span,
 .performance-policy-card header span,
+.capacity-planning-card header span,
 .manual-recovery-card header span,
 .financial-control-report-card header span,
 .financial-reconciliation-card header span {
@@ -6809,6 +6814,7 @@ button:disabled {
 .operation-mode-card header button,
 .report-job-worker-card header button,
 .performance-policy-card header button,
+.capacity-planning-card header button,
 .manual-recovery-card header button,
 .financial-control-report-card header button,
 .financial-reconciliation-card header button,
@@ -6838,6 +6844,7 @@ button:disabled {
 .manual-recovery-card table,
 .report-job-worker-card table,
 .performance-policy-card table,
+.capacity-planning-card table,
 .financial-control-report-card table,
 .financial-reconciliation-card table {
   width: 100%;
@@ -6855,6 +6862,7 @@ button:disabled {
 .manual-recovery-card th,
 .report-job-worker-card th,
 .performance-policy-card th,
+.capacity-planning-card th,
 .financial-control-report-card th,
 .financial-reconciliation-card th {
   height: 34px;
@@ -6876,6 +6884,7 @@ button:disabled {
 .manual-recovery-card td,
 .report-job-worker-card td,
 .performance-policy-card td,
+.capacity-planning-card td,
 .financial-control-report-card td,
 .financial-reconciliation-card td {
   height: 34px;
@@ -7437,7 +7446,8 @@ button:disabled {
 .retention-policy-card p,
 .operation-mode-card p,
 .report-job-worker-card p,
-.performance-policy-card p {
+.performance-policy-card p,
+.capacity-planning-card p {
   margin: 0;
   color: #53627a;
   font-size: 13px;
@@ -7446,14 +7456,16 @@ button:disabled {
 
 .operation-mode-card,
 .report-job-worker-card,
-.performance-policy-card {
+.performance-policy-card,
+.capacity-planning-card {
   display: grid;
   gap: 14px;
 }
 
 .operation-mode-card.attention,
 .report-job-worker-card.attention,
-.performance-policy-card.attention {
+.performance-policy-card.attention,
+.capacity-planning-card.attention {
   border-color: #f0c36b;
   background: #fffdf7;
 }
@@ -7560,6 +7572,40 @@ button:disabled {
   border-radius: 999px;
 }
 
+.capacity-planning-card {
+  display: grid;
+  gap: 14px;
+}
+
+.capacity-forecast-table {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.capacity-forecast-table table {
+  min-width: 760px;
+}
+
+.capacity-forecast-table td {
+  white-space: nowrap;
+}
+
+.capacity-planning-actions {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding-left: 20px;
+  color: #53627a;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.55;
+}
+
+.capacity-planning-source {
+  color: #6d7b90;
+  font-size: 11px;
+  font-weight: 800;
+}
 .report-job-worker-card td {
   vertical-align: top;
   line-height: 1.45;

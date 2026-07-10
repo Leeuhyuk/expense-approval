@@ -55,3 +55,9 @@
 | 14 | P1: 운영 로그와 APM trace에서 secret, cookie, 계좌번호, 파일 URL이 마스킹되는지 확인 | 완료 | `sanitizeLogValue`의 key-value secret redaction을 보강하고 `tests/unit/logApmRedaction.test.ts`, `npm run release:log-apm-redaction`을 추가해 logger와 APM trace 형태 payload를 자동 검증한다. | 실제 외부 APM 수집기 화면 캡처와 vendor 설정 증적은 production environment inventory strict evidence로 보관한다. |
 | 15 | P2: DR 환경 전환, DNS failover, 장기 장애 커뮤니케이션 템플릿 준비 | 완료 | docs/disaster-recovery-failover-runbook.md에 전환 승인, DNS failover, 데이터 대사, 장기 장애 공지, failback, 리허설 증적 기준을 정의하고 운영 문서 release gate와 manifest에 연결했다. | 실제 DR endpoint와 DNS provider를 사용한 전환 리허설은 backup/restore P0 증적으로 별도 수행한다. |
 | 16 | P2: 데이터 품질 리포트와 반복 정합성 점검 배치 운영 | 완료 | DataQualityRun DB 이력, scheduleKey 중복 방지 worker, 내부 scheduler, critical 관리자 알림, system:manage 실행/이력/JSON 다운로드 API와 시스템 설정 카드를 연결했다. | Production release env gate에서 worker 활성화와 주기 범위를 강제하고 실제 실행 이력은 DB/release evidence로 보관한다. |
+
+## 24.9 성능, 용량, 안정성
+
+| 순서 | 체크리스트 항목 | 결과 | 확인 내용 | 다음 조치 |
+| --- | --- | --- | --- | --- |
+| 17 | P2: capacity planning과 월별 데이터 증가량 예측 리포트 작성 | 완료 | DB aggregate count와 첨부 byte baseline, 환경별 증가율·한도, 현재+12개월 forecast, 첫 경고/위험 월, capacity headroom, 권장 조치 API와 시스템 설정 카드를 구현하고 release gate·문서·테스트에 연결했다. | staging/production provider 실제 사용량과 월 1회 대사하고 오차 15% 초과 또는 경고 월 3개월 이내일 때 증설·partition·lifecycle 변경을 승인한다. |

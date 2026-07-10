@@ -46,6 +46,7 @@
 - 운영 전 또는 이관 직후 `GET /api/operations/data-quality`로 사용자, 권한, 거래처, 계좌, 예산, 결제 요청, 지급, 첨부파일 정합성을 점검한다.
 - 승인/지급/보고서/알림/파일 처리 실패는 `GET /api/operations/business-failure-alerts`로 확인하고, `POST /api/operations/business-failure-alerts/notify`로 운영 담당자 알림을 생성한다.
 - API 5xx, 로그인 실패, 권한 실패, slow query, 파일 업로드 실패는 `GET /api/operations/alerts`로 확인한다.
+- 시스템 설정의 `보관 정책 > 12개월 용량 계획`에서 현재 DB 행/첨부 byte, 월별 forecast, 첫 경고/위험 월을 확인한다. 월 1회 provider 실측값과 대사하고 오차 15% 초과 또는 경고 월 3개월 이내이면 `docs/capacity-planning.md` 절차로 증설·partition·lifecycle 변경을 승인한다.
 - 장애 대응과 rollback 판단은 `docs/incident-response.md`, `docs/deployment-operations.md`, `docs/rollback-break-glass-runbook.md`를 함께 따른다.
 
 ## 운영자 직접 DB 수정 금지와 Break-Glass

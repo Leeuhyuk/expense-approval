@@ -385,6 +385,61 @@ export type PerformancePolicyStatus = {
   };
 };
 
+export type CapacityPlanningReport = {
+  ok: boolean;
+  actionRequired: boolean;
+  generatedAt: string;
+  baselineMonth: string;
+  source: string;
+  assumptions: {
+    forecastMonths: number;
+    transactionGrowthPercent: number;
+    auditGrowthPercent: number;
+    attachmentGrowthPercent: number;
+    databaseLimitBytes: number;
+    objectStorageLimitBytes: number;
+    averageBusinessRowBytes: number;
+    averageAuditRowBytes: number;
+    averageMetadataRowBytes: number;
+    warningPercent: number;
+    criticalPercent: number;
+  };
+  baseline: {
+    paymentRequests: number;
+    approvalSteps: number;
+    disbursements: number;
+    vendors: number;
+    notifications: number;
+    reportRuns: number;
+    dataQualityRuns: number;
+    auditLogs: number;
+    attachments: number;
+    attachmentBytes: number;
+    businessRows: number;
+    estimatedDatabaseBytes: number;
+  };
+  summary: {
+    firstWarningMonth: string | null;
+    firstCriticalMonth: string | null;
+    capacityHeadroomMonths: number;
+    peakDatabaseUtilizationPercent: number;
+    peakObjectStorageUtilizationPercent: number;
+    nextReviewMonth: string;
+  };
+  forecast: Array<{
+    month: string;
+    offset: number;
+    businessRows: number;
+    auditLogs: number;
+    attachments: number;
+    estimatedDatabaseBytes: number;
+    objectStorageBytes: number;
+    databaseUtilizationPercent: number;
+    objectStorageUtilizationPercent: number;
+    level: "normal" | "warning" | "critical";
+  }>;
+  recommendedActions: string[];
+};
 export type IntegrationTestResult = {
   integrationId: string;
   success: boolean;
@@ -1122,6 +1177,7 @@ export type ErpApiService = {
   getReportJobStatus(): Promise<MockApiResponse<ReportJobRunResult>>;
   runReportJobs(input?: ReportJobRunInput): Promise<MockApiResponse<ReportJobRunResult>>;
   getPerformancePolicy(): Promise<MockApiResponse<PerformancePolicyStatus>>;
+  getCapacityPlanningReport(): Promise<MockApiResponse<CapacityPlanningReport>>;
   listDataQualityRuns(limit?: number): Promise<MockApiResponse<DataQualityRunList>>;
   runDataQualityJob(): Promise<MockApiResponse<DataQualityRunResult>>;
   downloadDataQualityRun(runId: string): Promise<MockApiResponse<DataQualityReportArtifact>>;
@@ -1689,6 +1745,14 @@ const remoteService: ErpApiService = {
     const data = await requestRemote<PerformancePolicyStatus>("/operations/performance-policy");
     return remoteResponse(data, { ok: data.ok, p95TargetMs: data.latency.p95TargetMs, maxReportRows: data.largeDownload.maxReportRows });
   },
+  async getCapacityPlanningReport() {
+    const data = await requestRemote<CapacityPlanningReport>("/operations/capacity-planning");
+    return remoteResponse(data, {
+      ok: data.ok,
+      actionRequired: data.actionRequired,
+      firstWarningMonth: data.summary.firstWarningMonth ?? "",
+    });
+  },
   async listDataQualityRuns(limit = 30) {
     const params = new URLSearchParams({ limit: String(limit) });
     const data = await requestRemote<DataQualityRunList>("/operations/data-quality/runs?" + params.toString());
@@ -1859,6 +1923,7 @@ export const erpApi: ErpApiService = {
   getReportJobStatus: () => callService("getReportJobStatus"),
   runReportJobs: (input) => callService("runReportJobs", input),
   getPerformancePolicy: () => callService("getPerformancePolicy"),
+  getCapacityPlanningReport: () => callService("getCapacityPlanningReport"),
   listDataQualityRuns: (limit) => callService("listDataQualityRuns", limit),
   runDataQualityJob: () => callService("runDataQualityJob"),
   downloadDataQualityRun: (runId) => callService("downloadDataQualityRun", runId),

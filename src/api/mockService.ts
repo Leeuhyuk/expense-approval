@@ -26,6 +26,7 @@ import type {
   ManualRecoveryReviewInput,
   ManualRecoverySummary,
   BusinessFailureAlertSummary,
+  CapacityPlanningReport,
   DataQualityReportArtifact,
   DataQualityRun,
   DataQualityRunList,
@@ -986,6 +987,88 @@ function buildMockPerformancePolicyStatus(): PerformancePolicyStatus {
   };
 }
 
+function buildMockCapacityPlanningReport(): CapacityPlanningReport {
+  const generatedAt = new Date();
+  const databaseLimitBytes = 20 * 1024 ** 3;
+  const objectStorageLimitBytes = 200 * 1024 ** 3;
+  const businessRows = 38_450;
+  const auditLogs = 86_200;
+  const attachments = 24_300;
+  const attachmentBytes = 18 * 1024 ** 3;
+  const forecast = Array.from({ length: 13 }, (_, offset) => {
+    const monthDate = new Date(Date.UTC(generatedAt.getUTCFullYear(), generatedAt.getUTCMonth() + offset, 1));
+    const projectedBusinessRows = Math.round(businessRows * (1.08 ** offset));
+    const projectedAuditLogs = Math.round(auditLogs * (1.12 ** offset));
+    const projectedAttachments = Math.round(attachments * (1.1 ** offset));
+    const estimatedDatabaseBytes = projectedBusinessRows * 2_048 + projectedAuditLogs * 1_536 + projectedAttachments * 1_024;
+    const objectStorageBytes = Math.round(attachmentBytes * (1.1 ** offset));
+    const databaseUtilizationPercent = Number(((estimatedDatabaseBytes / databaseLimitBytes) * 100).toFixed(2));
+    const objectStorageUtilizationPercent = Number(((objectStorageBytes / objectStorageLimitBytes) * 100).toFixed(2));
+    const highest = Math.max(databaseUtilizationPercent, objectStorageUtilizationPercent);
+    return {
+      month: `${monthDate.getUTCFullYear()}-${String(monthDate.getUTCMonth() + 1).padStart(2, "0")}`,
+      offset,
+      businessRows: projectedBusinessRows,
+      auditLogs: projectedAuditLogs,
+      attachments: projectedAttachments,
+      estimatedDatabaseBytes,
+      objectStorageBytes,
+      databaseUtilizationPercent,
+      objectStorageUtilizationPercent,
+      level: highest >= 85 ? "critical" as const : highest >= 70 ? "warning" as const : "normal" as const,
+    };
+  });
+  const firstWarning = forecast.find((item) => item.level !== "normal") ?? null;
+  const firstCritical = forecast.find((item) => item.level === "critical") ?? null;
+  const last = forecast.at(-1) ?? forecast[0];
+  return {
+    ok: forecast[0].level !== "critical",
+    actionRequired: Boolean(firstWarning),
+    generatedAt: generatedAt.toISOString(),
+    baselineMonth: forecast[0].month,
+    source: "mock Prisma aggregate counts + Attachment.byteSize",
+    assumptions: {
+      forecastMonths: 12,
+      transactionGrowthPercent: 8,
+      auditGrowthPercent: 12,
+      attachmentGrowthPercent: 10,
+      databaseLimitBytes,
+      objectStorageLimitBytes,
+      averageBusinessRowBytes: 2_048,
+      averageAuditRowBytes: 1_536,
+      averageMetadataRowBytes: 1_024,
+      warningPercent: 70,
+      criticalPercent: 85,
+    },
+    baseline: {
+      paymentRequests: 12_400,
+      approvalSteps: 18_600,
+      disbursements: 6_200,
+      vendors: 350,
+      notifications: 520,
+      reportRuns: 320,
+      dataQualityRuns: 60,
+      auditLogs,
+      attachments,
+      attachmentBytes,
+      businessRows,
+      estimatedDatabaseBytes: forecast[0].estimatedDatabaseBytes,
+    },
+    summary: {
+      firstWarningMonth: firstWarning?.month ?? null,
+      firstCriticalMonth: firstCritical?.month ?? null,
+      capacityHeadroomMonths: firstCritical?.offset ?? 13,
+      peakDatabaseUtilizationPercent: last.databaseUtilizationPercent,
+      peakObjectStorageUtilizationPercent: last.objectStorageUtilizationPercent,
+      nextReviewMonth: forecast[1].month,
+    },
+    forecast,
+    recommendedActions: [
+      "월 1회 실측 baseline을 갱신하고 예측 오차를 검토합니다.",
+      "첨부 저장소 lifecycle과 AuditLog 보관 정책을 분기별로 검토합니다.",
+    ],
+  };
+}
 function respond<T>(data: T, meta?: MockApiResponse<T>["meta"]): MockApiResponse<T> {
   return { ok: true, data, meta };
 }
@@ -1593,6 +1676,15 @@ export function createMockService(): ErpApiService {
     async getPerformancePolicy() {
       const status = buildMockPerformancePolicyStatus();
       return respond(status, { mode: "mock", ok: status.ok, p95TargetMs: status.latency.p95TargetMs });
+    },
+    async getCapacityPlanningReport() {
+      const report = buildMockCapacityPlanningReport();
+      return respond(report, {
+        mode: "mock",
+        ok: report.ok,
+        actionRequired: report.actionRequired,
+        firstWarningMonth: report.summary.firstWarningMonth ?? "",
+      });
     },
     async listDataQualityRuns(limit = 30) {
       const data: DataQualityRunList = {

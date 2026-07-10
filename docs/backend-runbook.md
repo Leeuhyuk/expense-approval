@@ -133,3 +133,11 @@ DATA_QUALITY_JOB_ENABLED=true로 서버 내부 scheduler를 활성화하고 DATA
 - FAILED 실행: 마스킹된 오류와 requestId를 DataQualityRun에 저장
 
 운영 scheduler 주기는 기본 60분이며 DATA_QUALITY_JOB_HISTORY_LIMIT은 화면 조회 기본 건수를 제어한다. 실행 이력은 DB에 유지되고 시스템 설정의 보관 정책 탭에서 지금 실행, 새로고침, 리포트 다운로드를 수행한다.
+
+## Capacity Planning
+
+- `GET /api/operations/capacity-planning`은 `system:manage` 권한 전용이다.
+- baseline은 Prisma model count와 `Attachment.byteSize` 합계만 사용하며 원시 개인정보, 계좌 값, 파일 본문을 읽지 않는다.
+- `CAPACITY_TRANSACTION_GROWTH_PERCENT`, `CAPACITY_AUDIT_GROWTH_PERCENT`, `CAPACITY_ATTACHMENT_GROWTH_PERCENT`는 최근 3개월 production 실측치로 월 1회 갱신한다.
+- 첫 경고 월이 3개월 이내이면 DB 확장, AuditLog partition/archive, object storage lifecycle 변경을 운영 변경으로 승인한다.
+- 상세 검토 절차와 환경변수는 `docs/capacity-planning.md`를 따른다.
