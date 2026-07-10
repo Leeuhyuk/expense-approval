@@ -52,3 +52,4 @@
 | 순서 | 체크리스트 항목 | 결과 | 확인 내용 | 다음 조치 |
 | --- | --- | --- | --- | --- |
 | 13 | P2: synthetic monitoring으로 로그인부터 지급 전 단계까지 주요 경로 주기 점검 | 완료 | `scripts/run-synthetic-business-monitor.mjs`와 `npm run release:synthetic-monitor`를 추가해 로그인, 주요 업무 조회, 지급 전 목록, 운영 상태를 읽기 전용으로 점검한다. 실패 requestId, latency, output JSON을 운영 monitor 증적으로 남기도록 문서화했다. | staging/prod scheduler에서 5분 또는 10분 주기로 실행하고, go-live 전 최소 24시간 오류율/latency 통과 증빙은 P1 항목에서 별도 보관한다. |
+| 14 | P1: 운영 로그와 APM trace에서 secret, cookie, 계좌번호, 파일 URL이 마스킹되는지 확인 | 완료 | `sanitizeLogValue`의 key-value secret redaction을 보강하고 `tests/unit/logApmRedaction.test.ts`, `npm run release:log-apm-redaction`을 추가해 logger와 APM trace 형태 payload를 자동 검증한다. | 실제 외부 APM 수집기 화면 캡처와 vendor 설정 증적은 production environment inventory strict evidence로 보관한다. |

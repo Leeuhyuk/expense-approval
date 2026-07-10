@@ -23,6 +23,7 @@
     "release:migration-check": "node scripts/verify-migrations.mjs",
     "release:mutation-safety": "node scripts/verify-mutation-safety.mjs",
     "release:sensitive-data": "node scripts/verify-sensitive-data-exposure.mjs",
+    "release:log-apm-redaction": "tsx --test tests/unit/logApmRedaction.test.ts",
     "release:db-test-evidence-run": "node scripts/generate-db-test-evidence.mjs",
     "release:db-test-evidence": "node scripts/verify-db-test-evidence.mjs",
     "release:performance-capacity": "node scripts/verify-performance-capacity.mjs",

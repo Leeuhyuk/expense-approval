@@ -1,8 +1,9 @@
 const sensitiveKeyPattern = /(authorization|cookie|password|secret|signature|token|checksum|credential|csrf|bankaccount|bank_account|accountnumber|account_number|fileurl|signedurl|signed_url|계좌)/i;
 const sensitiveQueryPattern = /([?&](?:token|signature|x-amz-signature|x-amz-credential|authorization|credential|secret|cookie|csrf)=)[^&\s"')]+/gi;
+const sensitiveAssignmentPattern = /\b(authorization|cookie|password|secret|signature|token|checksum|credential|csrf|bankaccount|bank_account|accountnumber|account_number|fileurl|signedurl|signed_url)(\s*[:=]\s*)("?)\S+/gi;
 const signedFileContentPattern = /(\/api\/files\/[^/\s?]+\/content)\?[^ \t\r\n"')]+/gi;
-const dashedAccountPattern = /\b\d{2,6}-\d{2,6}-\d{2,12}\b/g;
-const compactAccountPattern = /\b\d{10,16}\b/g;
+const dashedAccountPattern = /(?<![\d-])\d{2,6}-\d{2,6}-\d{2,12}(?![\d-])/g;
+const compactAccountPattern = /(?<![\d-])\d{10,16}(?![\d-])/g;
 
 function truncate(value: string, maxLength = 1000) {
   return value.length > maxLength ? `${value.slice(0, maxLength)}...` : value;
@@ -12,6 +13,7 @@ export function maskSensitiveLogText(value: string) {
   return truncate(value)
     .replace(signedFileContentPattern, "$1?[redacted]")
     .replace(sensitiveQueryPattern, "$1[redacted]")
+    .replace(sensitiveAssignmentPattern, "$1$2$3[redacted]")
     .replace(dashedAccountPattern, "[redacted-account]")
     .replace(compactAccountPattern, "[redacted-account]");
 }
