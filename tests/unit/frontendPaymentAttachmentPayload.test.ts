@@ -10,8 +10,8 @@ describe("payment request frontend attachment payload", () => {
     assert.match(source, /function withPaymentAttachmentIds/, "payment request saves must decorate payloads with attachment ids");
     assert.match(source, /attachment\.status === "ready" && attachment\.remoteId/, "only completed remote uploads should be sent to the backend");
     assert.match(source, /첨부파일ID: attachmentIds\.join\(","\)/, "attachment ids must be serialized into the table payload");
-    assert.match(source, /withPaymentAttachmentIds\(\{ \.\.\.buildPaymentRequestPatch\(draft, "임시 저장"/, "draft saves must include attachment ids");
-    assert.match(source, /withPaymentAttachmentIds\(\{ \.\.\.buildPaymentRequestPatch\(draft, "제출"/, "submits must include attachment ids");
+    assert.match(source, /withPaymentAttachmentIds\(\s*\{\s*\.\.\.buildPaymentRequestPatch\(draft, "임시 저장"/, "draft saves must include attachment ids");
+    assert.match(source, /withPaymentAttachmentIds\(\s*\{\s*\.\.\.buildPaymentRequestPatch\(draft, "제출"/, "submits must include attachment ids");
     assert.match(source, /function fileMutationKey/, "file upload and delete actions must build stable idempotency keys");
     assert.match(source, /idempotencyKey: `\$\{uploadKey\}:presign`/, "file presign must send an idempotency key");
     assert.match(source, /completeFileUpload\(ticket\.data\.file\.id, \{ idempotencyKey: `\$\{uploadKey\}:complete` \}\)/, "file complete must send an idempotency key");

@@ -482,6 +482,70 @@ export type RetentionPolicySummary = {
   triggered: RetentionPolicyCheck[];
 };
 
+export type DataQualityCheck = {
+  id: string;
+  label: string;
+  ok: boolean;
+  severity: "warning" | "critical";
+  count: number;
+  detail: string;
+  sample?: string[];
+};
+
+export type DataQualitySummary = {
+  ok: boolean;
+  generatedAt: string;
+  summary: Record<string, unknown>;
+  checks: DataQualityCheck[];
+  criticalFailures: DataQualityCheck[];
+  warningFailures: DataQualityCheck[];
+};
+
+export type DataQualityJobPolicy = {
+  enabled: boolean;
+  intervalMinutes: number;
+  historyLimit: number;
+  runOnStart: boolean;
+  startDelayMs: number;
+};
+
+export type DataQualityRun = {
+  id: string;
+  status: "RUNNING" | "COMPLETED" | "FAILED";
+  source: string;
+  scheduleKey: string | null;
+  requestedBy: string | null;
+  requestId: string;
+  summary: DataQualitySummary | null;
+  criticalCount: number;
+  warningCount: number;
+  errorMessage: string | null;
+  startedAt: string;
+  completedAt: string | null;
+};
+
+export type DataQualityRunList = {
+  policy: DataQualityJobPolicy;
+  runs: DataQualityRun[];
+};
+
+export type DataQualityRunResult = {
+  policy: DataQualityJobPolicy;
+  deduplicated: boolean;
+  run: DataQualityRun;
+  summary: DataQualitySummary | null;
+  recipientCount: number;
+  notificationsCreated: number;
+};
+
+export type DataQualityReportArtifact = {
+  fileName: string;
+  contentType: string;
+  contentBase64: string;
+  generatedAt: string;
+  runId: string;
+};
+
 export type AccountLifecycleCandidate = {
   id: string;
   email: string;
@@ -1058,6 +1122,9 @@ export type ErpApiService = {
   getReportJobStatus(): Promise<MockApiResponse<ReportJobRunResult>>;
   runReportJobs(input?: ReportJobRunInput): Promise<MockApiResponse<ReportJobRunResult>>;
   getPerformancePolicy(): Promise<MockApiResponse<PerformancePolicyStatus>>;
+  listDataQualityRuns(limit?: number): Promise<MockApiResponse<DataQualityRunList>>;
+  runDataQualityJob(): Promise<MockApiResponse<DataQualityRunResult>>;
+  downloadDataQualityRun(runId: string): Promise<MockApiResponse<DataQualityReportArtifact>>;
   saveSystemSetting(key: SystemSettingKey, value: unknown, input?: SystemSettingSaveInput): Promise<MockApiResponse<unknown>>;
   testIntegrationSetting(integrationId: string, input?: IntegrationTestInput): Promise<MockApiResponse<IntegrationTestResult>>;
   getRetentionPolicySummary(): Promise<MockApiResponse<RetentionPolicySummary>>;
@@ -1622,6 +1689,22 @@ const remoteService: ErpApiService = {
     const data = await requestRemote<PerformancePolicyStatus>("/operations/performance-policy");
     return remoteResponse(data, { ok: data.ok, p95TargetMs: data.latency.p95TargetMs, maxReportRows: data.largeDownload.maxReportRows });
   },
+  async listDataQualityRuns(limit = 30) {
+    const params = new URLSearchParams({ limit: String(limit) });
+    const data = await requestRemote<DataQualityRunList>("/operations/data-quality/runs?" + params.toString());
+    return remoteResponse(data, { total: data.runs.length, enabled: data.policy.enabled });
+  },
+  async runDataQualityJob() {
+    const data = await requestRemote<DataQualityRunResult>("/operations/data-quality/run", {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    return remoteResponse(data, { runId: data.run.id, criticalCount: data.run.criticalCount, warningCount: data.run.warningCount });
+  },
+  async downloadDataQualityRun(runId) {
+    const data = await requestRemote<DataQualityReportArtifact>("/operations/data-quality/runs/" + encodeURIComponent(runId) + "/download");
+    return remoteResponse(data, { runId, generatedAt: data.generatedAt });
+  },
   async saveSystemSetting(key, value, input = {}) {
     const payload = await requestRemoteEnvelope<unknown>(`/settings/config/${encodeURIComponent(key)}`, {
       method: "PATCH",
@@ -1776,6 +1859,9 @@ export const erpApi: ErpApiService = {
   getReportJobStatus: () => callService("getReportJobStatus"),
   runReportJobs: (input) => callService("runReportJobs", input),
   getPerformancePolicy: () => callService("getPerformancePolicy"),
+  listDataQualityRuns: (limit) => callService("listDataQualityRuns", limit),
+  runDataQualityJob: () => callService("runDataQualityJob"),
+  downloadDataQualityRun: (runId) => callService("downloadDataQualityRun", runId),
   saveSystemSetting: (key, value, input) => callService("saveSystemSetting", key, value, input),
   testIntegrationSetting: (integrationId, input) => callService("testIntegrationSetting", integrationId, input),
   getRetentionPolicySummary: () => callService("getRetentionPolicySummary"),

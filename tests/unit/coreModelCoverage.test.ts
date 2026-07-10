@@ -23,6 +23,7 @@ const backendSources = [
   "backend/src/routes/paymentRequests.ts",
   "backend/src/operations/businessFailureAlerts.ts",
   "backend/src/operations/dataQuality.ts",
+  "backend/src/operations/dataQualityJobWorker.ts",
   "backend/src/operations/operationalAlerts.ts",
   "backend/src/security/securityEvents.ts",
 ].map(read).join("\n");
@@ -61,6 +62,7 @@ const seededModels = [
 const runtimeModels = [
   ["SecurityEvent", "securityEvent"],
   ["AuthSession", "authSession"],
+  ["DataQualityRun", "dataQualityRun"],
 ] as const;
 
 describe("core Prisma model coverage", () => {
@@ -187,6 +189,7 @@ describe("core Prisma model coverage", () => {
       "tests/unit/backendSecurityEvents.test.ts",
       "tests/unit/ciReleaseGates.test.ts",
       "tests/unit/dbTestEvidenceGate.test.ts",
+      "tests/unit/dataQualityBatch.test.ts",
       "tests/unit/failureCorrelation.test.ts",
       "tests/unit/frontendAuthFlow.test.ts",
       "tests/unit/goLiveReadiness.test.ts",

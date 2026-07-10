@@ -325,6 +325,37 @@ function validateApiTrafficControls() {
   }
 }
 
+function validateDataQualityScheduler() {
+  const enabled = isTruthyEnvValue(env("DATA_QUALITY_JOB_ENABLED"));
+  const intervalMinutes = integerEnv("DATA_QUALITY_JOB_INTERVAL_MINUTES", 60);
+  const historyLimit = integerEnv("DATA_QUALITY_JOB_HISTORY_LIMIT", 30);
+  const runOnStart = isTruthyEnvValue(env("DATA_QUALITY_JOB_RUN_ON_START"));
+
+  if (!enabled) {
+    fail("DATA_QUALITY_JOB_ENABLED=true is required for staging/production recurring consistency checks.");
+  } else {
+    pass("Recurring data quality scheduler is enabled.");
+  }
+
+  if (!Number.isFinite(intervalMinutes) || intervalMinutes < 5 || intervalMinutes > 1440) {
+    fail("DATA_QUALITY_JOB_INTERVAL_MINUTES must be between 5 and 1440.");
+  } else {
+    pass("Data quality scheduler interval is within the allowed range.");
+  }
+
+  if (!Number.isFinite(historyLimit) || historyLimit < 10 || historyLimit > 500) {
+    fail("DATA_QUALITY_JOB_HISTORY_LIMIT must be between 10 and 500.");
+  } else {
+    pass("Data quality run history limit is within the allowed range.");
+  }
+
+  if (target === "production" && !runOnStart) {
+    fail("DATA_QUALITY_JOB_RUN_ON_START=true is required for production deployment verification.");
+  } else if (runOnStart) {
+    pass("Data quality startup verification is enabled.");
+  }
+}
+
 function validateAuditAppendOnly() {
   const result = scanAuditAppendOnlyProject(process.cwd());
   if (result.issues.length > 0) {
@@ -641,6 +672,7 @@ if (!allowedTargets.has(target)) {
 } else {
   validateSharedRemoteEnvironment();
   validateApiTrafficControls();
+  validateDataQualityScheduler();
   validateFrontendMockIsolation();
 
   if (env("NODE_ENV") === "production") {

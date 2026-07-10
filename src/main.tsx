@@ -55,6 +55,7 @@ import {
   type AuditLogSearchResult,
   type AuditIntegrityReport,
   type BusinessFailureAlertSummary,
+  type DataQualityRunList,
   type FileDto,
   type FileOwnerType,
   type FinancialControlReport,
@@ -1951,11 +1952,29 @@ function toStoredVendorDocument(file: FileDto): VendorDocument {
 
 function mergeSyncedVendorDocuments(synced: VendorDocument[], current: VendorDocument[]) {
   const syncedIds = new Set(synced.map((document) => document.remoteId ?? document.id));
+  const syncedFingerprints = new Set(synced.map((document) => `${document.fileName}:${document.byteSize}`));
   const transientDocuments = current.filter((document) => {
     const documentKey = document.remoteId ?? document.id;
-    return !syncedIds.has(documentKey) && (document.status === "uploading" || document.status === "error" || document.message === deferredVendorUploadMessage);
+    const fingerprint = `${document.fileName}:${document.byteSize}`;
+    return !syncedIds.has(documentKey)
+      && !syncedFingerprints.has(fingerprint)
+      && (document.status === "uploading" || document.status === "error" || document.message === deferredVendorUploadMessage);
   });
   return [...synced, ...transientDocuments];
+}
+
+function mergeCompletedVendorUploads(uploaded: VendorDocument[], current: VendorDocument[], uploadingIds: Set<string>) {
+  const uploadedRemoteIds = new Set(
+    uploaded
+      .map((document) => document.remoteId)
+      .filter((remoteId): remoteId is string => Boolean(remoteId)),
+  );
+  const retainedDocuments = current.filter((document) => {
+    if (uploadingIds.has(document.id)) return false;
+    const remoteId = document.remoteId ?? document.id;
+    return !uploadedRemoteIds.has(remoteId);
+  });
+  return [...uploaded, ...retainedDocuments];
 }
 
 function fileMutationKey(action: string, ownerType: FileOwnerType, ownerId: string, stableId: string, detail = "") {
@@ -6861,7 +6880,7 @@ function VendorBody({ page }: { page: PageDefinition }) {
     const uploadingIds = new Set(uploadingDocuments.map((document) => document.id));
     setVendorDocuments((current) => ({
       ...current,
-      [vendorName]: [...uploadedDocuments, ...(current[vendorName] ?? []).filter((document) => !uploadingIds.has(document.id))],
+      [vendorName]: mergeCompletedVendorUploads(uploadedDocuments, current[vendorName] ?? [], uploadingIds),
     }));
     replaceUploadRecoveryItems("VENDOR", vendorName, uploadedDocuments, uploadingDocuments.map((document) => document.id));
     const successCount = uploadedDocuments.filter((document) => document.status === "ready").length;
@@ -8682,6 +8701,8 @@ function SettingsBody({ currentUser, page }: { currentUser: AuthUser; page: Page
   const [settingsMessage, setSettingsMessage] = useState("결재 정책, 권한, 알림, 연동 설정은 저장 즉시 신규 작업에 반영됩니다.");
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
   const [settingsLoading, setSettingsLoading] = useState(false);
+  const [dataQualityRuns, setDataQualityRuns] = useState<DataQualityRunList | null>(null);
+  const [dataQualityLoading, setDataQualityLoading] = useState(false);
   const [retentionSummary, setRetentionSummary] = useState<RetentionPolicySummary | null>(null);
   const [retentionLoading, setRetentionLoading] = useState(false);
   const [accountLifecycleSummary, setAccountLifecycleSummary] = useState<AccountLifecycleSummary | null>(null);
@@ -8761,6 +8782,56 @@ function SettingsBody({ currentUser, page }: { currentUser: AuthUser; page: Page
       // Fall back to an in-session history row so the operator still gets immediate feedback.
     }
     if (fallbackDesc && fallbackTag) recordChange(fallbackDesc, fallbackTag);
+  };
+
+  const refreshDataQualityRuns = async (showMessage = true) => {
+    setDataQualityLoading(true);
+    try {
+      const response = await erpApi.listDataQualityRuns();
+      setDataQualityRuns(response.data);
+      if (showMessage) {
+        const latest = response.data.runs[0];
+        setSettingsMessage(
+          latest
+            ? "데이터 품질 이력 조회 완료: 최근 실행 critical " + latest.criticalCount + "건, warning " + latest.warningCount + "건."
+            : "데이터 품질 실행 이력이 없습니다. 지금 실행으로 첫 리포트를 생성하세요.",
+        );
+      }
+    } catch (error) {
+      if (showMessage) setSettingsMessage("데이터 품질 이력 조회 실패: " + (error instanceof Error ? error.message : "실행 이력을 불러오지 못했습니다."));
+    } finally {
+      setDataQualityLoading(false);
+    }
+  };
+
+  const runDataQualityBatch = async () => {
+    setDataQualityLoading(true);
+    try {
+      const response = await erpApi.runDataQualityJob();
+      const refreshed = await erpApi.listDataQualityRuns();
+      setDataQualityRuns(refreshed.data);
+      setSettingsMessage(
+        "데이터 품질 배치 완료: critical " + response.data.run.criticalCount + "건, warning " + response.data.run.warningCount + "건, 관리자 알림 " + response.data.notificationsCreated + "건.",
+      );
+      await refreshSettingsHistory("데이터 품질 정합성 배치 실행", "운영 변경");
+    } catch (error) {
+      setSettingsMessage("데이터 품질 배치 실패: " + (error instanceof Error ? error.message : "배치를 실행하지 못했습니다."));
+    } finally {
+      setDataQualityLoading(false);
+    }
+  };
+
+  const downloadDataQualityReport = async (runId: string) => {
+    setDataQualityLoading(true);
+    try {
+      const response = await erpApi.downloadDataQualityRun(runId);
+      triggerBase64Download(response.data.fileName, response.data.contentType, response.data.contentBase64);
+      setSettingsMessage("데이터 품질 리포트 다운로드 완료: " + response.data.fileName);
+    } catch (error) {
+      setSettingsMessage("데이터 품질 리포트 다운로드 실패: " + (error instanceof Error ? error.message : "리포트를 내려받지 못했습니다."));
+    } finally {
+      setDataQualityLoading(false);
+    }
   };
 
   const refreshRetentionPolicy = async (showMessage = true) => {
@@ -9078,6 +9149,7 @@ function SettingsBody({ currentUser, page }: { currentUser: AuthUser; page: Page
       refreshOperationMode(false),
       refreshReportJobs(false),
       refreshPerformancePolicy(false),
+      refreshDataQualityRuns(false),
       refreshRetentionPolicy(false),
       refreshAccountLifecycle(false),
       refreshFinancialReconciliation(false),
@@ -9087,7 +9159,7 @@ function SettingsBody({ currentUser, page }: { currentUser: AuthUser; page: Page
       refreshPrivacyAccessReport(false),
       refreshAuditIntegrityReport(false),
     ]);
-    setSettingsMessage("운영 모드, 보고서 예약 job, 성능/용량 기준, 보관 정책, 계정 수명주기, 재무 대사, 수동 복구, 권한 검토, 개인정보 접근, 감사 로그 무결성 리포트를 새로고침했습니다.");
+    setSettingsMessage("운영 모드, 보고서 예약 job, 성능/용량 기준, 데이터 품질 배치, 보관 정책, 계정 수명주기, 재무 대사, 수동 복구, 권한 검토, 개인정보 접근, 감사 로그 무결성 리포트를 새로고침했습니다.");
   };
 
   const refreshPasswordPolicy = async (showMessage = true) => {
@@ -9212,6 +9284,14 @@ function SettingsBody({ currentUser, page }: { currentUser: AuthUser; page: Page
       })
       .catch(() => {
         if (active) setSettingsMessage("설정 변경 이력 조회 실패: 로컬 기본 이력을 표시합니다.");
+      });
+
+    erpApi.listDataQualityRuns()
+      .then((response) => {
+        if (active) setDataQualityRuns(response.data);
+      })
+      .catch(() => {
+        if (active) setDataQualityRuns(null);
       });
 
     erpApi.getRetentionPolicySummary()
@@ -9990,6 +10070,12 @@ function SettingsBody({ currentUser, page }: { currentUser: AuthUser; page: Page
               loading={performancePolicyLoading}
               status={performancePolicy}
               onRefresh={() => void refreshPerformancePolicy()}
+            />            <DataQualityRunCard
+              data={dataQualityRuns}
+              loading={dataQualityLoading}
+              onDownload={(runId) => void downloadDataQualityReport(runId)}
+              onRefresh={() => void refreshDataQualityRuns()}
+              onRun={() => void runDataQualityBatch()}
             />
             <RetentionPolicyCard
               loading={retentionLoading}
@@ -11401,6 +11487,109 @@ function AccountLifecycleCard({
                   <td>{candidate.email}</td>
                   <td>{candidate.lastLoginAt ? candidate.lastLoginAt.slice(0, 10) : `생성 ${candidate.createdAt.slice(0, 10)}`}</td>
                   <td>{candidate.reasons.map((item) => item === "dormant" ? "휴면" : "퇴사자").join(", ")}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+    </section>
+  );
+}
+
+function DataQualityRunCard({
+  data,
+  loading,
+  onDownload,
+  onRefresh,
+  onRun,
+}: {
+  data: DataQualityRunList | null;
+  loading: boolean;
+  onDownload: (runId: string) => void;
+  onRefresh: () => void;
+  onRun: () => void;
+}) {
+  const latest = data?.runs[0] ?? null;
+  return (
+    <section className="erp-card financial-reconciliation-card data-quality-run-card">
+      <header>
+        <div>
+          <strong>데이터 품질 배치</strong>
+          <span>
+            {data
+              ? (data.policy.enabled ? "자동 실행 " + data.policy.intervalMinutes + "분 주기" : "자동 실행 비활성") + " · 이력 " + data.runs.length + "건"
+              : "배치 정책과 실행 이력 조회 대기"}
+          </span>
+        </div>
+        <div className="financial-reconciliation-actions">
+          <button disabled={loading} onClick={onRefresh} type="button" title="데이터 품질 실행 이력 새로고침">
+            <RefreshCw size={15} />
+            새로고침
+          </button>
+          <button disabled={loading} onClick={onRun} type="button">
+            <Database size={15} />
+            지금 실행
+          </button>
+          <button disabled={loading || !latest} onClick={() => latest && onDownload(latest.id)} type="button">
+            <Download size={15} />
+            리포트
+          </button>
+        </div>
+      </header>
+      {loading && <p>데이터 품질 정합성 배치를 처리하는 중입니다.</p>}
+      {!loading && !data && <p>데이터 품질 실행 이력을 불러오지 못했습니다.</p>}
+      {data && (
+        <>
+          <div className="financial-reconciliation-summary">
+            <article>
+              <span>최근 상태</span>
+              <strong>{latest?.status ?? "미실행"}</strong>
+            </article>
+            <article>
+              <span>Critical</span>
+              <strong>{latest?.criticalCount ?? 0}건</strong>
+            </article>
+            <article>
+              <span>Warning</span>
+              <strong>{latest?.warningCount ?? 0}건</strong>
+            </article>
+            <article>
+              <span>최근 실행</span>
+              <strong>{latest ? latest.startedAt.slice(0, 16).replace("T", " ") : "-"}</strong>
+            </article>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>실행 시각</th>
+                <th>구분</th>
+                <th>상태</th>
+                <th>Critical</th>
+                <th>Warning</th>
+                <th>리포트</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.runs.length === 0 ? (
+                <tr>
+                  <td colSpan={6}>실행 이력이 없습니다.</td>
+                </tr>
+              ) : data.runs.slice(0, 8).map((run) => (
+                <tr key={run.id}>
+                  <td>
+                    <b>{run.startedAt.slice(0, 16).replace("T", " ")}</b>
+                    <small>{run.requestId}</small>
+                  </td>
+                  <td>{run.source === "scheduled" ? "예약" : run.source === "startup" ? "시작 점검" : "수동"}</td>
+                  <td><StatusPill value={run.status === "COMPLETED" ? (run.criticalCount > 0 ? "위험" : "완료") : run.status === "FAILED" ? "오류" : "진행"} /></td>
+                  <td>{run.criticalCount}건</td>
+                  <td>{run.warningCount}건</td>
+                  <td>
+                    <button disabled={loading || run.status !== "COMPLETED"} onClick={() => onDownload(run.id)} type="button" title="데이터 품질 JSON 리포트 다운로드">
+                      <Download size={14} />
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>

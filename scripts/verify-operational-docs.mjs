@@ -30,9 +30,28 @@ const requiredDocs = [
   "docs/user-training-faq.md",
   "docs/cutover-runbook.md",
   "docs/frontend-cache-revalidation-policy.md",
+  "docs/disaster-recovery-failover-runbook.md",
 ];
 
 const docRequirements = [
+  {
+    file: "docs/disaster-recovery-failover-runbook.md",
+    label: "disaster recovery runbook covers DR failover, DNS, communication, data reconciliation, and failback",
+    terms: [
+      "DR 환경 인벤토리",
+      "DNS Failover 절차",
+      "ERP_OPERATION_MODE=read_only",
+      "release:core-smoke",
+      "data-quality",
+      "장기 장애 커뮤니케이션 템플릿",
+      "RTO 초과 공지",
+      "Failback 절차",
+      "release manifest",
+      "RPO",
+      "TTL",
+      "synthetic monitor",
+    ],
+  },
   {
     file: "docs/environment-separation-matrix-template.md",
     label: "environment separation matrix covers dev/staging/production isolation and promotion controls",
@@ -279,6 +298,7 @@ function checkCrossReferences(projectRoot) {
   const deployment = readProjectFile(projectRoot, "docs/deployment-operations.md");
   const admin = readProjectFile(projectRoot, "docs/admin-manual.md");
   const incident = readProjectFile(projectRoot, "docs/incident-response.md");
+  const disasterRecovery = readProjectFile(projectRoot, "docs/disaster-recovery-failover-runbook.md");
   const checks = [
     {
       label: "admin manual points to incident and deployment runbooks",
@@ -294,6 +314,14 @@ function checkCrossReferences(projectRoot) {
       label: "incident runbook keeps release evidence in post-incident records",
       ok: includesTerm(incident, "release manifest hash") && includesTerm(incident, "migration review hash"),
       detail: "incident records must retain release evidence",
+    },
+    {
+      label: "deployment and admin runbooks point to disaster recovery failover",
+      ok:
+        includesTerm(deployment, "docs/disaster-recovery-failover-runbook.md") &&
+        includesTerm(admin, "docs/disaster-recovery-failover-runbook.md") &&
+        includesTerm(disasterRecovery, "docs/incident-response.md"),
+      detail: "DR failover must be linked from operator handoff and incident response",
     },
   ];
   return checks;

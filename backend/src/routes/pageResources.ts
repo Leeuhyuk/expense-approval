@@ -1804,7 +1804,7 @@ export const budgetRoutes: FastifyPluginAsync = async (app) => {
       return reply.send(success(request, {
         adjustment: toBudgetAdjustmentRow(before),
         budget: budget ? toBudgetRow(budget) : null,
-        rollbackPolicy: before.status === BudgetAdjustmentStatus.APPLIED ? "이미 원장 반영됨 · 반대 조정 또는 보정 전표 필요" : "원장 변경 없음",
+        rollbackPolicy: "원장 변경 없음",
       }, { idempotencyReplay: true }));
     }
     if (before.status === BudgetAdjustmentStatus.APPLIED) {
@@ -2425,8 +2425,8 @@ export const reportRoutes: FastifyPluginAsync = async (app) => {
           보고서명: artifactItem.name,
           형식: format,
           파일명: download.fileName,
-          행수: artifactItem.rowCount,
-          contentBytes: download.limits.contentBytes,
+          행수: String(artifactItem.rowCount),
+          contentBytes: String(download.limits.contentBytes),
           artifactKey: artifactItem.artifactKey ?? "",
         }),
         reason: "보고서 다운로드",

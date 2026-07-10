@@ -12,6 +12,7 @@ import { notificationRoutes } from "./routes/notifications.js";
 import { operationsRoutes } from "./routes/operations.js";
 import { budgetRoutes, dashboardRoutes, favoriteRoutes, reportRoutes, settingRoutes, vendorRoutes } from "./routes/pageResources.js";
 import { paymentRequestRoutes } from "./routes/paymentRequests.js";
+import { registerDataQualityScheduler } from "./operations/dataQualityJobWorker.js";
 import { enforceOperationModeRestriction } from "./operations/operationMode.js";
 import { apiBodyLimitBytes, createRateLimitHook } from "./security/rateLimit.js";
 import { createSafeLoggerOptions } from "./security/logRedaction.js";
@@ -83,6 +84,8 @@ export async function buildApp(options: BuildAppOptions = {}) {
   await app.register(reportRoutes, { prefix: "/api" });
   await app.register(settingRoutes, { prefix: "/api" });
   await app.register(favoriteRoutes, { prefix: "/api" });
+
+  registerDataQualityScheduler(app);
 
   return app;
 }

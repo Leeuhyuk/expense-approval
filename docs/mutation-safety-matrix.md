@@ -28,6 +28,13 @@
 | 알림 읽음 | `PATCH /notifications/{id}/read`, `POST /notifications/read-all` | `readAt`이 없을 때만 갱신하는 멱등성 작업이다. 같은 요청 반복은 같은 읽음 상태로 수렴한다. |
 | 인증 세션 | `POST /auth/login`, `/auth/logout`, `/auth/refresh` | 업무 rowVersion 대상이 아니다. 세션 DB, HttpOnly cookie, CSRF cookie rotation, 보안 이벤트로 통제한다. |
 | 운영 알림 발송 | `POST /operations/business-failure-alerts/notify` | 업무 실패 window 안에서 사용자/도메인별 중복 알림 생성을 피하는 운영성 멱등 기준을 사용한다. |
+| 비밀번호 변경 | POST /auth/password/change, POST /auth/password/change-expired | password hash 변경, 전체 세션 revoke, password_change 감사 로그를 한 transaction에 기록한다. |
+| 예산 조정 종료 | POST /budgets/{departmentName}/adjustments/{adjustmentId}/{action} | idempotencyKey replay, pending 상태 updateMany lock, 감사 로그로 취소/반려 중복 처리를 차단한다. |
+| 계정 수명주기 | POST /operations/account-lifecycle/deactivate | idempotencyKey, candidate snapshot, 활성 사용자 조건부 updateMany, 세션 revoke, 감사 로그 transaction을 사용한다. |
+| 보고서 예약 worker | POST /operations/report-jobs/run | due schedule rowVersion, retry/dead-letter/circuit breaker, requestedBy 감사 기준으로 중복 발송과 실패를 통제한다. |
+| 데이터 품질 배치 | POST /operations/data-quality/run | DataQualityRun 실행 이력과 requestId를 저장하고 scheduled 실행은 unique scheduleKey로 중복을 차단한다. 수동 실행은 독립 리포트 생성으로 기록한다. |
+| 재무 대사 알림 | POST /operations/financial-reconciliation/notify | 실행 시점 summary와 운영 담당자별 기존 알림을 대사해 중복 알림 생성을 피한다. |
+| 수동 복구 | POST /operations/manual-recoveries, POST /operations/manual-recoveries/{recoveryId}/approve, POST /operations/manual-recoveries/{recoveryId}/reject | request/review idempotencyKey, 요청자/승인자 분리, pending 상태 lock, 감사 로그 transaction을 helper에서 강제한다. |
 
 ## Frontend Recovery
 

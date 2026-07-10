@@ -5,14 +5,16 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { chromium } from "playwright";
 
-const appUrl = process.env.E2E_BASE_URL ?? "http://127.0.0.1:5173";
+const appUrl = process.env.E2E_BASE_URL ?? "http://127.0.0.1:3000";
 const projectRoot = process.cwd();
 const artifactDir = join(projectRoot, "generated-images", "automated-tests");
 
 async function isServerReady() {
   try {
     const response = await fetch(appUrl, { signal: AbortSignal.timeout(1500) });
-    return response.ok;
+    if (!response.ok) return false;
+    const html = await response.text();
+    return html.includes("<title>결제 요청 승인 ERP</title>");
   } catch {
     return false;
   }
@@ -127,7 +129,7 @@ test("ERP notification and report download smoke flow", async (t) => {
     await page.locator(".approval-request-table tbody tr", { hasText: "PR-2024-0051" }).click();
     await page.locator(".approval-bulk-button").click();
     await page.waitForFunction(
-      () => document.querySelector(".panel-action-message")?.textContent?.includes("일괄 승인 완료"),
+      () => document.querySelector(".panel-action-message")?.textContent?.includes("일괄 승인 요청 완료"),
       null,
       { timeout: 10_000 },
     );
@@ -153,18 +155,15 @@ test("ERP notification and report download smoke flow", async (t) => {
     assert.match(await page.locator(".panel-action-message").first().innerText(), /부분 실패|재시도/);
     await page.locator(".disbursement-request-table tbody tr", { hasText: "PMT-2024-0083" }).click();
     await page.waitForSelector(".disbursement-error-card", { timeout: 10_000 });
-    await page.locator(".disbursement-detail-actions button", { hasText: "재처리" }).click();
-    await page.waitForFunction(
-      () => document.querySelector(".panel-action-message")?.textContent?.includes("계좌 재확인 후 재처리"),
-      null,
-      { timeout: 10_000 },
-    );
+    const retryButton = page.locator(".disbursement-detail-actions button", { hasText: "재처리" });
+    assert.equal(await retryButton.isDisabled(), true);
     await page.locator(".disbursement-account-card button", { hasText: "계좌 재확인" }).click();
     await page.waitForFunction(
       () => document.querySelector(".panel-action-message")?.textContent?.includes("계좌 확인 완료"),
       null,
       { timeout: 10_000 },
     );
+
     await page.locator(".disbursement-reason-field textarea").fill("계좌 확인 후 지급 일정 재검토");
     await page.locator(".disbursement-detail-actions button", { hasText: "보류" }).click();
     await page.waitForFunction(
@@ -248,6 +247,7 @@ test("ERP notification and report download smoke flow", async (t) => {
       null,
       { timeout: 10_000 },
     );
+
     const vendorDocumentDownload = await Promise.all([
       page.waitForEvent("download"),
       page.locator("button[aria-label='사업자등록증_신규거래처.pdf 다운로드']").click(),
@@ -369,6 +369,8 @@ test("ERP notification and report download smoke flow", async (t) => {
       null,
       { timeout: 10_000 },
     );
+    await page.locator(".settings-top-tabs button", { hasText: "결재 정책" }).click();
+    await page.waitForSelector(".settings-policy-grid", { timeout: 10_000 });
     await page.locator(".settings-actions .save", { hasText: "저장" }).click();
     await page.waitForFunction(
       () => document.querySelector(".settings-message")?.textContent?.includes("결재 정책이 저장"),

@@ -139,7 +139,7 @@ type BudgetAlertEvent = {
   entityId: string;
   title: string;
   message: string;
-  status: BudgetStatus.WARNING | BudgetStatus.EXCEEDED;
+  status: "WARNING" | "EXCEEDED";
 };
 
 function budgetAlertEvent(input: {
@@ -154,6 +154,9 @@ function budgetAlertEvent(input: {
   approvedAmount: number;
 }) {
   if (budgetStatusSeverity(input.nextStatus) <= budgetStatusSeverity(input.beforeStatus) || budgetStatusSeverity(input.nextStatus) === 0) {
+    return null;
+  }
+  if (input.nextStatus !== BudgetStatus.WARNING && input.nextStatus !== BudgetStatus.EXCEEDED) {
     return null;
   }
   const allocated = Number(input.allocatedAmount);

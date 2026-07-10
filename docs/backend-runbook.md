@@ -122,3 +122,14 @@ npm run dev
 ```
 
 remote mode에서는 `src/api/service.ts`가 `VITE_ERP_API_BASE_URL`을 통해 실제 백엔드 목록 API를 호출한다. 화면 컴포넌트는 `erpApi`만 사용하므로 mock/remote 전환 시 UI 코드 변경이 필요 없다.
+## 데이터 품질 반복 배치
+
+DATA_QUALITY_JOB_ENABLED=true로 서버 내부 scheduler를 활성화하고 DATA_QUALITY_JOB_INTERVAL_MINUTES로 실행 주기를 설정한다. Production은 DATA_QUALITY_JOB_RUN_ON_START=true를 사용해 배포 직후 첫 점검을 기록한다. 동일 주기 bucket의 scheduleKey는 unique이므로 여러 backend replica가 동시에 실행해도 DataQualityRun은 한 번만 생성된다.
+
+- GET /api/operations/data-quality/runs: 배치 정책과 최근 실행 이력 조회
+- POST /api/operations/data-quality/run: system:manage 운영자의 즉시 실행
+- GET /api/operations/data-quality/runs/{runId}/download: 서버 저장 summary JSON 리포트 다운로드
+- critical 실패: system:manage 권한 사용자에게 OPERATIONAL_ALERT 알림 생성
+- FAILED 실행: 마스킹된 오류와 requestId를 DataQualityRun에 저장
+
+운영 scheduler 주기는 기본 60분이며 DATA_QUALITY_JOB_HISTORY_LIMIT은 화면 조회 기본 건수를 제어한다. 실행 이력은 DB에 유지되고 시스템 설정의 보관 정책 탭에서 지금 실행, 새로고침, 리포트 다운로드를 수행한다.

@@ -336,3 +336,9 @@ Object storage와 report artifact:
 - 파일 업로드는 확장자, `Content-Type`, 10MB 제한, malware scan을 통과해야 하며 blocked 파일은 object storage에 저장하지 않고 quarantine metadata로 남는다.
 - 알림 보관 기간과 배치 정리 정책이 설정되어 있다.
 - 배포 전 자동화 테스트와 빌드가 모두 통과한다.
+## DR 전환과 장기 장애
+
+Primary 장기 장애의 DR 환경 전환, DNS failover, 데이터 대사, 장기 장애 공지, failback은 docs/disaster-recovery-failover-runbook.md를 따른다. release:operational-docs는 이 문서의 승인 기준, read-only 전환, DNS TTL/propagation, core smoke, data-quality, RTO 초과 공지, failback, 리허설 증적 항목을 검증한다.
+## 데이터 품질 배치 운영
+
+Production backend는 DATA_QUALITY_JOB_ENABLED=true, DATA_QUALITY_JOB_RUN_ON_START=true로 반복 정합성 배치를 활성화한다. DATA_QUALITY_JOB_INTERVAL_MINUTES는 5~1440분, DATA_QUALITY_JOB_HISTORY_LIMIT은 10~500 범위로 설정한다. 배포 후 /api/operations/data-quality/runs에서 최근 COMPLETED 실행, critical/warning count, requestId를 확인하고 JSON 리포트를 release evidence에 보관한다.

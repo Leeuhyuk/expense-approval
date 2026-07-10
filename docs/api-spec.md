@@ -88,6 +88,9 @@ type ApiResponse<T> =
 | `POST` | `/operations/report-jobs/run` | 보고서 예약 job을 batch 실행하고 성공/재시도/dead-letter 결과 기록 |
 | `GET` | `/operations/performance-policy` | p95/p99 latency 목표, report job 최대 처리 시간, 대량 다운로드 제한 기준 조회 |
 | `GET` | `/operations/data-quality` | 이관/운영 전 사용자, 권한, 거래처, 예산, 결제 요청, 지급, 첨부파일 정합성 점검 |
+| GET | /operations/data-quality/runs | 데이터 품질 배치 정책과 최근 실행 이력 조회 |
+| POST | /operations/data-quality/run | 즉시 정합성 배치 실행, DataQualityRun 저장, critical 관리자 알림 |
+| GET | /operations/data-quality/runs/{runId}/download | 저장된 실행 summary를 backend 생성 JSON 리포트로 다운로드 |
 | `GET` | `/operations/financial-reconciliation` | 예산 사용액, 승인 요청, 지급 완료, 보고서 드릴다운 스냅샷 금액 대사 |
 | `POST` | `/operations/financial-reconciliation/notify` | 재무 대사 불일치 발생 시 `system:manage` 담당자에게 운영 알림 생성 |
 | `GET` | `/operations/manual-recoveries` | 관리자 수동 복구 요청, 승인, 반려 이력과 대기 건 조회 |
@@ -114,6 +117,9 @@ type ApiResponse<T> =
 `/operations/performance-policy`는 `system:manage` 권한이 필요하며, `PERFORMANCE_P95_TARGET_MS`, `PERFORMANCE_P99_TARGET_MS`, `REPORT_JOB_MAX_PROCESSING_MS`, `REPORT_DOWNLOAD_MAX_ROWS`, `REPORT_DOWNLOAD_MAX_BYTES` 기준과 현재 latency 상태를 반환한다. 보고서 직접 다운로드는 `ReportRun.rowCount`가 `REPORT_DOWNLOAD_MAX_ROWS`를 초과하거나 base64 payload가 `REPORT_DOWNLOAD_MAX_BYTES`를 초과하면 HTTP 413과 `REPORT_DOWNLOAD_ROW_LIMIT_EXCEEDED` 또는 `REPORT_DOWNLOAD_SIZE_LIMIT_EXCEEDED`로 차단한다.
 
 `/operations/data-quality`는 `system:manage` 권한이 필요하며, 사용자/역할/부서, 거래처 계좌·세금계산서 정보, 예산 배정/사용액, 미결 결제 요청, 결재 단계, 지급, 첨부파일 orphan 여부, production test marker를 점검한다. critical 실패가 있으면 HTTP 409와 `data.ok=false`를 반환하고, 대사용 총액·건수·상태별 집계를 함께 제공한다. 계좌번호 원문은 응답에 포함하지 않는다.
+| GET | /operations/data-quality/runs | 데이터 품질 배치 정책과 최근 실행 이력 조회 |
+| POST | /operations/data-quality/run | 즉시 정합성 배치 실행, DataQualityRun 저장, critical 관리자 알림 |
+| GET | /operations/data-quality/runs/{runId}/download | 저장된 실행 summary를 backend 생성 JSON 리포트로 다운로드 |
 
 `/operations/financial-reconciliation`은 `system:manage` 권한이 필요하며, `Budget.usedAmount`와 `BudgetItem.usedAmount`, 승인 완료 결제 요청 합계, 지급 완료 합계, `ReportRun.summary`의 드릴다운 스냅샷 요청번호/지급번호/금액/상태를 현재 원천과 대사한다. critical 불일치가 있으면 HTTP 409와 `data.ok=false`를 반환하고, 일/월 단위 승인 요청·지급 완료 버킷과 최대 100건의 상세 불일치를 제공한다. `POST /operations/financial-reconciliation/notify`는 같은 날짜에 담당자/점검 항목별 중복 알림을 만들지 않는다.
 

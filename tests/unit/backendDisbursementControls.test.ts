@@ -61,7 +61,7 @@ describe("backend disbursement execution controls", () => {
       validateExecutionControls(disbursement({ paymentRequest: { requestCode: "PR-2026-0057", status: PaymentRequestStatus.APPROVAL_IN_PROGRESS, approvalSteps: [] } }), validPatch),
       /승인 완료/,
     );
-    assert.match(validateExecutionControls(disbursement({ accountVerificationStatus: AccountVerificationStatus.MISMATCH }), validPatch), /계좌 확인 완료/);
+    assert.match(validateExecutionControls(disbursement({ accountVerificationStatus: AccountVerificationStatus.MISMATCH }), validPatch), /계좌.*검증.*일치하지/);
     assert.match(validateExecutionControls(disbursement(), { ...validPatch, 금액: "7,700,000 원" }), /지급 금액/);
   });
 

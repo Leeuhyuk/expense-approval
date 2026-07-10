@@ -39,14 +39,22 @@ function objectRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
 }
 
+function optionalString(value: unknown) {
+  return typeof value === "string" ? value : undefined;
+}
+
+function optionalNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
 function serializeRequest(input: unknown) {
   const request = objectRecord(input);
   return {
-    method: request.method,
-    url: typeof request.url === "string" ? maskSensitiveLogText(request.url) : request.url,
-    hostname: request.hostname,
-    remoteAddress: request.remoteAddress,
-    remotePort: request.remotePort,
+    method: optionalString(request.method),
+    url: typeof request.url === "string" ? maskSensitiveLogText(request.url) : undefined,
+    hostname: optionalString(request.hostname),
+    remoteAddress: optionalString(request.remoteAddress),
+    remotePort: optionalNumber(request.remotePort),
     headers: sanitizeLogValue(request.headers),
   };
 }
@@ -54,17 +62,17 @@ function serializeRequest(input: unknown) {
 function serializeResponse(input: unknown) {
   const response = objectRecord(input);
   return {
-    statusCode: response.statusCode,
+    statusCode: optionalNumber(response.statusCode),
   };
 }
 
 function serializeError(input: unknown) {
   const error = objectRecord(input);
   return {
-    type: error.name ?? error.type,
-    code: error.code,
-    message: typeof error.message === "string" ? maskSensitiveLogText(error.message) : error.message,
-    stack: typeof error.stack === "string" ? maskSensitiveLogText(error.stack) : error.stack,
+    type: optionalString(error.name) ?? optionalString(error.type) ?? "Error",
+    code: optionalString(error.code),
+    message: typeof error.message === "string" ? maskSensitiveLogText(error.message) : "Unknown error",
+    stack: typeof error.stack === "string" ? maskSensitiveLogText(error.stack) : "",
   };
 }
 

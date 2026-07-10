@@ -84,6 +84,8 @@
 - 운영 첫 주 daily check와 hypercare 리포트는 `docs/hypercare-runbook.md`를 따른다. `npm run release:synthetic-monitor`는 운영 monitor 또는 scheduler에서 5분/10분 주기로 실행하고 실패 requestId와 output JSON을 보관한다.
 - Release마다 `docs/release-readiness-decision.md`를 복사해 `release:go-live-readiness-report` 결과와 open blocker/backlog를 연결한다.
 - dev/staging/production 환경 분리 확인은 `docs/environment-separation-matrix-template.md`를 복사해 `ENVIRONMENT_SEPARATION_PATH`로 지정하고 release gate에서 검증한다.
+- Primary 장기 장애의 DR 전환, DNS failover, 데이터 대사, 장기 장애 사용자 공지, failback은 docs/disaster-recovery-failover-runbook.md의 승인·증적 템플릿을 따른다.
+
 ## 백업과 이관
 
 1. production DB는 migration 전 backup, PITR/WAL 보관, 접근 권한을 확인한다.
@@ -91,3 +93,6 @@
 3. staging 이관 rehearsal 후 건수, 총액, 상태별 집계, 예산 잔액, 지급 이력, 첨부 orphan을 대사한다.
 4. production 이관 직후 `/api/operations/data-quality` critical 실패가 없어야 한다.
 5. 데이터 이관 증빙과 backup/복구 리허설 증적은 go-live 승인 자료와 함께 보관한다.
+## 데이터 품질 반복 배치
+
+시스템 설정의 보관 정책 탭에서 데이터 품질 배치의 자동 실행 주기, 최근 상태, critical/warning 건수, requestId를 확인한다. 지금 실행은 즉시 DataQualityRun을 DB에 기록하고 critical 실패 시 관리자 알림을 생성한다. 리포트 버튼은 선택 실행의 서버 저장 summary를 JSON으로 내려받는다. Production은 DATA_QUALITY_JOB_ENABLED=true와 DATA_QUALITY_JOB_RUN_ON_START=true를 release gate에서 확인한다.

@@ -11,11 +11,25 @@ function makeRoot() {
 
 function filledFinalAcceptanceTemplate() {
   return readFileSync(resolve("docs/final-acceptance-evidence-template.md"), "utf8")
+    .replace("| Release manifest hash | TBD |", "| Release manifest hash | " + "a".repeat(64) + " |")
+    .replace(/^\| Production go-live evidence .*$/m, "| Production go-live evidence | artifact:production-go-live-approved |")
+    .replace(/^\| Post go-live stabilization evidence .*$/m, "| Post go-live stabilization evidence | artifact:stabilization-approved |")
+    .replace("| Final decision date/time | TBD |", "| Final decision date/time | 2026-07-06T10:00:00Z |")
+    .replace(/^\| .*READINESS_TARGET=stable-operation.*$/m, "| READINESS_TARGET=stable-operation npm run release:go-live-readiness | passed, open P0 0 |")
+    .replace("| KPI measurement window | TBD |", "| KPI measurement window | 2026-07-06 ~ 2026-07-20 |")
+    .replace("| go-live 승인 기준 | TBD |", "| go-live 승인 기준 | approved |")
+    .replace("| Actual processing KPI | TBD |", "| Actual processing KPI | passed |")
+    .replace("| Actual error rate | TBD |", "| Actual error rate | 0.1% |")
+    .replace("| API 5xx rate | TBD |", "| API 5xx rate | 0.1% |")
+    .replace("| Approval failure rate | TBD |", "| Approval failure rate | 0.1% |")
+    .replace("| Disbursement failure rate | TBD |", "| Disbursement failure rate | 0.1% |")
+    .replace("| File upload failure rate | TBD |", "| File upload failure rate | 0.1% |")
+    .replace("| Report failure rate | TBD |", "| Report failure rate | 0.1% |")
+    .replace("| Next review date | TBD |", "| Next review date | 2026-07-21 |")
     .replace(/\bTBD\b/g, "EVIDENCE-2026-07-06")
     .replace(/\bpending\b/g, "approved")
     .replace(/<[^>\n]+>/g, "evidence");
 }
-
 describe("final acceptance evidence release gate", () => {
   it("allows the tracked final acceptance evidence template in audit mode while placeholders are still unresolved", () => {
     const result = runFinalAcceptanceEvidenceChecks({ projectRoot: resolve("."), strict: false });

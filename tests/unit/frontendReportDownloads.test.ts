@@ -27,7 +27,8 @@ describe("frontend report downloads", () => {
   it("keeps report download implemented and audited on the backend", () => {
     const source = reportRoutesSource();
     assert.match(source, /app\.get\("\/reports\/:reportName\/download"/, "backend must expose a report download route");
-    assert.match(source, /buildReportDownload\(item, format\)/, "backend route must create the server-side file payload");
+    assert.match(source, /ensureReportArtifact\(item\)/, "backend route must persist or resolve the server-side report artifact");
+    assert.match(source, /readReportArtifactDownload\(artifactItem, format\)/, "backend route must read the stored report artifact payload");
     assert.match(source, /action: `download_\$\{format\}`/, "backend route must audit the download format");
     assert.match(source, /auditRequestContext\(request\)/, "backend report download audit must include request context");
   });

@@ -26,6 +26,11 @@ import type {
   ManualRecoveryReviewInput,
   ManualRecoverySummary,
   BusinessFailureAlertSummary,
+  DataQualityReportArtifact,
+  DataQualityRun,
+  DataQualityRunList,
+  DataQualityRunResult,
+  DataQualitySummary,
   OperationModeStatus,
   OperationalAlertSummary,
   PasswordChangeResult,
@@ -54,6 +59,7 @@ const mockIntegrationTestIdempotencyStore = new Map<string, IntegrationTestResul
 const mockReportScheduleStore = new Map<string, ReportScheduleDto>();
 const mockBudgetAdjustmentStore = new Map<string, TableRow[]>();
 let mockManualRecoveryStore: ManualRecoveryItem[] = [];
+let mockDataQualityRunStore: DataQualityRun[] = [];
 const mockSystemSettingHistoryStore: SystemSettingHistoryRow[] = [
   { id: "mock-history-1", time: "2024-06-01 14:30", user: `${mockCurrentUser.name} (${mockCurrentUser.departmentName})`, desc: "결재 정책 저장", tag: "정책 변경" },
   { id: "mock-history-2", time: "2024-06-01 11:05", user: "이수연 대리 (마케팅팀)", desc: "사용자 권한 수정 (구매팀)", tag: "사용자 변경" },
@@ -73,6 +79,39 @@ const mockPasswordPolicy: PasswordPolicySummary = {
   maxAgeDays: 90,
   requirements: ["최소 12자", "대문자 1자 이상", "소문자 1자 이상", "숫자 1자 이상", "특수문자 1자 이상"],
 };
+
+function buildMockDataQualitySummary(): DataQualitySummary {
+  const generatedAt = new Date().toISOString();
+  return {
+    ok: true,
+    generatedAt,
+    summary: {
+      departments: 4,
+      users: settingsRows.length,
+      vendors: vendorRows.length,
+      paymentRequests: paymentRows.length,
+      disbursements: disbursementRows.length,
+      attachments: mockFileStore.size,
+    },
+    checks: [
+      { id: "active_users_without_roles", label: "Active users without roles", ok: true, severity: "critical", count: 0, detail: "활성 사용자 권한 그룹 정합성" },
+      { id: "open_requests_without_approval_steps", label: "Open payment requests without approval steps", ok: true, severity: "critical", count: 0, detail: "결제 요청 결재 단계 정합성" },
+      { id: "orphan_payment_attachments", label: "Orphan payment request attachments", ok: true, severity: "critical", count: 0, detail: "첨부 소유자 정합성" },
+    ],
+    criticalFailures: [],
+    warningFailures: [],
+  };
+}
+
+function mockDataQualityPolicy() {
+  return {
+    enabled: true,
+    intervalMinutes: 60,
+    historyLimit: 30,
+    runOnStart: true,
+    startDelayMs: 5000,
+  };
+}
 
 function buildMockRetentionPolicySummary(): RetentionPolicySummary {
   const now = new Date().toISOString();
@@ -1554,6 +1593,54 @@ export function createMockService(): ErpApiService {
     async getPerformancePolicy() {
       const status = buildMockPerformancePolicyStatus();
       return respond(status, { mode: "mock", ok: status.ok, p95TargetMs: status.latency.p95TargetMs });
+    },
+    async listDataQualityRuns(limit = 30) {
+      const data: DataQualityRunList = {
+        policy: mockDataQualityPolicy(),
+        runs: mockDataQualityRunStore.slice(0, Math.max(1, limit)).map((run) => ({ ...run })),
+      };
+      return respond(data, { mode: "mock", total: data.runs.length });
+    },
+    async runDataQualityJob() {
+      const summary = buildMockDataQualitySummary();
+      const completedAt = new Date().toISOString();
+      const run: DataQualityRun = {
+        id: "mock-data-quality-" + Date.now(),
+        status: "COMPLETED",
+        source: "manual",
+        scheduleKey: null,
+        requestedBy: mockCurrentUser.id,
+        requestId: "mock-request-" + Date.now(),
+        summary,
+        criticalCount: summary.criticalFailures.length,
+        warningCount: summary.warningFailures.length,
+        errorMessage: null,
+        startedAt: completedAt,
+        completedAt,
+      };
+      mockDataQualityRunStore = [run, ...mockDataQualityRunStore].slice(0, 30);
+      appendMockSettingsHistory("데이터 품질 정합성 배치 실행", "운영 변경");
+      const result: DataQualityRunResult = {
+        policy: mockDataQualityPolicy(),
+        deduplicated: false,
+        run,
+        summary,
+        recipientCount: 0,
+        notificationsCreated: 0,
+      };
+      return respond(result, { mode: "mock", runId: run.id });
+    },
+    async downloadDataQualityRun(runId) {
+      const run = mockDataQualityRunStore.find((item) => item.id === runId);
+      if (!run) throw new Error("NOT_FOUND: 데이터 품질 실행 이력을 찾을 수 없습니다.");
+      const artifact: DataQualityReportArtifact = {
+        fileName: "data-quality-" + (run.completedAt ?? run.startedAt).replace(/[:.]/g, "-") + ".json",
+        contentType: "application/json;charset=utf-8",
+        contentBase64: encodeBase64Utf8(JSON.stringify(run, null, 2)),
+        generatedAt: run.completedAt ?? run.startedAt,
+        runId,
+      };
+      return respond(artifact, { mode: "mock", runId });
     },
     async saveSystemSetting(key, value, input = {}) {
       if (input.idempotencyKey) {

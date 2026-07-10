@@ -10,7 +10,8 @@ describe("frontend approval next selection", () => {
     const source = mainSource();
     assert.match(source, /type UpdateSelectedRowOptions/, "table mutations must support post-success selection rules");
     assert.match(source, /const response = await erpApi\.updatePageRow/, "row updates must use the server response");
-    assert.match(source, /const updatedRow = response\.data \?\? \{ \.\.\.selectedRow, \.\.\.patch \}/, "local rows must be replaced by the server-updated row");
+    assert.match(source, /const updatedRow = response\.data;/, "local rows must use the server-updated row only");
+    assert.match(source, /if \(!updatedRow\) \{[\s\S]*setRefreshVersion/, "missing server rows must roll back and requery instead of fabricating local state");
     assert.match(source, /setRows\(mergedRows\)/, "the visible table must be updated immediately after mutation success");
   });
 

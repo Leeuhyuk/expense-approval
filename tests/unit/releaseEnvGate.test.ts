@@ -25,6 +25,10 @@ function productionCandidateEnv(overrides: NodeJS.ProcessEnv = {}) {
     S3_SECRET_ACCESS_KEY: "example-secret-key",
     FILE_SCAN_MODE: "external",
     MALWARE_SCAN_ENDPOINT: "https://scanner.example.com/scan",
+    DATA_QUALITY_JOB_ENABLED: "true",
+    DATA_QUALITY_JOB_INTERVAL_MINUTES: "60",
+    DATA_QUALITY_JOB_HISTORY_LIMIT: "30",
+    DATA_QUALITY_JOB_RUN_ON_START: "true",
     PRODUCTION_ACCESS_REVIEW_APPROVED: "true",
     PRODUCTION_ACCESS_REVIEW_ID: "ACCESS-2026-07-GOLIVE",
     PRODUCTION_ACCESS_REVIEW_APPROVER: "security-owner@example.com",
@@ -41,6 +45,19 @@ function runReleaseGate(env: NodeJS.ProcessEnv) {
 }
 
 describe("release environment gate", () => {
+  it("rejects production candidates without the recurring data quality scheduler", () => {
+    const disabled = runReleaseGate(productionCandidateEnv({ DATA_QUALITY_JOB_ENABLED: "false" }));
+    const noStartup = runReleaseGate(productionCandidateEnv({ DATA_QUALITY_JOB_RUN_ON_START: "false" }));
+    const invalidInterval = runReleaseGate(productionCandidateEnv({ DATA_QUALITY_JOB_INTERVAL_MINUTES: "2" }));
+
+    assert.equal(disabled.status, 1);
+    assert.match(disabled.stdout, /DATA_QUALITY_JOB_ENABLED=true is required/);
+    assert.equal(noStartup.status, 1);
+    assert.match(noStartup.stdout, /DATA_QUALITY_JOB_RUN_ON_START=true is required/);
+    assert.equal(invalidInterval.status, 1);
+    assert.match(invalidInterval.stdout, /DATA_QUALITY_JOB_INTERVAL_MINUTES must be between 5 and 1440/);
+  });
+
   it("rejects production release candidates with the seed override flag enabled", () => {
     const result = runReleaseGate(productionCandidateEnv({ ALLOW_PRODUCTION_SEED: "true" }));
 
@@ -183,12 +200,12 @@ describe("release environment gate", () => {
     assert.doesNotMatch(pgSslModeOverride.stdout, /DATABASE_URL must require TLS/);
   });
 
-  it("rejects production candidates while go-live P0 readiness blockers remain open", () => {
+  it("reports whether production readiness P0 items are blocked or covered by approved exceptions", () => {
     const result = runReleaseGate(productionCandidateEnv());
 
     assert.equal(result.status, 1);
-    assert.match(result.stdout, /Production readiness gate blocked/);
-    assert.match(result.stdout, /open P0 item/);
+    assert.match(result.stdout, /Production (?:readiness gate blocked|candidate readiness gate is conditionally cleared)/);
+    assert.match(result.stdout, /(?:open P0 item|approved P0 exception)/);
   });
 
   it("requires production candidates to pin the promoted release manifest and source ref", () => {

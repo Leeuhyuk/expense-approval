@@ -6,6 +6,7 @@ import { prisma } from "../db/prisma.js";
 import { accountLifecycleScope, getAccountLifecycleCandidates, getAccountLifecycleSummary } from "../operations/accountLifecycle.js";
 import { getBusinessFailureAlertSummary, notifyBusinessFailureOwners } from "../operations/businessFailureAlerts.js";
 import { getDataQualitySummary } from "../operations/dataQuality.js";
+import { dataQualityJobPolicy, getDataQualityRunArtifact, listDataQualityRuns, runDataQualityJob } from "../operations/dataQualityJobWorker.js";
 import { getFinancialControlReport } from "../operations/financialControlReport.js";
 import { getFinancialReconciliationSummary, notifyFinancialReconciliationOwners } from "../operations/financialReconciliation.js";
 import { getManualRecoverySummary, ManualRecoveryError, requestManualRecovery, reviewManualRecovery } from "../operations/manualRecovery.js";
@@ -148,6 +149,48 @@ export const operationsRoutes: FastifyPluginAsync = async (app) => {
 
     const summary = await getDataQualitySummary();
     return reply.code(summary.ok ? 200 : 409).send(success(request, summary));
+  });
+
+  app.get("/operations/data-quality/runs", async (request, reply) => {
+    const user = await requireAuth(request, reply);
+    if (!user) return;
+    if (!hasPermission(user, "system:manage")) {
+      return fail(reply, "FORBIDDEN", "데이터 품질 실행 이력 조회 권한이 없습니다.", 403);
+    }
+
+    const query = queryRecord(request.query);
+    const policy = dataQualityJobPolicy();
+    const runs = await listDataQualityRuns(queryInteger(query, "limit", policy.historyLimit));
+    return reply.send(success(request, { policy, runs }));
+  });
+
+  app.post("/operations/data-quality/run", async (request, reply) => {
+    const user = await requireAuth(request, reply);
+    if (!user) return;
+    if (!hasPermission(user, "system:manage")) {
+      return fail(reply, "FORBIDDEN", "데이터 품질 배치 실행 권한이 없습니다.", 403);
+    }
+
+    const result = await runDataQualityJob({
+      source: "manual",
+      requestedBy: user.id,
+      requestId: request.id,
+    });
+    const ok = Boolean(result.summary && typeof result.summary === "object" && "ok" in result.summary && result.summary.ok);
+    return reply.code(ok ? 200 : 202).send(success(request, { policy: dataQualityJobPolicy(), ...result }));
+  });
+
+  app.get("/operations/data-quality/runs/:runId/download", async (request, reply) => {
+    const user = await requireAuth(request, reply);
+    if (!user) return;
+    if (!hasPermission(user, "system:manage")) {
+      return fail(reply, "FORBIDDEN", "데이터 품질 리포트 다운로드 권한이 없습니다.", 403);
+    }
+
+    const runId = (request.params as { runId: string }).runId;
+    const artifact = await getDataQualityRunArtifact(runId);
+    if (!artifact) return fail(reply, "NOT_FOUND", "데이터 품질 실행 이력을 찾을 수 없습니다.", 404);
+    return reply.send(success(request, artifact));
   });
 
   app.get("/operations/financial-reconciliation", async (request, reply) => {

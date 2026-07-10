@@ -944,7 +944,8 @@
   - 진행 메모(2026-07-08): 복구 후 `npm run release:core-smoke`, `/api/operations/data-quality`, `/api/operations/financial-reconciliation`, 업무별 metadata/AuditLog/security_events 대사를 `docs/rollback-break-glass-runbook.md`에 표준 검증 절차로 묶었다. 실제 staging/prod 복구 리허설 증빙은 P0 리허설 항목에서 별도로 유지한다.
 - [x] P1: 장애 상황에서 읽기 전용 운영, 지급 일시 중지, 파일 업로드 중지 같은 기능 제한 모드 정의
   - 진행 메모(2026-07-07): `backend/src/operations/operationMode.ts`가 `ERP_OPERATION_MODE=normal|read_only|payments_paused|uploads_paused|maintenance`와 `ERP_DISABLED_CAPABILITIES=business_mutations,payments,file_uploads`를 해석하고, Fastify 전역 preHandler가 읽기 전용/점검 모드의 business mutation, 지급 일시 중지의 `/api/disbursements` mutation, 파일 업로드 중지의 presign/content/complete route를 `OPERATION_MODE_RESTRICTED`로 차단한다. `GET /operations/mode`, `erpApi.getOperationMode`, 설정 화면 `OperationModeCard`, 버튼 액션 매핑, API 문서, 배포/장애 대응 문서에 조회와 운영 절차를 연결했다. 실제 staging/production 환경변수 전환 rehearsal 증적은 배포 검증 단계에서 확인해야 한다.
-- [ ] P2: DR 환경 전환, DNS failover, 장기 장애 커뮤니케이션 템플릿 준비
+- [x] P2: DR 환경 전환, DNS failover, 장기 장애 커뮤니케이션 템플릿 준비
+  - 진행 메모(2026-07-10): docs/disaster-recovery-failover-runbook.md에 primary/DR 인벤토리, 전환 승인 기준, DNS TTL·전환·propagation 확인, read-only 전환, 데이터 정합성 대사, 최초/정기/RTO 초과/복구 공지 문구, failback, 반기 리허설 증적 표를 추가했다. release:operational-docs가 필수 용어와 admin/deployment 교차 참조를 검증하고 release manifest 입력에 포함하므로 템플릿 준비 범위는 완료 처리한다. 실제 DR 환경 전환 리허설은 backup/restore evidence가 필요한 P0 항목으로 계속 남긴다.
 
 ### 24.7 모니터링, 알림, 장애 대응
 
@@ -973,7 +974,8 @@
 - [x] P1: 이관 실패 rollback 또는 재실행 전략과 cutover freeze window 정의
   - 진행 메모(2026-07-08): `docs/cutover-runbook.md`를 추가해 freeze window, cutover abort condition, idempotent rerun, failed row quarantine, rollback owner, user communication, go/no-go decision 기준을 정의했다.
 - [ ] P1: 운영 전 사용자 승인 테스트(UAT) 결과와 미해결 이슈 승인 기준 기록
-- [ ] P2: 데이터 품질 리포트와 반복 정합성 점검 배치 운영
+- [x] P2: 데이터 품질 리포트와 반복 정합성 점검 배치 운영
+  - 진행 메모(2026-07-10): DataQualityRun DB 모델과 migration, dataQualityJobWorker를 추가해 scheduleKey 기준 다중 replica 중복 실행 방지, 주기/시작 시 실행, critical 관리자 알림, 실패 오류 마스킹, 실행 이력 보관을 구현했다. system:manage 보호 API로 이력 조회·즉시 실행·서버 생성 JSON 리포트 다운로드를 제공하고 시스템 설정 보관 정책 탭의 DataQualityRunCard에서 같은 기능을 사용할 수 있다. Production release env gate는 worker 활성화와 실행 주기/이력 범위를 강제한다.
 
 검토 메모: 2026-07-06에 `/api/operations/data-quality`를 추가해 사용자/권한/부서, 거래처 계좌/세금계산서 정보, 예산 배정/사용액, 미결 결제 요청, 결재 단계, 지급, 첨부파일 orphan, production test marker를 점검하도록 했다. critical 실패는 HTTP 409와 `data.ok=false`로 반환하며, 운영 이관 계획 템플릿은 `docs/data-migration-readiness.md`에 정리했다. 단, 원천 시스템 확정, 담당자 승인, staging/prod 실제 대사는 운영 환경 증적이 필요하므로 미완료로 유지한다.
 
