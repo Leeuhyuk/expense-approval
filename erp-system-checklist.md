@@ -934,6 +934,7 @@
 
 - [ ] P0: PostgreSQL full backup, WAL/PITR, object storage versioning, report artifact backup 정책을 실제 환경에 적용
   - 진행 메모(2026-07-06): `docs/backup-restore-rehearsal-template.md`와 `npm run release:backup-restore-evidence`를 추가해 PostgreSQL full backup schedule/retention, WAL/PITR retention, object storage versioning, report artifact backup, backup encryption/access 증적을 production 승격 전 필수 문서로 묶었다. 실제 production/staging backup 정책 적용 증적은 아직 없으므로 완료 처리는 보류한다.
+  - 로컬 완료 메모(2026-07-11): `npm run local:backup`, `local:backups`, `local:restore -- <백업-ID>`를 추가해 내장 PostgreSQL cold physical backup과 업로드/보고서 파일을 하나의 백업으로 보관한다. 파일별 SHA-256 manifest 검증, 실행 중 백업 차단, 경로 이탈 차단, 복구 staging 검증, 교체 실패 rollback을 자동화했으며 폐기 가능한 DB/파일 fixture 복구와 변조 차단 테스트를 통과했다. 실제 로컬 데이터도 백업 `20260711T070317589Z` 생성, checksum 검증, 전체 복구, 재기동 후 화면 3000/DB health 정상까지 리허설했다. 이는 단일 PC 로컬 호스팅 범위이며 production WAL/PITR/object storage versioning 증적이 아니므로 P0는 유지한다.
 - [ ] P0: RPO/RTO 목표를 정하고 staging에서 DB point-in-time restore와 파일 저장소 복구 리허설 수행
   - 진행 메모(2026-07-06): backup/restore evidence 템플릿에 RPO/RTO, staging restore environment, point-in-time restore timestamp, row count/총액/예산/거래처 지급 이력/첨부 orphan/data-quality 대사, object storage와 report artifact restore rehearsal 항목을 추가했다. 실제 리허설 실행 증적은 아직 없으므로 완료 처리는 보류한다.
 - [ ] P0: backup 성공/실패 알림, backup 암호화, backup 접근 권한, 복구 계정 권한을 검증

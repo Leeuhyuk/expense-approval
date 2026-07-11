@@ -46,7 +46,10 @@
     "release:go-live-readiness": "node scripts/verify-go-live-readiness.mjs",
     "release:go-live-readiness-report": "node scripts/generate-go-live-readiness-report.mjs",
     "release:submission": "node scripts/generate-release-submission.mjs",
-    "release:check": "node scripts/verify-release-env.mjs"
+    "release:check": "node scripts/verify-release-env.mjs",
+    "local:backup": "node scripts/local-backup.mjs create",
+    "local:backups": "node scripts/local-backup.mjs list",
+    "local:restore": "node scripts/local-backup.mjs restore"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",

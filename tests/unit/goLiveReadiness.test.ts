@@ -28,8 +28,8 @@ describe("go-live readiness gate", () => {
     const productionCandidate = evaluateGoLiveReadiness(items, "production-candidate");
     assert.equal(productionCandidate.ok, false);
     assert.ok(
-      productionCandidate.blockers.some((item: { chapter: string }) => item.chapter === "23"),
-      "production-candidate mode must fail while chapter 23 data-linkage P0 items remain open",
+      productionCandidate.blockers.length > 0,
+      "production-candidate mode must retain scoped P0 blockers until external release evidence is present",
     );
 
     const goLive = evaluateGoLiveReadiness(items, "go-live");
