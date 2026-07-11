@@ -960,6 +960,8 @@
   - 진행 메모(2026-07-08): `docs/incident-response.md`에 P0/P1/P2 incident commander, 필수 호출 담당자, 최초 응답/업데이트 주기, 사용자 공지 기준, 사후 분석 템플릿을 추가하고 rollback/break-glass runbook과 교차 참조했다.
 - [x] P1: 운영 대시보드에 처리량, 오류율, p95 latency, 지급 실패, 보고서 실패, 업로드 실패를 표시
   - 진행 메모(2026-07-07): `/operations/alerts` 응답에 `metrics.eventsReviewed`, `ruleFailureRatePercent`, critical/warning triggered 수, slow query `durationMs` 기반 p95/p99/max latency와 DB latency를 추가했다. Dashboard는 `system:manage` 사용자에게 `DashboardOperationalMetrics` 카드를 표시하고 `getOperationalAlerts`, `getBusinessFailureAlerts`를 함께 조회해 처리량, 오류율, p95 latency, 지급 실패, 보고서 실패, 업로드 실패 count를 보여준다. 실제 production APM/분산 request count와의 대사는 운영 검증 단계에서 확인해야 한다.
+- [x] P1: 로컬 호스팅 사용자 로그인 자동 기동, 중복 실행 방지, 비정상 종료 제한 재시작, 정상 종료 존중 검증
+  - 완료 메모(2026-07-11): `local-supervisor.mjs`와 `local-autostart.mjs`를 추가해 Windows HKCU 로그인 훅, 숨김 supervisor, 별도 PID 상태, 2~30초 backoff, 5분 5회 재시작 제한, 정상 종료 시 재기동 금지를 구현했다. 이 PC에 `ExpenseApprovalERP` 자동 시작 값을 실제 등록했고, supervisor 기동, `local:stop` 후 정지 유지, 실행기 프로세스 트리 강제 종료 후 2초 자동 복구, 새 PID의 화면 3000/DB health 정상을 확인했다. 이어서 자동 시작을 연속 두 번 요청해도 lock 포트 4308이 추가 supervisor를 차단하고 기존 supervisor PID가 유지되는 것을 확인했다.
 - [x] P2: synthetic monitoring으로 로그인부터 지급 전 단계까지 주요 경로 주기 점검
   - 진행 메모(2026-07-09): `scripts/run-synthetic-business-monitor.mjs`와 `npm run release:synthetic-monitor`를 추가해 `/health`, `/auth/login`, `/auth/me`, dashboard, 결제 요청, 승인, 예산, 거래처, 보고서, 지급 전 목록, 운영 상태를 읽기 전용 synthetic path로 점검하도록 했다. 운영 scheduler는 `SYNTHETIC_MONITOR_REQUIRE_CONFIG=true`, `SYNTHETIC_MONITOR_MAX_LATENCY_MS`, `SYNTHETIC_MONITOR_OUTPUT`을 설정해 실패 requestId와 JSON 증적을 보관한다. 실제 staging에서 24시간 오류율/latency 기준 통과 증빙은 별도 P1 항목으로 유지한다.
 
@@ -1173,6 +1175,7 @@
 - [ ] P0: production object storage bucket 비공개, versioning, lifecycle, signed URL 정책, malware scan 경로 확인
 - [ ] P0: production secret은 저장소 파일이 아닌 secret manager/hosting env에 등록하고 접근 권한을 제한
 - [ ] P0: backend runtime은 Node.js 22+ production mode, process manager/hosting health restart, structured log 수집을 사용
+  - 로컬 완료 메모(2026-07-11): 로컬 호스팅에는 Windows 로그인 자동 시작, supervisor 장애 재시작 제한, 구조화된 서비스 로그 경로를 실제 적용했다. 이는 hosting platform의 production mode/process manager/중앙 로그 수집 증적을 대신하지 않으므로 production P0는 유지한다.
 - [ ] P0: frontend 정적 호스팅에 HTTPS, cache-control, rollback 가능한 versioned artifact 배포 구조 적용
   - 진행 메모(2026-07-08): `public/_headers`와 `docs/frontend-hosting-policy.md`를 추가하고 `npm run release:frontend-artifact`가 build artifact의 `_headers`에서 HSTS, nosniff, `index.html` no-store, hashed asset immutable cache 정책을 확인하도록 보강했다. 실제 hosting platform의 HTTPS redirect/cache header 적용과 rollback artifact 보관 증빙은 production inventory/go-live evidence에서 확인해야 하므로 항목은 배포 증빙 전까지 미완료로 유지한다.
 - [ ] P0: CORS, cookie domain, secure cookie, sameSite, API base URL이 production 도메인 기준으로 맞는지 검증

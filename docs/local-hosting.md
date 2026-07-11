@@ -33,6 +33,34 @@ npm run local:stop
 
 포트가 이미 사용 중이면 실행기는 기존 서비스를 임의로 종료하지 않고 충돌 포트를 안내한다. 기존 로컬 ERP가 실행 중이면 `npm run local:status`로 확인한 뒤 `npm run local:stop`으로 종료한다.
 
+## Windows 자동 시작과 장애 복구
+
+현재 사용자 로그인 시 로컬 ERP를 숨김 프로세스로 자동 시작하려면 한 번만 등록한다.
+
+```powershell
+npm run local:autostart:install
+npm run local:autostart:status
+```
+
+등록은 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`의 `ExpenseApprovalERP` 값에 저장되며 관리자 권한이 필요하지 않다. 로그인 직후 supervisor가 내장 PostgreSQL, backend, frontend를 순서대로 시작하고 화면 포트는 항상 `3000`을 사용한다. 지금 즉시 같은 백그라운드 경로로 시작할 때는 다음 명령을 사용한다.
+
+```powershell
+npm run local:autostart:start
+```
+
+예기치 않은 종료는 2초부터 최대 30초의 backoff로 복구한다. 5분 안에 5회 실패하면 포트 충돌이나 데이터 손상을 반복하지 않도록 중단한다. `npm run local:stop`으로 정상 종료하면 supervisor도 종료하고 임의로 다시 시작하지 않는다.
+
+- supervisor lock: `127.0.0.1:4308`
+- supervisor 상태: `.local-data/supervisor.json`
+- supervisor 이벤트: `.local-data/local-supervisor.log`
+- 백그라운드 서비스 로그: `.local-data/local-server-supervised.log`
+
+자동 시작을 해제할 때만 다음 명령을 사용한다. 실행 중인 ERP 데이터와 백업은 삭제하지 않는다.
+
+```powershell
+npm run local:autostart:remove
+```
+
 ## 최초 실행 처리 순서
 
 1. 내장 PostgreSQL 클러스터를 초기화하고 시작한다.
@@ -72,7 +100,7 @@ npm run local
 2026-07-11 기준으로 다음 검증을 완료했다.
 
 - `npm run build`: TypeScript 검사와 Vite production build 통과
-- `npm run test:unit`: 431건 통과, 실패/skip 없음
+- `npm run test:unit`: 434건 통과, 실패/skip 없음
 - 별도 `payment_approval_erp_test` DB에 마이그레이션 11개 적용
 - DB integration 6건 통과: CRUD/새로고침/재로그인, 권한·설정, 파일, 결재, 지급, 목록 query/DB 일치
 - remote browser E2E 4건 통과: 로그인/로그아웃, 거래처·증빙, 즐겨찾기·보고서·설정, 결재 인계·지급 보류
