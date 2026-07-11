@@ -5,7 +5,7 @@ import { hasPermission, requireAuth } from "../auth/session.js";
 import { notificationExpiresAt } from "../domain/notificationRetention.js";
 import { prisma } from "../db/prisma.js";
 import { fail, success } from "../utils/response.js";
-import { addDays, auditRequestContext, definedCookies, filterAndSortRows, formatDate, formatWon, jsonRow, paginateRows, readListFilters, readStringPatch, type TableRow } from "./rowUtils.js";
+import { addDays, auditRequestContext, definedCookies, forwardedInjectHeaders, filterAndSortRows, formatDate, formatWon, jsonRow, paginateRows, readListFilters, readStringPatch, type TableRow } from "./rowUtils.js";
 
 const listQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
@@ -648,7 +648,7 @@ export const approvalRoutes: FastifyPluginAsync = async (app) => {
     return app.inject({
       method: "PATCH",
       url: `/api/approvals/${encodeURIComponent(params.requestCode)}`,
-      headers: request.headers as Record<string, string>,
+      headers: forwardedInjectHeaders(request.headers),
       cookies: definedCookies(request.cookies),
       payload: patch,
     }).then((response) => {

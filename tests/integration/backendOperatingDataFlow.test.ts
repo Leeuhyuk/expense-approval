@@ -256,12 +256,12 @@ describe("backend operating data flow integration", () => {
           payload: {
             지급상태: "보류",
             "지급 보류 사유": `통합 테스트 지급 보류 ${runId}`,
-            rowVersion: disbursement.rowVersion,
+            rowVersion: String(disbursement.rowVersion),
             idempotencyKey: disbursementHoldKey,
           },
         });
         const holdPayload = holdDisbursement.json();
-        assert.equal(holdDisbursement.statusCode, 200);
+        assert.equal(holdDisbursement.statusCode, 200, JSON.stringify(holdPayload));
         assert.equal(holdPayload.data.지급번호, disbursementCode);
         assert.equal(holdPayload.data.지급상태, "보류");
         assert.equal(holdPayload.meta.rowVersion, 2);

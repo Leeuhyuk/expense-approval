@@ -1564,7 +1564,7 @@ function assignedUserName(value: string) {
 
 function settingRowToAssignedUser(row: TableRow, fallbackId: string | number): AssignedUser {
   return {
-    id: row.사용자 || `assigned-${fallbackId}`,
+    id: row.사용자ID || row.사용자 || `assigned-${fallbackId}`,
     user: row.사용자,
     department: row.부서,
     groupName: row.권한그룹,
@@ -6543,6 +6543,7 @@ function VendorBody({ page }: { page: PageDefinition }) {
   const [vendorPage, setVendorPage] = useState(1);
   const [vendorPageSize, setVendorPageSize] = useState(10);
   const [vendorTotal, setVendorTotal] = useState(vendorRows.length);
+  const [vendorSummary, setVendorSummary] = useState({ registered: 0, pending: 0, verified: 0, inactive: 0 });
   const [pendingVendorNames, setPendingVendorNames] = useState<Set<string>>(new Set());
   const [pendingVendorUploadFiles, setPendingVendorUploadFiles] = useState<Record<string, File[]>>({});
   const [vendorDocuments, setVendorDocuments] = useState<Record<string, VendorDocument[]>>({});
@@ -6593,6 +6594,32 @@ function VendorBody({ page }: { page: PageDefinition }) {
   useEffect(() => {
     setVendorPage(1);
   }, [accountFilter, searchTerm, statusFilter, typeFilter]);
+
+  useEffect(() => {
+    let active = true;
+    Promise.all([
+      erpApi.listPageRows("vendors", { page: 1, pageSize: 1 }),
+      erpApi.listPageRows("vendors", { page: 1, pageSize: 1, filters: { 계좌확인: "검증 대기" } }),
+      erpApi.listPageRows("vendors", { page: 1, pageSize: 1, filters: { 계좌확인: "확인 완료" } }),
+      erpApi.listPageRows("vendors", { page: 1, pageSize: 1, filters: { 상태: "비활성" } }),
+    ])
+      .then(([registered, pending, verified, inactive]) => {
+        if (!active) return;
+        setVendorSummary({
+          registered: registered.data.total,
+          pending: pending.data.total,
+          verified: verified.data.total,
+          inactive: inactive.data.total,
+        });
+      })
+      .catch((error: unknown) => {
+        if (!active) return;
+        setVendorMessage((current) => current || `거래처 요약 집계 실패: ${error instanceof Error ? error.message : "집계 데이터를 불러오지 못했습니다."}`);
+      });
+    return () => {
+      active = false;
+    };
+  }, [vendorRefreshVersion]);
 
   useEffect(() => {
     let active = true;
@@ -7120,6 +7147,18 @@ function VendorBody({ page }: { page: PageDefinition }) {
     }
   };
 
+  const vendorKpiValues: Record<string, number> = {
+    "등록 거래처": vendorSummary.registered,
+    "검증 대기": vendorSummary.pending,
+    "계좌 확인": vendorSummary.verified,
+    "비활성": vendorSummary.inactive,
+  };
+  const vendorKpis = page.kpis.map((kpi) => ({
+    ...kpi,
+    value: String(vendorKpiValues[kpi.label] ?? 0),
+    suffix: "건",
+    detail: "전체 DB 기준",
+  }));
   const vendorFeedback = isVendorLoading ? "거래처 목록을 API에서 불러오는 중입니다." : vendorMessage;
   const isVendorErrorMessage = ["이미", "필수", "실패", "불러오지"].some((keyword) => vendorFeedback.includes(keyword));
 
@@ -7151,7 +7190,7 @@ function VendorBody({ page }: { page: PageDefinition }) {
         />
         {vendorFeedback && <small className={isVendorErrorMessage ? "panel-action-message error vendor-message" : "panel-action-message vendor-message"}>{vendorFeedback}</small>}
         <section className="kpi-row management-kpis vendor-kpis">
-          {page.kpis.map((kpi) => (
+          {vendorKpis.map((kpi) => (
             <KpiCard item={kpi} key={kpi.label} />
           ))}
         </section>
@@ -7175,6 +7214,7 @@ function VendorBody({ page }: { page: PageDefinition }) {
       {detailOpen ? (
         <VendorDetailPanel
           documents={vendorDocuments[selectedVendor?.거래처명 ?? ""] ?? []}
+          isPending={selectedVendorIsPending}
           paymentHistory={selectedVendorPaymentHistory}
           row={selectedVendor}
           onClose={() => setDetailOpen(false)}
@@ -7357,6 +7397,7 @@ function VendorTable({
 
 function VendorDetailPanel({
   documents,
+  isPending,
   onClose,
   onDeactivate,
   onDownloadDocument,
@@ -7370,6 +7411,7 @@ function VendorDetailPanel({
   row,
 }: {
   documents: VendorDocument[];
+  isPending: boolean;
   onClose: () => void;
   onDeactivate: (reason?: string) => void | Promise<void>;
   onDownloadDocument: (document: VendorDocument) => void | Promise<void>;
@@ -7595,8 +7637,8 @@ function VendorDetailPanel({
           비활성 사유
           <input aria-label="거래처 비활성 사유 입력" onChange={(event) => setDeactivateReason(event.currentTarget.value)} value={deactivateReason} />
         </label>
-        <button className="save" disabled={isEmpty} onClick={() => onSave(draft)} type="button">수정</button>
-        <button className="danger" disabled={isEmpty || selected.상태 === "비활성"} onClick={() => onDeactivate(deactivateReason.trim() || "운영자 수동 비활성화")} type="button">비활성화</button>
+        <button className="save" disabled={isEmpty} onClick={() => onSave(draft)} type="button">{isPending ? "등록" : "수정"}</button>
+        <button className="danger" disabled={isEmpty || isPending || selected.상태 === "비활성"} onClick={() => onDeactivate(deactivateReason.trim() || "운영자 수동 비활성화")} type="button">비활성화</button>
       </footer>
     </aside>
   );
@@ -9776,7 +9818,7 @@ function SettingsBody({ currentUser, page }: { currentUser: AuthUser; page: Page
     };
     try {
       const response = existingAssignment
-        ? await erpApi.updatePageRow("settings", normalizedUserName, userRow)
+        ? await erpApi.updatePageRow("settings", existingAssignment.id, userRow)
         : await erpApi.createPageRow("settings", userRow);
       const savedUser = settingRowToAssignedUser(response.data ?? userRow, Date.now());
       const nextAssignedUsers = [savedUser, ...assignedUsers.filter((assigned) => assignedUserName(assigned.user) !== normalizedUserName)];
@@ -9816,7 +9858,7 @@ function SettingsBody({ currentUser, page }: { currentUser: AuthUser; page: Page
       ...(nextAssignment.rowVersion ? { rowVersion: nextAssignment.rowVersion, 사용자RowVersion: nextAssignment.rowVersion } : {}),
     };
     try {
-      const response = await erpApi.updatePageRow("settings", userName, userRow);
+      const response = await erpApi.updatePageRow("settings", assignment.id, userRow);
       const savedUser = settingRowToAssignedUser(response.data ?? userRow, assignment.id);
       const nextAssignedUsers = assignedUsers.map((assigned) => (assigned.id === assignment.id ? savedUser : assigned));
       const nextRoleGroups = withRoleUserCounts(roleGroups, nextAssignedUsers);

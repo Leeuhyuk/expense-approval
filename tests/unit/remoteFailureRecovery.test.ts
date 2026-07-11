@@ -13,6 +13,7 @@ describe("remote failure recovery controls", () => {
     const service = source("src/api/service.ts");
 
     assert.match(service, /const remoteRequestTimeoutMs = 15_000/, "remote requests must have a bounded timeout");
+    assert.match(service, /if \(init\?\.body != null && !headers\.has\("Content-Type"\)\)/, "JSON content type must be added only when a request body exists");
     assert.match(service, /const controller = new AbortController\(\)/, "remote requests must use AbortController for timeout cancellation");
     assert.match(service, /timeoutHit \? "NETWORK_TIMEOUT" : "REQUEST_ABORTED"/, "timeouts must surface as NETWORK_TIMEOUT");
     assert.match(service, /new ApiRequestError\("NETWORK_ERROR"/, "fetch failures must become ApiRequestError NETWORK_ERROR");

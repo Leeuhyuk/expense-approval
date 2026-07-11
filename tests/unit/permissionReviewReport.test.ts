@@ -23,7 +23,7 @@ describe("permission review report", () => {
     assert.match(route, /hasPermission\(user, "system:manage"\)/);
     assert.match(route, /hasPermission\(user, "audit:read"\)/);
     assert.match(route, /getPermissionReviewReport\(\)/);
-    assert.match(route, /reply\.code\(report\.ok \? 200 : 409\)/);
+    assert.match(route, /reply\.send\(success\(request, report\)\)/);
   });
 
   it("tracks high-risk permissions and exception expiry states", () => {

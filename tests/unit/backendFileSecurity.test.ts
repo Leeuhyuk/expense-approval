@@ -4,12 +4,21 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, it } from "node:test";
-import { makeSignedPath, signedUrlTtlMs, verifyToken } from "../../backend/src/routes/files";
+import { isUuidIdentifier, makeSignedPath, signedUrlTtlMs, verifyToken } from "../../backend/src/routes/files";
 import { attachmentScanStatus, maxAttachmentBytes, validateAttachmentUploadPolicy } from "../../backend/src/security/attachmentPolicy";
 import { scanAttachmentBuffer } from "../../backend/src/security/malwareScan";
 import { deleteStoredFile, readStoredFile, storedByteSize, storageKeyFor, writeStoredFile } from "../../backend/src/storage/attachmentStorage";
 
 describe("backend file storage and scanning", () => {
+  it("distinguishes UUID owner ids from request codes and vendor names", () => {
+    assert.equal(isUuidIdentifier("80000000-0000-4000-8000-000000000001"), true);
+    assert.equal(isUuidIdentifier("PR-2026-0058"), false);
+    assert.equal(isUuidIdentifier("이노베이션(주)"), false);
+
+    const routeSource = readFileSync(resolve("backend/src/routes/files.ts"), "utf8");
+    assert.match(routeSource, /where: isUuidIdentifier\(ownerId\)/);
+  });
+
   it("enforces extension, content-type, size, and quarantine status policy", () => {
     assert.equal(validateAttachmentUploadPolicy({ fileName: "invoice.pdf", contentType: "application/pdf", byteSize: 1024 }), "");
     assert.equal(validateAttachmentUploadPolicy({ fileName: "receipt.JPG", contentType: "image/jpeg", byteSize: 1024 }), "");

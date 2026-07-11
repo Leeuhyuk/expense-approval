@@ -14,6 +14,11 @@ import { auditRequestContext } from "./rowUtils.js";
 export const signedUrlTtlMs = 10 * 60 * 1000;
 
 const previewableAttachmentExtensions = new Set([".pdf", ".jpg", ".jpeg", ".png"]);
+const uuidIdentifierPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export function isUuidIdentifier(value: string) {
+  return uuidIdentifierPattern.test(value.trim());
+}
 
 function canPreviewAttachmentFile(fileName: string) {
   return previewableAttachmentExtensions.has(attachmentExtension(fileName));
@@ -124,9 +129,9 @@ async function resolveOwner(ownerType: string, ownerId: string) {
   const normalizedType = ownerType.trim().toUpperCase();
   if (normalizedType === "PAYMENT_REQUEST") {
     const item = await prisma.paymentRequest.findFirst({
-      where: {
-        OR: [{ id: ownerId }, { requestCode: ownerId }],
-      },
+      where: isUuidIdentifier(ownerId)
+        ? { OR: [{ id: ownerId }, { requestCode: ownerId }] }
+        : { requestCode: ownerId },
       include: {
         approvalSteps: true,
       },
@@ -135,10 +140,11 @@ async function resolveOwner(ownerType: string, ownerId: string) {
   }
 
   if (normalizedType === "VENDOR") {
+    const vendorAliases = [{ name: ownerId }, { businessNumber: ownerId }];
     const item = await prisma.vendor.findFirst({
-      where: {
-        OR: [{ id: ownerId }, { name: ownerId }, { businessNumber: ownerId }],
-      },
+      where: isUuidIdentifier(ownerId)
+        ? { OR: [{ id: ownerId }, ...vendorAliases] }
+        : { OR: vendorAliases },
     });
     return item ? { ownerType: "VENDOR", ownerId: item.id, vendor: item } : null;
   }

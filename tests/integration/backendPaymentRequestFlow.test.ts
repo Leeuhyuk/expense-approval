@@ -295,7 +295,7 @@ describe("backend payment request flow integration", () => {
         },
       });
       const submitPayload = submit.json();
-      assert.equal(submit.statusCode, 200);
+      assert.equal(submit.statusCode, 200, JSON.stringify(submitPayload));
       assert.equal(submitPayload.status, "success");
       assert.equal(submitPayload.data.상태, "제출");
       assert.equal(submitPayload.meta.rowVersion, 2);

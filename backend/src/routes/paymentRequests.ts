@@ -6,7 +6,7 @@ import { validatePaymentSubmitFinancialClose } from "../controls/financialClose.
 import { notificationExpiresAt } from "../domain/notificationRetention.js";
 import { prisma } from "../db/prisma.js";
 import { fail, success } from "../utils/response.js";
-import { auditRequestContext, definedCookies, formatDate, formatWon, jsonRow, parseWon, readStringPatch, type TableRow } from "./rowUtils.js";
+import { auditRequestContext, definedCookies, forwardedInjectHeaders, formatDate, formatWon, jsonRow, parseWon, readStringPatch, type TableRow } from "./rowUtils.js";
 
 const listQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
@@ -861,7 +861,7 @@ export const paymentRequestRoutes: FastifyPluginAsync = async (app) => {
     return app.inject({
       method: "PATCH",
       url: `/api/payment-requests/${encodeURIComponent(params.requestCode)}`,
-      headers: request.headers as Record<string, string>,
+      headers: forwardedInjectHeaders(request.headers),
       cookies: definedCookies(request.cookies),
       payload,
     }).then((response) => {

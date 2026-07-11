@@ -8,7 +8,7 @@ import { prisma } from "../db/prisma.js";
 import { internalBankAccountVerificationPolicy, verifyBankAccount, type BankAccountVerificationResult } from "../integrations/bankAccountVerification.js";
 import { decryptBankAccount } from "../security/bankAccountCrypto.js";
 import { fail, success } from "../utils/response.js";
-import { auditRequestContext, definedCookies, filterAndSortRows, formatDate, formatWon, jsonRow, paginateRows, readListFilters, readStringPatch, type TableRow } from "./rowUtils.js";
+import { auditRequestContext, definedCookies, forwardedInjectHeaders, filterAndSortRows, formatDate, formatWon, jsonRow, paginateRows, readListFilters, readStringPatch, type TableRow } from "./rowUtils.js";
 
 const listQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
@@ -1113,7 +1113,7 @@ export const disbursementRoutes: FastifyPluginAsync = async (app) => {
     return app.inject({
       method: "PATCH",
       url: `/api/disbursements/${encodeURIComponent(params.disbursementCode)}`,
-      headers: request.headers as Record<string, string>,
+      headers: forwardedInjectHeaders(request.headers),
       cookies: definedCookies(request.cookies),
       payload: patch,
     }).then((response) => {

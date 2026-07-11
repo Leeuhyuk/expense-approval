@@ -9,7 +9,7 @@ import { reportDownloadLimitIssue } from "../operations/performancePolicy.js";
 import { readStoredFile, writeStoredFile } from "../storage/attachmentStorage.js";
 import { encryptBankAccount, maskBankAccount } from "../security/bankAccountCrypto.js";
 import { fail, success } from "../utils/response.js";
-import { addDays, auditRequestContext, definedCookies, filterAndSortRows, formatDate, formatWon, jsonRow, paginateRows, parseWon, readListFilters, readStringPatch, type ListQuery, type TableRow } from "./rowUtils.js";
+import { addDays, auditRequestContext, definedCookies, forwardedInjectHeaders, filterAndSortRows, formatDate, formatWon, jsonRow, paginateRows, parseWon, readListFilters, readStringPatch, type ListQuery, type TableRow } from "./rowUtils.js";
 
 const listQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
@@ -964,10 +964,16 @@ type UserWithRelations = Prisma.UserGetPayload<{
   };
 }>;
 
+function settingUserWhere(identifier: string): Prisma.UserWhereInput {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(identifier)
+    ? { id: identifier }
+    : { name: identifier };
+}
 function toSettingRow(item: UserWithRelations): TableRow {
   const activeRoles = item.roles.filter(({ role }) => role.isActive).map(({ role }) => role.name);
   const roleCodes = item.roles.filter(({ role }) => role.isActive).map(({ role }) => role.code);
   return {
+    사용자ID: item.id,
     사용자: item.name,
     부서: item.department.name,
     역할: roleCodes[0] ?? "-",
@@ -1971,7 +1977,7 @@ export const budgetRoutes: FastifyPluginAsync = async (app) => {
       for (const key of ["amount", "rowVersion", "예산RowVersion", "조정 금액", "조정금액"]) {
         if (key in body) payload[key] = (body as Record<string, unknown>)[key];
       }
-      return app.inject({ method: "POST", url: `/api/budgets/${encodeURIComponent(params.departmentName)}/adjustments`, headers: request.headers as Record<string, string>, cookies: definedCookies(request.cookies), payload }).then((response) => {
+      return app.inject({ method: "POST", url: `/api/budgets/${encodeURIComponent(params.departmentName)}/adjustments`, headers: forwardedInjectHeaders(request.headers), cookies: definedCookies(request.cookies), payload }).then((response) => {
         reply.status(response.statusCode).headers(response.headers).send(response.body);
       });
     }
@@ -1981,7 +1987,7 @@ export const budgetRoutes: FastifyPluginAsync = async (app) => {
     for (const key of ["rowVersion", "예산RowVersion"]) {
       if (key in body) payload[key] = (body as Record<string, unknown>)[key];
     }
-    return app.inject({ method: "PATCH", url: `/api/budgets/${encodeURIComponent(params.departmentName)}`, headers: request.headers as Record<string, string>, cookies: definedCookies(request.cookies), payload }).then((response) => {
+    return app.inject({ method: "PATCH", url: `/api/budgets/${encodeURIComponent(params.departmentName)}`, headers: forwardedInjectHeaders(request.headers), cookies: definedCookies(request.cookies), payload }).then((response) => {
       reply.status(response.statusCode).headers(response.headers).send(response.body);
     });
   });
@@ -2142,7 +2148,7 @@ export const vendorRoutes: FastifyPluginAsync = async (app) => {
     const body = request.body && typeof request.body === "object" ? (request.body as { idempotencyKey?: unknown; reason?: unknown }) : {};
     const idempotencyKey = typeof body.idempotencyKey === "string" && body.idempotencyKey ? body.idempotencyKey : `vendor-delete:${before.id}:${before.rowVersion}`;
     const reason = typeof body.reason === "string" && body.reason ? body.reason : "거래처 비활성화";
-    return app.inject({ method: "PATCH", url: `/api/vendors/${encodeURIComponent(params.vendorName)}`, headers: request.headers as Record<string, string>, cookies: definedCookies(request.cookies), payload: { 상태: "비활성", 작업사유: reason, rowVersion: String(before.rowVersion), idempotencyKey } }).then((response) => {
+    return app.inject({ method: "PATCH", url: `/api/vendors/${encodeURIComponent(params.vendorName)}`, headers: forwardedInjectHeaders(request.headers), cookies: definedCookies(request.cookies), payload: { 상태: "비활성", 작업사유: reason, rowVersion: String(before.rowVersion), idempotencyKey } }).then((response) => {
       reply.status(response.statusCode).headers(response.headers).send(response.body);
     });
   });
@@ -2164,7 +2170,7 @@ export const vendorRoutes: FastifyPluginAsync = async (app) => {
     return app.inject({
       method: "PATCH",
       url: `/api/vendors/${encodeURIComponent(params.vendorName)}`,
-      headers: request.headers as Record<string, string>,
+      headers: forwardedInjectHeaders(request.headers),
       cookies: definedCookies(request.cookies),
       payload: {
         ...readStringPatch(body.patch),
@@ -2631,7 +2637,7 @@ export const reportRoutes: FastifyPluginAsync = async (app) => {
       return app.inject({
         method: "DELETE",
         url: `/api/reports/${encodeURIComponent(params.reportName)}`,
-        headers: request.headers as Record<string, string>,
+        headers: forwardedInjectHeaders(request.headers),
         cookies: definedCookies(request.cookies),
         payload: metadata,
       }).then((response) => {
@@ -2641,7 +2647,7 @@ export const reportRoutes: FastifyPluginAsync = async (app) => {
     return app.inject({
       method: "PATCH",
       url: `/api/reports/${encodeURIComponent(params.reportName)}`,
-      headers: request.headers as Record<string, string>,
+      headers: forwardedInjectHeaders(request.headers),
       cookies: definedCookies(request.cookies),
       payload: { ...patch, ...metadata },
     }).then((response) => {
@@ -3036,7 +3042,8 @@ export const settingRoutes: FastifyPluginAsync = async (app) => {
     if (!user) return;
     if (!hasPermission(user, "system:manage")) return fail(reply, "FORBIDDEN", "시스템 설정 수정 권한이 없습니다.", 403);
 
-    const before = await prisma.user.findFirst({ where: { name: (request.params as { userName: string }).userName }, include: { department: true, roles: { include: { role: true } } } });
+    const params = request.params as { userName: string };
+    const before = await prisma.user.findFirst({ where: settingUserWhere(params.userName), include: { department: true, roles: { include: { role: true } } } });
     if (!before) return reply.send(success(request, null));
     const patch = readStringPatch(request.body);
     const idempotencyKey = patch.idempotencyKey?.trim() || undefined;
@@ -3104,11 +3111,11 @@ export const settingRoutes: FastifyPluginAsync = async (app) => {
     if (!hasPermission(user, "system:manage")) return fail(reply, "FORBIDDEN", "사용자 비활성화 권한이 없습니다.", 403);
     const params = request.params as { userName: string };
     const direct = readStringPatch(request.body);
-    const before = await prisma.user.findFirst({ where: { name: params.userName }, include: { department: true, roles: { include: { role: true } } } });
+    const before = await prisma.user.findFirst({ where: settingUserWhere(params.userName), include: { department: true, roles: { include: { role: true } } } });
     if (!before) return reply.send(success(request, null));
     if (!before.isActive) return reply.send(success(request, toSettingRow(before), { deleted: true, alreadyInactive: true }));
     const rowVersion = direct.rowVersion ?? direct.사용자RowVersion ?? String(before.rowVersion);
-    return app.inject({ method: "PATCH", url: `/api/settings/${encodeURIComponent(params.userName)}`, headers: request.headers as Record<string, string>, cookies: definedCookies(request.cookies), payload: { 상태: "비활성", rowVersion, 사용자RowVersion: rowVersion, idempotencyKey: direct.idempotencyKey ?? `settings-user-deactivate-${before.id}-${before.rowVersion}` } }).then((response) => {
+    return app.inject({ method: "PATCH", url: `/api/settings/${encodeURIComponent(params.userName)}`, headers: forwardedInjectHeaders(request.headers), cookies: definedCookies(request.cookies), payload: { 상태: "비활성", rowVersion, 사용자RowVersion: rowVersion, idempotencyKey: direct.idempotencyKey ?? `settings-user-deactivate-${before.id}-${before.rowVersion}` } }).then((response) => {
       reply.status(response.statusCode).headers(response.headers).send(response.body);
     });
   });
@@ -3124,7 +3131,7 @@ export const settingRoutes: FastifyPluginAsync = async (app) => {
     return app.inject({
       method: "PATCH",
       url: `/api/settings/${encodeURIComponent(params.userName)}`,
-      headers: request.headers as Record<string, string>,
+      headers: forwardedInjectHeaders(request.headers),
       cookies: definedCookies(request.cookies),
       payload: { ...patch, ...actionPatch, ...(rowVersion ? { rowVersion, 사용자RowVersion: rowVersion } : {}), ...(idempotencyKey ? { idempotencyKey } : {}) },
     }).then((response) => {
@@ -3313,7 +3320,7 @@ export const favoriteRoutes: FastifyPluginAsync = async (app) => {
       return app.inject({
         method: "DELETE",
         url: `/api/favorites/${encodeURIComponent(params.label)}`,
-        headers: request.headers as Record<string, string>,
+        headers: forwardedInjectHeaders(request.headers),
         cookies: definedCookies(request.cookies),
         payload: metadata,
       }).then((response) => {
@@ -3324,7 +3331,7 @@ export const favoriteRoutes: FastifyPluginAsync = async (app) => {
     return app.inject({
       method: "PATCH",
       url: `/api/favorites/${encodeURIComponent(params.label)}`,
-      headers: request.headers as Record<string, string>,
+      headers: forwardedInjectHeaders(request.headers),
       cookies: definedCookies(request.cookies),
       payload: { ...patch, ...actionPatch, ...metadata },
     }).then((response) => {

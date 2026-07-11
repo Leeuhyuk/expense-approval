@@ -125,6 +125,13 @@ export function auditRequestContext(request: FastifyRequest) {
   };
 }
 
+export function forwardedInjectHeaders(headers: Record<string, string | string[] | undefined>) {
+  return Object.entries(headers).reduce<Record<string, string | string[]>>((acc, [key, value]) => {
+    if (value === undefined || key.toLowerCase() === "content-length" || key.toLowerCase() === "transfer-encoding") return acc;
+    acc[key] = value;
+    return acc;
+  }, {});
+}
 export function definedCookies(cookies: Record<string, string | undefined>): Record<string, string> {
   return Object.entries(cookies).reduce<Record<string, string>>((acc, [key, value]) => {
     if (typeof value === "string") acc[key] = value;

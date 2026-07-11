@@ -51,15 +51,19 @@ function commandForNpm(args) {
 
 function startProcess(args, env) {
   const command = commandForNpm(args);
+  const output = [];
   const child = spawn(command.command, command.args, {
     cwd: process.cwd(),
     env: { ...process.env, ...env },
-    stdio: "ignore",
+    stdio: ["ignore", "pipe", "pipe"],
   });
+  child.stdout?.on("data", (chunk) => output.push(String(chunk)));
+  child.stderr?.on("data", (chunk) => output.push(String(chunk)));
   child.unref();
 
   return {
     child,
+    output: () => output.join("").split(String.fromCharCode(10)).slice(-80).join(String.fromCharCode(10)),
     stop: () =>
       new Promise((resolve) => {
         if (child.exitCode !== null) {
@@ -152,11 +156,19 @@ test("remote mode browser login persists session and logs out against backend/te
     browser = await chromium.launch({ channel: "chrome", headless: true });
     const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
     const page = await context.newPage();
-    const consoleErrors = [];
+    const pageErrors = [];
+    const httpErrors = [];
+    let logoutStarted = false;
     page.on("console", (message) => {
-      if (message.type() === "error") consoleErrors.push(message.text());
+      if (message.type() === "error" && !message.text().startsWith("Failed to load resource:")) pageErrors.push(message.text());
     });
-    page.on("pageerror", (error) => consoleErrors.push(error.message));
+    page.on("pageerror", (error) => pageErrors.push(error.message));
+    page.on("response", (response) => {
+      if (response.status() < 400) return;
+      const url = new URL(response.url());
+      if (response.status() === 401 && (logoutStarted || url.pathname.endsWith("/api/auth/me"))) return;
+      httpErrors.push([response.status(), response.request().method(), url.pathname].join(" "));
+    });
 
     await page.goto(`${uiBaseUrl}/#dashboard`, { waitUntil: "networkidle" });
     await page.waitForSelector("input[aria-label='로그인 이메일']", { timeout: 15_000 });
@@ -171,9 +183,11 @@ test("remote mode browser login persists session and logs out against backend/te
     await page.goto(`${uiBaseUrl}/#settings`, { waitUntil: "networkidle" });
     await page.waitForSelector(".settings-management-page", { timeout: 20_000 });
 
+    logoutStarted = true;
     await page.locator("button[aria-label='로그아웃']").click();
     await page.waitForSelector("input[aria-label='로그인 이메일']", { timeout: 15_000 });
-    assert.deepEqual(consoleErrors, []);
+    assert.deepEqual(pageErrors, []);
+    assert.deepEqual(httpErrors, [], backend?.output() || "");
   } finally {
     if (browser) await browser.close().catch(() => undefined);
     if (frontend) await frontend.stop();

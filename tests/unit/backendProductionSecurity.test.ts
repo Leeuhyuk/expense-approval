@@ -48,6 +48,31 @@ describe("backend production security controls", () => {
     });
   });
 
+  it("allows browser file uploads and API mutations through CORS preflight", async () => {
+    const app = await withEnv(
+      { NODE_ENV: "test", FRONTEND_ORIGIN: "http://127.0.0.1:5175" },
+      () => buildApp({ logger: false }),
+    );
+    try {
+      const response = await app.inject({
+        method: "OPTIONS",
+        url: "/api/files/example/content",
+        headers: {
+          origin: "http://127.0.0.1:5175",
+          "access-control-request-method": "PUT",
+          "access-control-request-headers": "content-type",
+        },
+      });
+
+      assert.equal(response.statusCode, 204);
+      assert.equal(response.headers["access-control-allow-origin"], "http://127.0.0.1:5175");
+      assert.match(String(response.headers["access-control-allow-methods"]), /PUT/);
+      assert.match(String(response.headers["access-control-allow-methods"]), /PATCH/);
+      assert.match(String(response.headers["access-control-allow-methods"]), /DELETE/);
+    } finally {
+      await app.close();
+    }
+  });
   it("rejects local, wildcard, or non-HTTPS CORS origins in production", async () => {
     for (const FRONTEND_ORIGIN of ["*", "http://127.0.0.1:5173", "http://erp.example.com"]) {
       await assert.rejects(

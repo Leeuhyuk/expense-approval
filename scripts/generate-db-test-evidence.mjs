@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 const defaultOutputPath = "release/db-test-evidence.json";
 const requiredHarnessFiles = [
   "tests/integration/backendDataPersistence.test.ts",
+  "tests/integration/backendListQueryConsistency.test.ts",
   "tests/integration/backendSettingsPersistence.test.ts",
   "tests/integration/backendPaymentRequestFlow.test.ts",
   "tests/integration/backendNotificationOperationsFlow.test.ts",
@@ -23,10 +24,11 @@ const commands = [
     args: ["run", "test:integration"],
     requiredOutputPatterns: [
       "persists vendor creation across refresh and a second login",
+      "keeps server search filters sorting and pagination consistent with DB results",
       "persists role and user permission changes across refresh and a second login",
       "persists master data, draft creation, file upload, submit, and approval steps in the DB",
       "keeps notification reads idempotent and business failure owner notifications de-duplicated",
-      "persists operating data changes through budget, disbursement, report, schedule, and favorite routes",
+      "persists budget adjustments, reports, schedules, and favorites with DB/audit evidence",
     ],
   },
   {

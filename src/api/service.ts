@@ -1300,7 +1300,7 @@ function getCookieValue(name: string) {
 
 function addDefaultRemoteHeaders(init?: RequestInit) {
   const headers = new Headers(init?.headers);
-  if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+  if (init?.body != null && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   const method = init?.method?.toUpperCase() ?? "GET";
   if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
     const token = getCookieValue("erp_csrf");

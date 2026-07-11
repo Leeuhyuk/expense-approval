@@ -8,6 +8,7 @@ import { describe, it } from "node:test";
 
 const harnessFiles = [
   "tests/integration/backendDataPersistence.test.ts",
+  "tests/integration/backendListQueryConsistency.test.ts",
   "tests/integration/backendSettingsPersistence.test.ts",
   "tests/integration/backendPaymentRequestFlow.test.ts",
   "tests/integration/backendNotificationOperationsFlow.test.ts",

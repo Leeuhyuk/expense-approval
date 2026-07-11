@@ -76,7 +76,7 @@ export const operationsRoutes: FastifyPluginAsync = async (app) => {
     }
 
     const summary = await getOperationalAlertSummary();
-    return reply.code(summary.ok ? 200 : 503).send(success(request, summary));
+    return reply.send(success(request, summary));
   });
 
   app.get("/operations/business-failure-alerts", async (request, reply) => {
@@ -87,7 +87,7 @@ export const operationsRoutes: FastifyPluginAsync = async (app) => {
     }
 
     const summary = await getBusinessFailureAlertSummary();
-    return reply.code(summary.ok ? 200 : 503).send(success(request, summary));
+    return reply.send(success(request, summary));
   });
 
   app.post("/operations/business-failure-alerts/notify", async (request, reply) => {
@@ -159,7 +159,7 @@ export const operationsRoutes: FastifyPluginAsync = async (app) => {
     }
 
     const summary = await getDataQualitySummary();
-    return reply.code(summary.ok ? 200 : 409).send(success(request, summary));
+    return reply.send(success(request, summary));
   });
 
   app.get("/operations/data-quality/runs", async (request, reply) => {
@@ -212,7 +212,7 @@ export const operationsRoutes: FastifyPluginAsync = async (app) => {
     }
 
     const summary = await getFinancialReconciliationSummary();
-    return reply.code(summary.ok ? 200 : 409).send(success(request, summary));
+    return reply.send(success(request, summary));
   });
 
   app.post("/operations/financial-reconciliation/notify", async (request, reply) => {
@@ -293,7 +293,7 @@ export const operationsRoutes: FastifyPluginAsync = async (app) => {
     }
 
     const report = await getFinancialControlReport();
-    return reply.code(report.ok ? 200 : 409).send(success(request, report));
+    return reply.send(success(request, report));
   });
 
   app.get("/operations/permission-review", async (request, reply) => {
@@ -304,7 +304,7 @@ export const operationsRoutes: FastifyPluginAsync = async (app) => {
     }
 
     const report = await getPermissionReviewReport();
-    return reply.code(report.ok ? 200 : 409).send(success(request, report));
+    return reply.send(success(request, report));
   });
 
   app.get("/operations/privacy-access-report", async (request, reply) => {
@@ -315,7 +315,7 @@ export const operationsRoutes: FastifyPluginAsync = async (app) => {
     }
 
     const report = await getPrivacyAccessReport();
-    return reply.code(report.ok ? 200 : 409).send(success(request, report));
+    return reply.send(success(request, report));
   });
 
   app.get("/operations/audit-integrity-report", async (request, reply) => {
@@ -326,7 +326,7 @@ export const operationsRoutes: FastifyPluginAsync = async (app) => {
     }
 
     const report = await getAuditIntegrityReport();
-    return reply.code(report.ok ? 200 : 409).send(success(request, report));
+    return reply.send(success(request, report));
   });
 
   app.get("/operations/audit-logs", async (request, reply) => {

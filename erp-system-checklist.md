@@ -613,14 +613,14 @@
 
 - [x] P0: 모든 화면 CRUD와 업무 액션이 `erpApi` remote mode 또는 실제 backend route로 연결되는지 버튼별 매핑표 작성
 - [x] P0: mock API, React local state, `localStorage`만 변경하는 버튼 목록을 별도 표시하고 실제 저장소 연결 전 완료 처리 금지
-- [ ] P0: 생성/수정/삭제/상태 변경 후 새로고침, 재로그인, 다른 브라우저 접속에서도 데이터가 유지되는지 검증
-  - 진행 메모(2026-07-06): `tests/e2e/remote-ui-persistence.test.mjs`에 결제 요청 생성, 증빙 업로드, 제출, 승인자 2명 순차 승인, 두 번째 관리자 브라우저 재조회, 지급 보류, 새로고침 후 보류 상태 유지, Prisma `PaymentRequest`/`ApprovalStep`/`Attachment`/`Disbursement`/감사 로그 대사를 추가했다. `scripts/verify-db-test-evidence.mjs`는 이 payment workflow remote UI E2E가 없으면 실패한다. 단, 현재 로컬에는 `ERP_TEST_DATABASE_URL`이 없어 실제 DB 기반 실행 증적은 없으므로 P0는 계속 미완료로 유지한다.
+- [x] P0: 생성/수정/삭제/상태 변경 후 새로고침, 재로그인, 다른 브라우저 접속에서도 데이터가 유지되는지 검증
+  - 완료 메모(2026-07-11): 내장 PostgreSQL의 폐기 가능한 `payment_approval_erp_test`에서 거래처 등록/증빙 업로드, 즐겨찾기/보고서/설정, 결제 요청/승인 인계/지급 보류를 실행했다. 새로고침과 두 번째 브라우저 로그인 후 화면 유지, Prisma DB/file/audit 직접 대사를 포함한 remote UI E2E 3건과 로그인 E2E 1건이 통과했고 `release/db-test-evidence.json` strict 검증도 통과했다.
 - [x] P0: 서버 실패, 권한 실패, 부분 실패, 중복 요청 실패가 UI 메시지와 감사/보안 로그에 같은 requestId 기준으로 반영되는지 검증
   - 진행 메모(2026-07-06): `ApiErrorCode`에 `IDEMPOTENCY_CONFLICT`, `PARTIAL_FAILURE`, 파일/scan/rate limit 오류 코드를 맞추고, `securityEventTypeForFailure`가 `FORBIDDEN -> access_denied`, `IDEMPOTENCY_CONFLICT -> duplicate_request_blocked`, `PARTIAL_FAILURE -> partial_failure`, `SERVER_ERROR -> server_failure`로 분류하도록 고정했다. `failureCorrelation.test.ts`는 같은 실패 응답이 프론트 `ApiRequestError` 메시지와 backend `security_events`에서 동일 `requestId`/error code/path로 대사되는지 검증한다.
 - [x] P0: 모든 mutation 요청에 idempotencyKey, rowVersion 또는 동시성 충돌 방지 기준 적용
   - 진행 메모(2026-07-06): 결제 요청 생성/임시저장/제출 수정, 예산 생성/직접수정, 보고서 생성/수정/삭제/예약 발송, 즐겨찾기 생성/수정/삭제, 파일 presign/complete/delete, 시스템 설정 스냅샷 저장에 `idempotencyKey`, `rowVersion` alias, 최신 `AuditLog.id` 기대값 또는 예외 기준, 조건부 backend update 및 회귀 테스트를 추가했다. 알림/운영성 route 예외 기준의 staging 증적과 staging 동시성 smoke가 남아 있어 전체 완료로 보지 않는다.
-- [ ] P1: 목록 검색, 필터, 정렬, 페이지네이션을 서버 쿼리 파라미터와 동기화하고 DB 결과와 화면 결과 일치 검증
-  - 진행 메모(2026-07-08): 공통 `useManagedTable`은 이미 `search`, `filter.*`, `sort`, `page`, `pageSize`를 서버 query로 보내고 있었고, 별도 구현이던 보고서 목록도 `/reports` 서버 query 기준 검색/유형/부서/거래처/정렬/pagination으로 전환했다. 보고서 생성 시 부서/거래처 scope를 `ReportRun.summary` metadata에 보존해 backend row 필터와 다운로드 artifact가 같은 run 기준을 쓰도록 했으며, 예산/거래처 목록은 API 빈 결과 또는 실패를 로컬 기본 데이터로 덮어쓰는 fallback을 제거했다. 실제 DB 대량 데이터에서 화면 total/page와 SQL 결과 일치 증빙은 테스트 단계에서 확인한다.
+- [x] P1: 목록 검색, 필터, 정렬, 페이지네이션을 서버 쿼리 파라미터와 동기화하고 DB 결과와 화면 결과 일치 검증
+  - 진행 메모(2026-07-08): 공통 `useManagedTable`은 이미 `search`, `filter.*`, `sort`, `page`, `pageSize`를 서버 query로 보내고 있었고, 별도 구현이던 보고서 목록도 `/reports` 서버 query 기준 검색/유형/부서/거래처/정렬/pagination으로 전환했다. 보고서 생성 시 부서/거래처 scope를 `ReportRun.summary` metadata에 보존해 backend row 필터와 다운로드 artifact가 같은 run 기준을 쓰도록 했으며, 예산/거래처 목록은 API 빈 결과 또는 실패를 로컬 기본 데이터로 덮어쓰는 fallback을 제거했다. 2026-07-11에 `backendListQueryConsistency.test.ts`로 `search`, 정확 일치 `filter.*__in`, `sort`, `page`, `pageSize` 조합의 API total/rows와 Prisma DB 원본 정렬·slice를 직접 대조하고 인접 페이지 비중복까지 검증했다.
 - [x] P1: optimistic update 적용 화면은 서버 원본 불일치 시 rollback 또는 재조회 기준 구현
   - 진행 메모(2026-07-07): `useManagedTable` 공통 mutation 처리에 요청 직전 rows/선택/total 스냅샷을 추가하고, 단건 수정/일괄 수정/action/create 실패 시 스냅샷 원복 후 `listPageRows` 재조회로 서버 원본에 수렴하도록 보강했다. 서버가 성공 응답에서 갱신 행을 반환하지 않는 경우도 임시 병합 대신 목록 재조회 기준을 사용한다. 실제 stale rowVersion 충돌과 다른 브라우저 변경 증빙은 최종 테스트 단계에서 확인해야 한다.
 - [x] P2: 화면별 캐시 무효화, 재검증, stale data 표시 정책 정의
@@ -749,8 +749,8 @@
 - [x] P0: 승인, 지급, 예산, 거래처, 보고서, 설정, 즐겨찾기 mutation API 명세와 route 구현
 - [x] P0: 핵심 Prisma 모델의 schema/seed/backend delegate/frontend service coverage guard 추가
 - [x] P0: Prisma schema의 모든 핵심 모델에 seed data, route, service, integration test 연결
-- [ ] P0: frontend remote mode E2E를 실제 backend test server와 test DB로 실행
-  - 진행 메모(2026-07-06): remote UI E2E 하네스 범위를 거래처/파일, 즐겨찾기/보고서/설정, 결제 요청/승인 handoff/지급 보류까지 확장했다. `node --test tests/e2e/remote-ui-persistence.test.mjs`는 test DB가 없는 현재 환경에서 3건 skip을 명시했고, strict release evidence mode는 `ERP_TEST_DATABASE_URL`뿐 아니라 `release/db-test-evidence.json`의 실제 실행 결과, 하네스 checksum, skip 없는 통과 상태까지 요구한다. 폐기 가능한 PostgreSQL test DB에서 실제 실행한 결과가 아직 없으므로 완료 처리는 보류한다.
+- [x] P0: frontend remote mode E2E를 실제 backend test server와 test DB로 실행
+  - 완료 메모(2026-07-11): 내장 PostgreSQL의 별도 test DB에 11개 마이그레이션을 새로 적용하고 `npm run release:db-test-evidence-run`을 실행했다. DB integration 6건, remote auth E2E 1건, remote UI persistence E2E 3건이 skip 없이 통과했으며, 하네스 8개 checksum과 실행 결과를 `npm run release:db-test-evidence` strict 모드로 검증했다.
 - [x] P0: remote mode 로그인 화면과 backend/test DB 기반 browser auth E2E 하네스 추가
 - [x] P1: API 응답 DTO와 화면 table row 매핑을 문서화하고 상태값/ID 불일치 제거
   - 진행 메모(2026-07-08): `docs/screen-data-mapping.md`를 실제 화면 route key와 숨김 ID/version 필드 기준으로 갱신했다. 지급 row에는 `지급RowVersion`, 예산/거래처/사용자 설정 row에는 공통 `rowVersion` alias를 추가해 화면별 alias와 공통 mutation guard가 같은 값을 참조하게 했다. 보고서 row는 `부서`, `거래처`, `드릴다운JSON`, artifact metadata 기준을 문서화했다. 실제 DB 응답과 화면 row 상태값/ID 대사는 테스트 단계에서 확인한다.
@@ -761,7 +761,7 @@
 ### 23.13 데이터 연동 검증 자동화
 
 - [x] P0: 화면별 생성/수정/삭제/상태 변경 후 `새로고침 후 유지` E2E 테스트 추가
-  - 증거: `tests/e2e/remote-ui-persistence.test.mjs`가 remote mode 브라우저에서 거래처 등록/증빙 업로드, 즐겨찾기 추가, 보고서 생성, 설정 권한 그룹 추가, 결제 요청 생성/증빙 업로드/제출, 승인자 순차 승인, 지급 보류를 수행하고 새로고침 및 두 번째 브라우저 로그인 후 화면 유지와 Prisma DB/file/audit 대사를 확인하도록 확장했다. `scripts/verify-db-test-evidence.mjs`는 screen-level persistence와 payment workflow E2E harness가 없으면 release evidence gate를 실패시킨다. 실제 `ERP_TEST_DATABASE_URL` 기반 실행은 23.12 P0로 계속 남긴다.
+  - 증거: `tests/e2e/remote-ui-persistence.test.mjs`가 remote mode 브라우저에서 거래처 등록/증빙 업로드, 즐겨찾기 추가, 보고서 생성, 설정 권한 그룹 추가, 결제 요청 생성/증빙 업로드/제출, 승인자 순차 승인, 지급 보류를 수행하고 새로고침 및 두 번째 브라우저 로그인 후 화면 유지와 Prisma DB/file/audit 대사를 확인하도록 확장했다. `scripts/verify-db-test-evidence.mjs`는 screen-level persistence와 payment workflow E2E harness가 없으면 release evidence gate를 실패시킨다. 2026-07-11 실제 `ERP_TEST_DATABASE_URL` 기반 실행과 strict 증적 검증까지 완료해 23.12 P0도 완료 처리했다.
 - [x] P0: UI 액션 후 DB 상태를 직접 검증하는 integration test 추가
 - [x] P0: remote browser auth E2E가 실제 backend server, test DB 사용자, 새로고침 세션 유지, 로그아웃을 검증하도록 준비
 - [x] P0: backend app factory와 `app.inject` 기반 integration test 준비 구조 추가

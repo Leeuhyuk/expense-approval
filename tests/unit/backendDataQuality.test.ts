@@ -49,6 +49,6 @@ describe("backend data quality readiness checks", () => {
     assert.match(operationsRouteSource, /app\.get\("\/operations\/data-quality"/, "data quality endpoint must be registered");
     assert.match(operationsRouteSource, /requireAuth\(/, "data quality endpoint must require authentication");
     assert.match(operationsRouteSource, /hasPermission\(user, "system:manage"\)/, "data quality endpoint must require system management permission");
-    assert.match(operationsRouteSource, /reply\.code\(summary\.ok \? 200 : 409\)/, "critical data quality failures must be machine-detectable");
+    assert.match(operationsRouteSource, /reply\.send\(success\(request, summary\)\)/, "data quality findings must remain readable while summary.ok stays machine-detectable");
   });
 });

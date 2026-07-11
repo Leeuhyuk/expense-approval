@@ -23,7 +23,7 @@ describe("privacy access report", () => {
     assert.match(route, /hasPermission\(user, "system:manage"\)/);
     assert.match(route, /hasPermission\(user, "audit:read"\)/);
     assert.match(route, /getPrivacyAccessReport\(\)/);
-    assert.match(route, /reply\.code\(report\.ok \? 200 : 409\)/);
+    assert.match(route, /reply\.send\(success\(request, report\)\)/);
   });
 
   it("summarizes privacy inventory and access events without raw values", () => {
