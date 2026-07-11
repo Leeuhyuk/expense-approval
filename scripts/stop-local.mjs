@@ -5,7 +5,9 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const runtimeStatePath = resolve(projectRoot, ".local-data", "runtime.json");
+const profile = process.env.ERP_LOCAL_PROFILE?.trim() || "live";
+const localDataRoot = process.env.ERP_LOCAL_DATA_DIR ? resolve(process.env.ERP_LOCAL_DATA_DIR) : resolve(projectRoot, ".local-data");
+const runtimeStatePath = process.env.ERP_LOCAL_RUNTIME_STATE_PATH ? resolve(process.env.ERP_LOCAL_RUNTIME_STATE_PATH) : resolve(localDataRoot, "runtime.json");
 
 function isProcessAlive(pid) {
   if (!Number.isInteger(pid) || pid <= 0) return false;
@@ -22,14 +24,14 @@ async function main() {
   try {
     state = JSON.parse(await readFile(runtimeStatePath, "utf8"));
   } catch {
-    console.log("[local] 기록된 로컬 시스템이 없습니다.");
+    console.log(`[local:${profile}] 기록된 로컬 시스템이 없습니다.`);
     return;
   }
 
   const pid = Number(state.pid);
   if (!isProcessAlive(pid)) {
     await rm(runtimeStatePath, { force: true });
-    console.log("[local] 종료된 실행 기록을 정리했습니다.");
+    console.log(`[local:${profile}] 종료된 실행 기록을 정리했습니다.`);
     return;
   }
 
@@ -65,13 +67,13 @@ async function main() {
   }
 
   if (!stopped) {
-    console.error(`[local] PID ${pid}를 종료하지 못했습니다.`);
+    console.error(`[local:${profile}] PID ${pid}를 종료하지 못했습니다.`);
     process.exitCode = 1;
     return;
   }
 
   await rm(runtimeStatePath, { force: true });
-  console.log("[local] 로컬 시스템을 정상 종료했습니다.");
+  console.log(`[local:${profile}] 로컬 시스템을 정상 종료했습니다.`);
 }
 
 await main();

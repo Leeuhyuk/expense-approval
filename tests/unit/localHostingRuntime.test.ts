@@ -15,7 +15,7 @@ describe("local hosting runtime", () => {
     assert.match(packageJson, /"local": "node scripts\/start-local\.mjs"/);
     assert.match(packageJson, /"local:status": "node scripts\/local-status\.mjs"/);
     assert.match(packageJson, /"local:stop": "node scripts\/stop-local\.mjs"/);
-    assert.match(startSource, /const frontendPort = 3000/);
+    assert.match(startSource, /ERP_LOCAL_FRONTEND_PORT \?\? 3000/);
     assert.match(startSource, /VITE_ERP_API_MODE: "remote"/);
     assert.match(startSource, /VITE_DEV_API_PROXY_TARGET/);
     assert.match(viteConfig, /port: 3000/);
@@ -28,7 +28,7 @@ describe("local hosting runtime", () => {
     assert.match(startSource, /LOCALAPPDATA[\s\S]*expense-approval-erp/);
     assert.match(startSource, /existsSync\(resolve\(databaseDir, "PG_VERSION"\)\)/);
     assert.match(startSource, /\["migrate", "deploy", "--schema", "prisma\/schema\.prisma"\]/);
-    assert.match(startSource, /databaseCreated \|\| process\.env\.ERP_LOCAL_RESEED === "true"/);
+    assert.match(startSource, /databaseCreated \|\| \(await databaseNeedsSeed\(\)\) \|\| process\.env\.ERP_LOCAL_RESEED === "true"/);
     assert.match(startSource, /FILE_STORAGE_DIR: fileStorageDir/);
     assert.match(postgresSource, /@embedded-postgres\/windows-x64/);
     assert.match(postgresSource, /cp\(sourceNativeDir, this\.nativeDir/);

@@ -9,21 +9,31 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const scriptPath = fileURLToPath(import.meta.url);
 const projectRoot = resolve(dirname(scriptPath), "..");
-const localDataRoot = resolve(projectRoot, ".local-data");
-const defaultDatabaseRoot = process.platform === "win32" && process.env.LOCALAPPDATA
-  ? resolve(process.env.LOCALAPPDATA, "expense-approval-erp")
-  : localDataRoot;
+const localDataRoot = process.env.ERP_LOCAL_DATA_DIR
+  ? resolve(process.env.ERP_LOCAL_DATA_DIR)
+  : resolve(projectRoot, ".local-data");
+const profile = process.env.ERP_LOCAL_PROFILE?.trim() || "live";
+const stopCommand = profile === "live" ? "npm run local:stop" : "npm run local:staging:stop";
+const defaultDatabaseRoot = process.env.ERP_LOCAL_DATABASE_ROOT
+  ? resolve(process.env.ERP_LOCAL_DATABASE_ROOT)
+  : process.platform === "win32" && process.env.LOCALAPPDATA
+    ? resolve(process.env.LOCALAPPDATA, "expense-approval-erp")
+    : localDataRoot;
 
 export const defaultLocalBackupPaths = {
   projectRoot,
   databaseDir: process.env.ERP_LOCAL_DATABASE_DIR
     ? resolve(process.env.ERP_LOCAL_DATABASE_DIR)
     : resolve(defaultDatabaseRoot, "postgres"),
-  fileStorageDir: resolve(localDataRoot, "files"),
+  fileStorageDir: process.env.ERP_LOCAL_FILE_STORAGE_DIR
+    ? resolve(process.env.ERP_LOCAL_FILE_STORAGE_DIR)
+    : resolve(localDataRoot, "files"),
   backupRoot: process.env.ERP_LOCAL_BACKUP_DIR
     ? resolve(process.env.ERP_LOCAL_BACKUP_DIR)
     : resolve(defaultDatabaseRoot, "backups"),
-  runtimeStatePath: resolve(localDataRoot, "runtime.json"),
+  runtimeStatePath: process.env.ERP_LOCAL_RUNTIME_STATE_PATH
+    ? resolve(process.env.ERP_LOCAL_RUNTIME_STATE_PATH)
+    : resolve(localDataRoot, "runtime.json"),
   databasePort: Number(process.env.ERP_LOCAL_DATABASE_PORT ?? 55432),
 };
 
@@ -65,7 +75,7 @@ export async function assertLocalSystemStopped({ runtimeStatePath, databasePort 
   try {
     const state = JSON.parse(await readFile(runtimeStatePath, "utf8"));
     if (isProcessAlive(Number(state.pid))) {
-      throw new Error("로컬 시스템이 실행 중입니다. 먼저 npm run local:stop을 실행하세요.");
+      throw new Error(`로컬 시스템이 실행 중입니다. 먼저 ${stopCommand}을 실행하세요.`);
     }
   } catch (error) {
     if (error instanceof Error && error.message.includes("로컬 시스템이 실행 중")) throw error;
@@ -355,7 +365,7 @@ async function main() {
     if (!backupId) throw new Error("사용법: npm run local:restore -- <백업-ID>");
     const result = await restoreBackup({ ...defaultLocalBackupPaths, backupId });
     console.log(`[local-backup] 복구 완료: ${result.manifest.id}`);
-    console.log("[local-backup] npm run local로 시스템을 시작해 확인하세요.");
+    console.log(`[local-backup] ${profile === "live" ? "npm run local" : "npm run local:staging"}로 시스템을 시작해 확인하세요.`);
     return;
   }
   throw new Error(`알 수 없는 명령: ${command}`);

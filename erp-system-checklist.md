@@ -838,6 +838,7 @@
 ### 24.1 운영 환경 및 배포 게이트
 
 - [ ] P0: dev, staging, production의 DB, object storage, auth, secret, 도메인, 로그 저장소를 완전히 분리
+  - 로컬 진행 메모(2026-07-11): live와 staging-local을 서로 다른 PostgreSQL cluster/database/user/port, 파일 경로, runtime state, backup root, CSRF/file/account secret, frontend/backend/control port로 분리했다. staging-local은 `%LOCALAPPDATA%\expense-approval-erp-staging`과 `.local-data/staging`만 사용한다. 실제 외부 staging/production object storage, auth, secret manager, HTTPS domain, 중앙 로그 저장소 분리는 아직 없으므로 P0는 유지한다.
   - 진행 메모(2026-07-08): `docs/environment-separation-matrix-template.md`와 `npm run release:environment-separation`을 추가해 dev/staging/production의 DB, object storage, auth/session, secret scope, domain/API origin, logs/monitoring, data policy 분리와 동일 artifact/migration promotion 증빙을 release gate에서 검증하도록 했다. 실제 cloud 리소스와 접근 권한 분리 증빙은 `ENVIRONMENT_SEPARATION_PATH` 완성본으로 확인해야 하므로 항목은 배포 전까지 미완료로 유지한다.
 - [x] P0: production에서는 `VITE_ERP_API_MODE=remote`와 production API base URL만 사용하도록 배포 환경 검증
 - [x] P0: production-like 환경에서 `prisma db seed` 기본 실행 차단과 release gate의 `ALLOW_PRODUCTION_SEED` 금지 검증 추가
@@ -847,6 +848,7 @@
 - [x] P0: CI/CD에서 Prisma schema validate, migration lock/provider 확인, destructive/risky migration SQL static guard 실행
 - [x] P0: CI/CD에서 frontend test/build, backend build, Prisma generate, migration dry-run 또는 deploy 검증을 배포 필수 조건으로 설정
 - [ ] P0: staging에서 동일 artifact와 동일 migration으로 smoke test를 통과한 빌드만 production 배포
+  - 로컬 진행 메모(2026-07-11): `local:staging:prepare`가 frontend `dist`, backend `backend/dist`, release manifest를 고정하고 `local:staging` 시작 전 checksum을 검증한다. 별도 PostgreSQL에 migration 11개를 적용한 뒤 profile/artifact/path/port/health/release identity/login smoke와 JSON 증적 생성을 통과했다. 외부 staging에서 같은 manifest를 promotion한 증적은 아니므로 P0는 유지한다.
 - [ ] P0: DB migration은 하위 호환 원칙, 2단계 배포, rollback 영향 검토 기록을 남긴 뒤 승인
 - [x] P0: migration review evidence에 하위 호환 static guard, rollback 영향, production seed 차단 여부를 기록하고 CI artifact로 보관
 - [x] P1: 배포 전후 health check, 로그인, 결제 요청, 승인, 지급, 파일, 보고서, 알림 핵심 경로 자동 점검
@@ -1155,6 +1157,7 @@
 ### 25.3 Staging 배포 및 원격 검증
 
 - [ ] P0: staging DB, object storage, auth, secret, 도메인을 production과 분리된 실제형 환경으로 구성
+  - 로컬 진행 메모(2026-07-11): production-like 로컬 staging은 별도 DB/user/files/secrets/ports/runtime/backup과 build artifact 모드로 구성했고, 중단된 초기화에서 migration만 남고 seed가 비어도 사용자 0건을 감지해 복구하도록 검증했다. 실제 외부 object storage/auth/HTTPS domain이 없으므로 완료 처리하지 않는다.
   - 진행 메모(2026-07-06): staging smoke evidence 템플릿에 staging frontend/backend domain, DB service, object storage bucket, secret manager project, auth/session store, production resource separation evidence를 필수 증빙으로 추가했다. 실제 staging 인프라 증적은 아직 없으므로 완료 처리는 보류한다.
 - [ ] P0: staging에 DB migration을 먼저 적용하고 `/api/health`, `/api/health/db`, storage health, job health를 확인
   - 진행 메모(2026-07-06): staging smoke evidence 템플릿과 gate가 DB migration command/result, `/api/health`, `/api/health/db`, `/api/health/storage`, `/api/health/file-security`, `/api/health/jobs`, `/api/health/integrations`, `/api/operations/data-quality`, requestId/log evidence를 요구하도록 했다. 실제 staging 실행 증적은 아직 없으므로 완료 처리는 보류한다.

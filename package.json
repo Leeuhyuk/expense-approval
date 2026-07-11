@@ -53,7 +53,15 @@
     "local:autostart:install": "node scripts/local-autostart.mjs install",
     "local:autostart:status": "node scripts/local-autostart.mjs status",
     "local:autostart:start": "node scripts/local-autostart.mjs start",
-    "local:autostart:remove": "node scripts/local-autostart.mjs remove"
+    "local:autostart:remove": "node scripts/local-autostart.mjs remove",
+    "local:staging:prepare": "node scripts/local-profile.mjs staging prepare",
+    "local:staging": "node scripts/local-profile.mjs staging start",
+    "local:staging:status": "node scripts/local-profile.mjs staging status",
+    "local:staging:stop": "node scripts/local-profile.mjs staging stop",
+    "local:staging:smoke": "node scripts/local-profile.mjs staging smoke",
+    "local:staging:backup": "node scripts/local-profile.mjs staging backup",
+    "local:staging:backups": "node scripts/local-profile.mjs staging backups",
+    "local:staging:restore": "node scripts/local-profile.mjs staging restore"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",

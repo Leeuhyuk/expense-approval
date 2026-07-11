@@ -71,6 +71,46 @@ npm run local:autostart:remove
 
 기본 데이터를 다시 적용해야 할 때만 현재 셸에 `ERP_LOCAL_RESEED=true`를 설정하고 `npm run local`을 실행한다. 기존 사용자가 등록한 데이터는 삭제하지 않는다.
 
+## 격리된 로컬 staging
+
+live를 중단하지 않고 production build artifact와 migration을 별도 데이터에서 점검할 수 있다.
+
+| 구분 | live | staging-local |
+| --- | --- | --- |
+| 화면 | `http://127.0.0.1:3000` | `http://127.0.0.1:3100` |
+| backend | `4310` | `4410` |
+| PostgreSQL | `55432`, `%LOCALAPPDATA%\expense-approval-erp\postgres` | `55442`, `%LOCALAPPDATA%\expense-approval-erp-staging\postgres` |
+| 파일 | `.local-data/files` | `%LOCALAPPDATA%\expense-approval-erp-staging\files` |
+| runtime/evidence | `.local-data/runtime.json` | `.local-data/staging/runtime.json`, `.local-data/staging/smoke-evidence.json` |
+| frontend/backend | source 개발 서버 | 검증된 `dist`, `backend/dist` build artifact |
+
+변경을 모두 커밋해 Git 작업 트리가 clean인 상태에서 현재 commit으로 artifact와 release manifest를 고정한 뒤 staging을 시작한다.
+
+```powershell
+npm run local:staging:prepare
+npm run local:staging
+```
+
+다른 터미널에서 상태와 smoke를 확인하고 필요할 때 staging만 종료한다.
+
+```powershell
+npm run local:staging:status
+npm run local:staging:smoke
+npm run local:staging:stop
+```
+
+`prepare`는 frontend/backend production build, release manifest 생성과 checksum 검증을 수행한다. `start`와 `smoke`는 build identity와 현재 manifest가 다르면 실행을 거부한다. Smoke는 profile, artifact mode, DB/파일/포트 격리, frontend, API/DB/storage/file-security health, release identity, 로그인과 인증 조회를 검사하고 JSON 증적을 저장한다.
+
+staging 전용 cold backup도 live와 분리된다.
+
+```powershell
+npm run local:staging:backup
+npm run local:staging:backups
+npm run local:staging:restore -- <백업-ID>
+```
+
+이 프로필은 동일 PC에서 환경 혼입과 artifact/migration 회귀를 막기 위한 production-like 로컬 리허설이다. HTTPS 도메인, 외부 object storage, 별도 auth/secret manager, 중앙 로그가 있는 실제 외부 staging 증적을 대신하지 않는다.
+
 ## 백업과 복구
 
 DB와 업로드 파일은 반드시 같은 시점의 묶음으로 보관한다. 물리 백업의 일관성을 위해 먼저 로컬 시스템을 종료한 뒤 백업한다.
@@ -100,7 +140,7 @@ npm run local
 2026-07-11 기준으로 다음 검증을 완료했다.
 
 - `npm run build`: TypeScript 검사와 Vite production build 통과
-- `npm run test:unit`: 434건 통과, 실패/skip 없음
+- `npm run test:unit`: 436건 통과, 실패/skip 없음
 - 별도 `payment_approval_erp_test` DB에 마이그레이션 11개 적용
 - DB integration 6건 통과: CRUD/새로고침/재로그인, 권한·설정, 파일, 결재, 지급, 목록 query/DB 일치
 - remote browser E2E 4건 통과: 로그인/로그아웃, 거래처·증빙, 즐겨찾기·보고서·설정, 결재 인계·지급 보류

@@ -29,7 +29,7 @@ test("autostart registration is user-scoped and the local frontend remains fixed
   ]);
   assert.match(autostartSource, /HKCU\\\\Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Run/);
   assert.match(autostartSource, /ExpenseApprovalERP/);
-  assert.match(startSource, /const frontendPort = 3000;/);
+  assert.match(startSource, /ERP_LOCAL_FRONTEND_PORT \?\? 3000/);
   assert.match(startSource, /--strictPort/);
   const supervisorSource = await readFile("scripts/local-supervisor.mjs", "utf8");
   assert.match(supervisorSource, /const supervisorPort = 4308;/);
