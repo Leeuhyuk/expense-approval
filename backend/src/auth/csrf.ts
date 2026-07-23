@@ -51,7 +51,6 @@ function isProtectedMethod(method: string) {
 function isCsrfExempt(request: FastifyRequest) {
   const path = request.url.split("?")[0] ?? "";
   if (request.method.toUpperCase() === "POST" && path === "/api/auth/login") return true;
-  if (request.method.toUpperCase() === "POST" && path === "/api/auth/password/change-expired") return true;
   if (request.method.toUpperCase() === "PUT" && /^\/api\/files\/[^/]+\/content$/.test(path)) return true;
   return false;
 }

@@ -24,21 +24,6 @@ FILE_STORAGE_DRIVER=local
 FILE_STORAGE_DIR=.local-file-storage
 FILE_SCAN_MODE=local
 REPORT_JOB_WORKER_ENABLED=false
-REPORT_DELIVERY_MODE=internal
-REPORT_DELIVERY_WEBHOOK_URL=
-REPORT_DELIVERY_WEBHOOK_TOKEN=
-REPORT_JOB_BATCH_SIZE=10
-REPORT_JOB_MAX_ATTEMPTS=3
-REPORT_JOB_TIMEOUT_MS=30000
-REPORT_JOB_RETRY_BASE_SECONDS=300
-REPORT_JOB_RETRY_MAX_SECONDS=3600
-REPORT_JOB_CIRCUIT_FAILURE_THRESHOLD=5
-REPORT_JOB_CIRCUIT_WINDOW_MINUTES=15
-PERFORMANCE_P95_TARGET_MS=800
-PERFORMANCE_P99_TARGET_MS=1500
-REPORT_JOB_MAX_PROCESSING_MS=120000
-REPORT_DOWNLOAD_MAX_ROWS=5000
-REPORT_DOWNLOAD_MAX_BYTES=3145728
 SLOW_QUERY_MS=1000
 ALERT_WINDOW_MINUTES=15
 ALERT_APPROVAL_FAILURE_THRESHOLD=1
@@ -101,7 +86,7 @@ npm run dev
 - `GET http://127.0.0.1:4000/api/operations/data-quality` (`system:manage` 로그인 필요)
 - `GET http://127.0.0.1:4000/api/payment-requests?page=1&pageSize=10`
 
-`/api/health/jobs`는 활성 보고서 예약, 실행 대기 건수, 최근 실패 실행, worker/queue 설정을 확인한다. `REPORT_DELIVERY_MODE=webhook`이면 `REPORT_DELIVERY_WEBHOOK_URL`로 예약 보고서 payload를 POST하고, `REPORT_DELIVERY_WEBHOOK_TOKEN`이 있으면 bearer token으로 서명한다. `/api/health/integrations`는 시스템 설정의 외부 연동 스냅샷에서 회계/은행 credential reference, 서버 secret 존재 여부, HTTPS 테스트 endpoint, 마지막 점검 상태를 확인한다.
+`/api/health/jobs`는 활성 보고서 예약, 실행 대기 건수, 최근 실패 실행, worker/queue 설정을 확인한다. `/api/health/integrations`는 시스템 설정의 외부 연동 스냅샷에서 회계/은행 credential reference, 서버 secret 존재 여부, HTTPS 테스트 endpoint, 마지막 점검 상태를 확인한다.
 `/api/operations/alerts`는 최근 `ALERT_WINDOW_MINUTES` 동안의 `security_events`와 DB 연결 상태를 기준으로 API 5xx, slow query, 로그인 실패, 권한 실패, 파일 업로드 실패 임계치를 평가한다.
 `/api/operations/business-failure-alerts`는 승인/지급/보고서/알림/파일 route 실패를 업무 도메인별로 집계한다. `POST /api/operations/business-failure-alerts/notify`는 임계치를 넘은 도메인에 대해 활성 `system:manage` 담당자에게 중복 없이 운영 알림을 만든다.
 `/api/operations/data-quality`는 운영 전 또는 이관 직후 사용자/권한/거래처/계좌/예산/결제 요청/지급/첨부파일 정합성을 점검한다. critical 실패가 있으면 HTTP 409를 반환하므로 release gate 또는 cutover 점검에서 실패로 처리한다.
@@ -122,22 +107,3 @@ npm run dev
 ```
 
 remote mode에서는 `src/api/service.ts`가 `VITE_ERP_API_BASE_URL`을 통해 실제 백엔드 목록 API를 호출한다. 화면 컴포넌트는 `erpApi`만 사용하므로 mock/remote 전환 시 UI 코드 변경이 필요 없다.
-## 데이터 품질 반복 배치
-
-DATA_QUALITY_JOB_ENABLED=true로 서버 내부 scheduler를 활성화하고 DATA_QUALITY_JOB_INTERVAL_MINUTES로 실행 주기를 설정한다. Production은 DATA_QUALITY_JOB_RUN_ON_START=true를 사용해 배포 직후 첫 점검을 기록한다. 동일 주기 bucket의 scheduleKey는 unique이므로 여러 backend replica가 동시에 실행해도 DataQualityRun은 한 번만 생성된다.
-
-- GET /api/operations/data-quality/runs: 배치 정책과 최근 실행 이력 조회
-- POST /api/operations/data-quality/run: system:manage 운영자의 즉시 실행
-- GET /api/operations/data-quality/runs/{runId}/download: 서버 저장 summary JSON 리포트 다운로드
-- critical 실패: system:manage 권한 사용자에게 OPERATIONAL_ALERT 알림 생성
-- FAILED 실행: 마스킹된 오류와 requestId를 DataQualityRun에 저장
-
-운영 scheduler 주기는 기본 60분이며 DATA_QUALITY_JOB_HISTORY_LIMIT은 화면 조회 기본 건수를 제어한다. 실행 이력은 DB에 유지되고 시스템 설정의 보관 정책 탭에서 지금 실행, 새로고침, 리포트 다운로드를 수행한다.
-
-## Capacity Planning
-
-- `GET /api/operations/capacity-planning`은 `system:manage` 권한 전용이다.
-- baseline은 Prisma model count와 `Attachment.byteSize` 합계만 사용하며 원시 개인정보, 계좌 값, 파일 본문을 읽지 않는다.
-- `CAPACITY_TRANSACTION_GROWTH_PERCENT`, `CAPACITY_AUDIT_GROWTH_PERCENT`, `CAPACITY_ATTACHMENT_GROWTH_PERCENT`는 최근 3개월 production 실측치로 월 1회 갱신한다.
-- 첫 경고 월이 3개월 이내이면 DB 확장, AuditLog partition/archive, object storage lifecycle 변경을 운영 변경으로 승인한다.
-- 상세 검토 절차와 환경변수는 `docs/capacity-planning.md`를 따른다.

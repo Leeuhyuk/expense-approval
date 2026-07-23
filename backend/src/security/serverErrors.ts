@@ -7,6 +7,22 @@ export function createServerErrorHandler() {
 
     if (reply.sent) return;
 
+    // Fastify 파서/검증 오류(4xx)는 클라이언트 잘못이므로 500으로 승격하지 않는다.
+    const statusCode = (error as { statusCode?: number }).statusCode;
+    if (typeof statusCode === "number" && statusCode >= 400 && statusCode < 500) {
+      await failWithFailureSecurityEvent(reply, {
+        request,
+        eventType: "request_rejected",
+        errorCode: "BAD_REQUEST",
+        message: "요청 형식이 올바르지 않습니다. 입력 값을 확인해주세요.",
+        statusCode,
+        metadata: {
+          errorName: error.name,
+        },
+      });
+      return;
+    }
+
     await failWithFailureSecurityEvent(reply, {
       request,
       eventType: "server_failure",

@@ -43,8 +43,6 @@ describe("file rules", () => {
     assert.equal(shouldVirusScanAttachment("invoice.pdf"), true);
     assert.equal(shouldVirusScanAttachment("blocked.exe"), false);
     assert.equal(canPreviewAttachment("invoice.pdf"), true);
-    assert.equal(canPreviewAttachment("receipt.JPG"), true);
-    assert.equal(canPreviewAttachment("statement.png"), true);
     assert.equal(canPreviewAttachment("statement.xlsx"), false);
     assert.equal(classifyAttachmentFile("세금계산서_클라우드존.pdf"), "tax-invoice");
     assert.equal(classifyAttachmentFile("contract_vendor.pdf"), "contract");

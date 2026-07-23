@@ -5,11 +5,9 @@ import { hasPermission, requireAuth, type AuthUser } from "../auth/session.js";
 import { validateBudgetAdjustmentFinancialClose } from "../controls/financialClose.js";
 import { notificationExpiresAt } from "../domain/notificationRetention.js";
 import { prisma } from "../db/prisma.js";
-import { reportDownloadLimitIssue } from "../operations/performancePolicy.js";
-import { readStoredFile, writeStoredFile } from "../storage/attachmentStorage.js";
 import { encryptBankAccount, maskBankAccount } from "../security/bankAccountCrypto.js";
 import { fail, success } from "../utils/response.js";
-import { addDays, auditRequestContext, definedCookies, forwardedInjectHeaders, filterAndSortRows, formatDate, formatWon, jsonRow, paginateRows, parseWon, readListFilters, readStringPatch, type ListQuery, type TableRow } from "./rowUtils.js";
+import { addDays, auditRequestContext, definedCookies, filterAndSortRows, formatDate, formatWon, forwardableHeaders, isUuid, jsonRow, paginateRows, parseWon, readListFilters, readStringPatch, type ListQuery, type TableRow } from "./rowUtils.js";
 
 const listQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
@@ -236,18 +234,11 @@ function toBudgetRow(item: BudgetWithDepartment): TableRow {
     사용률: `${usageRate}%`,
     잔액: formatWon(remaining),
     상태: displayBudgetStatus(item.status),
-    rowVersion: String(item.rowVersion),
     예산RowVersion: String(item.rowVersion),
   };
 }
 
 function toBudgetAdjustmentRow(item: BudgetAdjustmentWithBudget): TableRow {
-  const canVoid = item.status === BudgetAdjustmentStatus.PENDING_APPROVAL;
-  const ledgerPolicy = item.status === BudgetAdjustmentStatus.APPLIED
-    ? "이미 원장 반영됨 · 취소/반려 대신 반대 조정 또는 보정 전표 필요"
-    : item.status === BudgetAdjustmentStatus.PENDING_APPROVAL
-      ? "원장 미반영 · 취소/반려 시 예산 원장 변경 없음"
-      : "원장 미반영 종료 상태 · 추가 원장 rollback 없음";
   return {
     조정ID: item.id,
     예산ID: item.budgetId,
@@ -256,9 +247,6 @@ function toBudgetAdjustmentRow(item: BudgetAdjustmentWithBudget): TableRow {
     조정사유: item.reason,
     승인필요: item.requiresApproval ? "필요" : "불필요",
     상태: displayBudgetAdjustmentStatus(item.status),
-    취소가능: canVoid ? "가능" : "불가",
-    반려가능: canVoid ? "가능" : "불가",
-    원장반영방식: ledgerPolicy,
     요청자: item.requester.name,
     요청일시: item.createdAt.toISOString().slice(0, 16).replace("T", " "),
     적용일시: item.appliedAt ? item.appliedAt.toISOString().slice(0, 16).replace("T", " ") : "-",
@@ -270,12 +258,6 @@ type VendorWithDisbursements = Prisma.VendorGetPayload<{
     disbursements: true;
   };
 }>;
-
-function vendorBusinessType(vendorName: string) {
-  if (vendorName.includes("(주)") || vendorName.includes("무역")) return "법인";
-  if (vendorName.includes("오피스") || vendorName.includes("콘텐츠")) return "개인/소상공";
-  return "일반";
-}
 
 function toVendorRow(item: VendorWithDisbursements): TableRow {
   const latest = item.disbursements.reduce<Date | null>((current, disbursement) => {
@@ -292,13 +274,11 @@ function toVendorRow(item: VendorWithDisbursements): TableRow {
     담당자: item.managerName,
     은행: `${item.bankName} ${item.bankAccountMasked}`,
     계좌확인: displayAccountStatus(item.accountVerificationStatus),
-    구분: vendorBusinessType(item.name),
     최근지급일: latest ? formatDate(latest) : "-",
     누적지급액: formatWon(totalPaid),
     상태: displayVendorStatus(item.status, item.isActive),
     "세금계산서 이메일": item.taxInvoiceEmail,
     "세금계산서 발행": item.taxInvoiceIssueType,
-    rowVersion: String(item.rowVersion),
     거래처RowVersion: String(item.rowVersion),
   };
 }
@@ -329,6 +309,7 @@ async function getVendorDeactivationImpact(tx: Prisma.TransactionClient, vendorI
     tx.paymentRequest.count({
       where: {
         vendorId,
+        deletedAt: null,
         status: { in: vendorActivePaymentStatuses },
       },
     }),
@@ -358,95 +339,21 @@ type ReportRunWithCreator = Prisma.ReportRunGetPayload<{
 }>;
 
 const reportAccessPattern = /\s*\[공유권한:([^\]]+)\]\s*$/;
-const reportVendorPattern = /\s*\[거래처:([^\]]+)\]\s*$/;
-const reportDepartmentPattern = /\s*\[부서:([^\]]+)\]\s*$/;
-const reportDrilldownPattern = /\s*\[드릴다운:([^\]]+)\]\s*$/;
-
-type ReportDrilldownSnapshot = {
-  generatedAt: string;
-  source: string;
-  sections: Record<string, { columns: string[]; rows: TableRow[] }>;
-};
-
-function displayPaymentRequestStatus(status: PaymentRequestStatus) {
-  const map: Record<PaymentRequestStatus, string> = {
-    DRAFT: "임시 저장",
-    SUBMITTED: "제출",
-    APPROVAL_PENDING: "승인 대기",
-    APPROVAL_IN_PROGRESS: "승인 진행 중",
-    APPROVED: "승인 완료",
-    REJECTED: "반려",
-    HELD: "보류",
-  };
-  return map[status];
-}
-
-function displayDisbursementStatus(status: DisbursementStatus) {
-  const map: Record<DisbursementStatus, string> = {
-    SCHEDULED: "지급 예정",
-    DUE_TODAY: "오늘 지급",
-    COMPLETED: "지급 완료",
-    ERROR: "오류",
-    HELD: "보류",
-  };
-  return map[status];
-}
-
-function encodeReportDrilldownSnapshot(snapshot: ReportDrilldownSnapshot | undefined) {
-  return snapshot ? encodeURIComponent(JSON.stringify(snapshot)) : "";
-}
-
-function decodeReportDrilldownSnapshot(value: string | undefined): ReportDrilldownSnapshot | null {
-  if (!value) return null;
-  try {
-    const parsed = JSON.parse(decodeURIComponent(value));
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
-    const sections = (parsed as { sections?: unknown }).sections;
-    if (!sections || typeof sections !== "object" || Array.isArray(sections)) return null;
-    return parsed as ReportDrilldownSnapshot;
-  } catch {
-    return null;
-  }
-}
 
 function readReportSummaryMeta(summary: string | null | undefined) {
   const raw = summary ?? "";
-  const accessMatch = raw.match(reportAccessPattern);
-  const withoutAccess = accessMatch ? raw.replace(reportAccessPattern, "") : raw;
-  const vendorMatch = withoutAccess.match(reportVendorPattern);
-  const withoutVendor = vendorMatch ? withoutAccess.replace(reportVendorPattern, "") : withoutAccess;
-  const departmentMatch = withoutVendor.match(reportDepartmentPattern);
-  const withoutDepartment = departmentMatch ? withoutVendor.replace(reportDepartmentPattern, "") : withoutVendor;
-  const drilldownMatch = withoutDepartment.match(reportDrilldownPattern);
-  const withoutDrilldown = drilldownMatch ? withoutDepartment.replace(reportDrilldownPattern, "") : withoutDepartment;
+  const match = raw.match(reportAccessPattern);
   return {
-    summary: withoutDrilldown.trim(),
-    access: accessMatch?.[1]?.trim() || "부서 공유",
-    department: departmentMatch?.[1]?.trim() || "",
-    vendor: vendorMatch?.[1]?.trim() || "",
-    drilldown: decodeReportDrilldownSnapshot(drilldownMatch?.[1]?.trim()),
+    summary: (match ? raw.replace(reportAccessPattern, "") : raw).trim(),
+    access: match?.[1]?.trim() || "부서 공유",
   };
 }
 
-function reportMetaTag(label: "부서" | "거래처", value: string) {
-  const trimmed = value.trim();
-  return trimmed && !trimmed.startsWith("전체") ? ` [${label}:${trimmed}]` : "";
-}
-
-function writeReportSummaryMeta(
-  summary: string | null | undefined,
-  access: string | undefined,
-  drilldown?: ReportDrilldownSnapshot | null,
-  scope?: { department?: string; vendor?: string },
-) {
+function writeReportSummaryMeta(summary: string | null | undefined, access: string | undefined) {
   const current = readReportSummaryMeta(summary);
   const nextSummary = current.summary || "사용자 생성 보고서";
   const nextAccess = access?.trim() || current.access;
-  const nextDrilldown = drilldown === undefined ? current.drilldown : drilldown;
-  const nextDepartment = scope?.department ?? current.department;
-  const nextVendor = scope?.vendor ?? current.vendor;
-  const drilldownText = encodeReportDrilldownSnapshot(nextDrilldown ?? undefined);
-  return `${nextSummary}${drilldownText ? ` [드릴다운:${drilldownText}]` : ""}${reportMetaTag("부서", nextDepartment)}${reportMetaTag("거래처", nextVendor)} [공유권한:${nextAccess}]`;
+  return `${nextSummary} [공유권한:${nextAccess}]`;
 }
 
 function toReportRow(item: ReportRunWithCreator): TableRow {
@@ -459,11 +366,8 @@ function toReportRow(item: ReportRunWithCreator): TableRow {
     생성일시: item.createdAt.toISOString().slice(0, 16).replace("T", " "),
     생성자: item.creator.name,
     요약: summaryMeta.summary || `${item.rowCount}개 행`,
-    부서: summaryMeta.department,
-    거래처: summaryMeta.vendor,
     공유권한: summaryMeta.access,
     공유: summaryMeta.access,
-    드릴다운JSON: summaryMeta.drilldown ? JSON.stringify(summaryMeta.drilldown) : "",
     rowVersion: String(item.rowVersion),
     보고서RowVersion: String(item.rowVersion),
   };
@@ -557,198 +461,17 @@ function createReportPdf(item: ReportRunWithCreator) {
   return pdf;
 }
 
-function buildReportDownload(item: ReportRunWithCreator, format: ReportDownloadFormat, generatedAt = new Date().toISOString()) {
+function buildReportDownload(item: ReportRunWithCreator, format: ReportDownloadFormat) {
+  const generatedAt = new Date().toISOString();
   const extension = format === "pdf" ? "pdf" : "csv";
   const contentType = format === "pdf" ? "application/pdf" : "text/csv;charset=utf-8";
   const content = format === "pdf" ? createReportPdf(item) : createReportCsv(item);
-  const contentBase64 = Buffer.from(content, "utf8").toString("base64");
   return {
     fileName: `${safeReportFileName(item.name)}-${generatedAt.replace(/\D/g, "").slice(0, 14)}.${extension}`,
     contentType,
-    contentBase64,
+    contentBase64: Buffer.from(content, "utf8").toString("base64"),
     generatedAt,
-    limits: {
-      rowCount: item.rowCount,
-      contentBytes: Buffer.byteLength(contentBase64, "utf8"),
-    },
     report: toReportRow(item),
-  };
-}
-
-type ReportDownloadPayload = ReturnType<typeof buildReportDownload>;
-
-type StoredReportArtifact = {
-  schemaVersion: 1;
-  reportRunId: string;
-  reportName: string;
-  storedAt: string;
-  files: Partial<Record<ReportDownloadFormat, ReportDownloadPayload>>;
-};
-
-function reportArtifactStorageKey(reportRunId: string) {
-  return `reports/${reportRunId}.artifact.json`;
-}
-
-function isReportDownloadPayload(value: unknown): value is ReportDownloadPayload {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const candidate = value as Partial<ReportDownloadPayload>;
-  return typeof candidate.fileName === "string"
-    && typeof candidate.contentType === "string"
-    && typeof candidate.contentBase64 === "string"
-    && typeof candidate.generatedAt === "string";
-}
-
-function parseStoredReportArtifact(body: Buffer): StoredReportArtifact | null {
-  try {
-    const parsed = JSON.parse(body.toString("utf8"));
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
-    const artifact = parsed as Partial<StoredReportArtifact>;
-    if (artifact.schemaVersion !== 1 || typeof artifact.reportRunId !== "string" || typeof artifact.storedAt !== "string") return null;
-    if (!artifact.files || typeof artifact.files !== "object" || Array.isArray(artifact.files)) return null;
-    return artifact as StoredReportArtifact;
-  } catch {
-    return null;
-  }
-}
-
-async function writeReportArtifact(item: ReportRunWithCreator) {
-  const artifactKey = reportArtifactStorageKey(item.id);
-  const storedAt = new Date().toISOString();
-  const artifact: StoredReportArtifact = {
-    schemaVersion: 1,
-    reportRunId: item.id,
-    reportName: item.name,
-    storedAt,
-    files: {
-      csv: buildReportDownload(item, "csv", storedAt),
-      pdf: buildReportDownload(item, "pdf", storedAt),
-    },
-  };
-  const stored = await writeStoredFile(artifactKey, JSON.stringify(artifact), "application/json");
-  return { artifactKey, storedAt, checksum: stored.checksum, byteSize: stored.byteSize };
-}
-
-async function ensureReportArtifact(item: ReportRunWithCreator) {
-  if (item.artifactKey) return item;
-  const artifact = await writeReportArtifact(item);
-  return prisma.reportRun.update({
-    where: { id: item.id },
-    data: { artifactKey: artifact.artifactKey },
-    include: { creator: true },
-  });
-}
-
-async function readReportArtifactDownload(item: ReportRunWithCreator, format: ReportDownloadFormat) {
-  if (!item.artifactKey) return null;
-  const artifact = parseStoredReportArtifact(await readStoredFile(item.artifactKey));
-  const file = artifact?.files[format];
-  if (!artifact || !isReportDownloadPayload(file)) return null;
-  return {
-    ...file,
-    limits: file.limits ?? {
-      rowCount: item.rowCount,
-      contentBytes: Buffer.byteLength(file.contentBase64, "utf8"),
-    },
-    report: file.report ?? toReportRow(item),
-    artifact: {
-      storageKey: item.artifactKey,
-      storedAt: artifact.storedAt,
-      source: "object-storage",
-    },
-  };
-}
-
-function reportFilterValue(row: TableRow, key: string, allPrefix: string) {
-  const value = row[key]?.trim();
-  return value && !value.startsWith(allPrefix) ? value : undefined;
-}
-
-async function buildReportDrilldownSnapshot(tx: Prisma.TransactionClient, row: TableRow): Promise<ReportDrilldownSnapshot> {
-  const period = parseReportPeriod(row.기간);
-  const departmentName = reportFilterValue(row, "부서", "전체");
-  const vendorName = reportFilterValue(row, "거래처", "전체");
-  const requestedAt = period.periodStart || period.periodEnd
-    ? {
-      ...(period.periodStart ? { gte: period.periodStart } : {}),
-      ...(period.periodEnd ? { lte: period.periodEnd } : {}),
-    }
-    : undefined;
-  const scheduledDate = period.periodStart || period.periodEnd
-    ? {
-      ...(period.periodStart ? { gte: period.periodStart } : {}),
-      ...(period.periodEnd ? { lte: period.periodEnd } : {}),
-    }
-    : undefined;
-  const paymentWhere: Prisma.PaymentRequestWhereInput = {
-    ...(requestedAt ? { requestedAt } : {}),
-    ...(departmentName ? { department: { name: departmentName } } : {}),
-    ...(vendorName ? { vendor: { name: vendorName } } : {}),
-  };
-  const disbursementWhere: Prisma.DisbursementWhereInput = {
-    ...(scheduledDate ? { scheduledDate } : {}),
-    ...(vendorName ? { vendor: { name: vendorName } } : {}),
-    ...(departmentName ? { paymentRequest: { department: { name: departmentName } } } : {}),
-  };
-  const [paymentRequests, disbursements] = await Promise.all([
-    tx.paymentRequest.findMany({
-      where: paymentWhere,
-      include: { department: true, vendor: true, requester: true },
-      orderBy: { requestedAt: "desc" },
-      take: 40,
-    }),
-    tx.disbursement.findMany({
-      where: disbursementWhere,
-      include: {
-        vendor: true,
-        paymentRequest: {
-          include: {
-            department: true,
-            requester: true,
-          },
-        },
-      },
-      orderBy: { scheduledDate: "desc" },
-      take: 40,
-    }),
-  ]);
-  const paymentRows = paymentRequests.map((item) => ({
-    요청번호: item.requestCode,
-    요청일: formatDate(item.requestedAt),
-    부서: item.department.name,
-    요청자: item.requester.name,
-    거래처: item.vendor.name,
-    금액: formatWon(item.amount),
-    상태: displayPaymentRequestStatus(item.status),
-    결재상태: displayPaymentRequestStatus(item.status),
-  }));
-  const disbursementRows = disbursements.map((item) => ({
-    월: `${item.scheduledDate.getUTCMonth() + 1}월 지급 추이`,
-    지급번호: item.disbursementCode,
-    승인번호: item.paymentRequest.requestCode,
-    지급예정일: formatDate(item.scheduledDate),
-    부서: item.paymentRequest.department.name,
-    담당자: item.paymentRequest.requester.name,
-    거래처: item.vendor.name,
-    금액: formatWon(item.amount),
-    지급상태: displayDisbursementStatus(item.status),
-  }));
-  return {
-    generatedAt: new Date().toISOString(),
-    source: `ReportRun snapshot · ${row.보고서명 || "보고서"}`,
-    sections: {
-      monthly: {
-        columns: ["월", "지급번호", "승인번호", "지급예정일", "부서", "거래처", "금액", "지급상태"],
-        rows: disbursementRows,
-      },
-      department: {
-        columns: ["요청번호", "요청일", "부서", "거래처", "금액", "상태"],
-        rows: paymentRows,
-      },
-      approval: {
-        columns: ["요청번호", "요청일", "부서", "요청자", "금액", "결재상태"],
-        rows: paymentRows,
-      },
-    },
   };
 }
 
@@ -964,22 +687,15 @@ type UserWithRelations = Prisma.UserGetPayload<{
   };
 }>;
 
-function settingUserWhere(identifier: string): Prisma.UserWhereInput {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(identifier)
-    ? { id: identifier }
-    : { name: identifier };
-}
 function toSettingRow(item: UserWithRelations): TableRow {
   const activeRoles = item.roles.filter(({ role }) => role.isActive).map(({ role }) => role.name);
   const roleCodes = item.roles.filter(({ role }) => role.isActive).map(({ role }) => role.code);
   return {
-    사용자ID: item.id,
     사용자: item.name,
     부서: item.department.name,
     역할: roleCodes[0] ?? "-",
     권한그룹: activeRoles[0] ?? "-",
     상태: item.isActive ? "활성" : "비활성",
-    rowVersion: String(item.rowVersion),
     사용자RowVersion: String(item.rowVersion),
   };
 }
@@ -1003,18 +719,6 @@ type RoleWithCount = Prisma.RoleGetPayload<{
 function normalizeRolePermissions(value: unknown) {
   if (!Array.isArray(value)) return [];
   return [...new Set(value.filter((permission): permission is string => typeof permission === "string" && permission.trim().length > 0))];
-}
-
-function sameStringSet(a: string[], b: string[]) {
-  const left = new Set(a);
-  const right = new Set(b);
-  return left.size === right.size && [...left].every((item) => right.has(item));
-}
-
-function roleSessionInvalidationNeeded(role: { permissions: Prisma.JsonValue; isActive: boolean }, body: { permissions?: unknown; status?: unknown }) {
-  if (Array.isArray(body.permissions) && !sameStringSet(normalizeRolePermissions(role.permissions), normalizeRolePermissions(body.permissions))) return true;
-  if (typeof body.status === "string" && (body.status === "활성") !== role.isActive) return true;
-  return false;
 }
 
 function roleCodeFromName(name: string) {
@@ -1084,6 +788,72 @@ const systemSettingLabels: Record<SystemSettingKey, string> = {
 
 function systemSettingKeyFromEntityId(entityId: string) {
   return Object.entries(systemSettingIds).find(([, id]) => id === entityId)?.[0] as SystemSettingKey | undefined;
+}
+
+// 부서 관리(결재 정책 스냅샷)에서 추가한 부서를 실제 Department로 반영해
+// 결제 요청 기준정보(master-data) 등 다른 화면에서도 선택할 수 있게 한다.
+function currentFiscalYear() {
+  return String(new Date().getFullYear());
+}
+
+// 부서가 결제 요청을 제출하려면 예산과 예산 항목이 최소 1개는 있어야 한다.
+// (프런트엔드 제출 검증이 "선택 부서의 예산 항목"을 요구한다.) 예산이 전혀 없는 부서에
+// 현재 회계연도 기본 예산과 기본 예산 항목을 만들어 제출이 막히지 않도록 한다.
+async function ensureDefaultBudgetForDepartment(departmentId: string) {
+  const existingBudget = await prisma.budget.findFirst({ where: { departmentId }, select: { id: true } });
+  if (existingBudget) return;
+  const budget = await prisma.budget.create({
+    data: {
+      departmentId,
+      fiscalYear: currentFiscalYear(),
+      allocatedAmount: "100000000",
+      usedAmount: "0",
+      status: BudgetStatus.NORMAL,
+    },
+  });
+  await prisma.budgetItem.create({
+    data: {
+      budgetId: budget.id,
+      name: "일반 운영비",
+      allocatedAmount: "100000000",
+      usedAmount: "0",
+      status: BudgetStatus.NORMAL,
+    },
+  });
+}
+
+// 활성 부서 중 예산이 없는 부서에 기본 예산을 채워 넣는다. (기존 데이터 백필용)
+export async function ensureBudgetsForActiveDepartments() {
+  const departments = await prisma.department.findMany({ where: { isActive: true }, select: { id: true } });
+  for (const department of departments) {
+    await ensureDefaultBudgetForDepartment(department.id);
+  }
+}
+
+async function syncDepartmentsFromApprovalPolicy(snapshot: unknown) {
+  const settings = snapshot && typeof snapshot === "object" && Array.isArray((snapshot as { departmentSettings?: unknown }).departmentSettings)
+    ? ((snapshot as { departmentSettings: unknown[] }).departmentSettings)
+    : [];
+  const names = Array.from(new Set(
+    settings
+      .map((row) => (row && typeof row === "object" ? String((row as Record<string, unknown>).부서 ?? "").trim() : ""))
+      .filter((name) => name.length > 0 && !name.startsWith("전체")),
+  ));
+  if (names.length === 0) return;
+  const existing = await prisma.department.findMany({ where: { name: { in: names } }, select: { id: true, name: true, isActive: true } });
+  const existingByName = new Map(existing.map((department) => [department.name, department]));
+  for (const name of names) {
+    const found = existingByName.get(name);
+    let departmentId = found?.id;
+    if (!found) {
+      const created = await prisma.department.create({ data: { name } });
+      departmentId = created.id;
+    } else if (!found.isActive) {
+      await prisma.department.update({ where: { id: found.id }, data: { isActive: true } });
+    }
+    // 새로 만들거나 재활성화한 부서도 바로 결제 요청을 제출할 수 있도록 기본 예산을 보장한다.
+    if (departmentId) await ensureDefaultBudgetForDepartment(departmentId);
+  }
 }
 
 function settingsHistoryTag(log: SettingsHistoryAuditLog) {
@@ -1289,7 +1059,7 @@ function toFavoriteRow(item: FavoriteWithUser): TableRow {
     항목명: item.label,
     유형: displayFavoriteKind(item.kind),
     설명: item.targetPath ?? item.pageKey,
-    최근사용: item.lastUsedAt ? item.lastUsedAt.toISOString().slice(0, 16).replace("T", " ") : "-",
+    최근사용: item.lastUsedAt ? formatDate(item.lastUsedAt) : "-",
     소유자: item.user.name,
     상태: item.isActive ? "활성" : "비활성",
     순서: String(item.sortOrder),
@@ -1396,13 +1166,6 @@ function favoritePageKeyFromRow(row: TableRow, fallback = "dashboard") {
   return candidate || fallback;
 }
 
-function favoriteLastUsedAtFromRow(row: TableRow) {
-  if (row.최근사용 === undefined || row.최근사용 === "-" || !row.최근사용.trim()) return undefined;
-  const normalized = row.최근사용.includes("T") ? row.최근사용 : row.최근사용.replace(" ", "T");
-  const parsed = new Date(normalized);
-  return Number.isNaN(parsed.getTime()) ? undefined : parsed;
-}
-
 function favoriteSortOrder(value: string | undefined, fallback: number) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -1433,21 +1196,6 @@ async function createAudit(
       ...auditRequestContext(request),
     },
   });
-}
-
-async function revokeActiveSessionsForUsers(tx: Prisma.TransactionClient, userIds: string[], now = new Date()) {
-  const uniqueUserIds = [...new Set(userIds)].filter(Boolean);
-  if (uniqueUserIds.length === 0) return 0;
-  const result = await tx.authSession.updateMany({
-    where: {
-      userId: { in: uniqueUserIds },
-      revokedAt: null,
-    },
-    data: {
-      revokedAt: now,
-    },
-  });
-  return result.count;
 }
 
 const budgetAdjustmentApprovalThreshold = 10_000_000;
@@ -1496,101 +1244,20 @@ function readBudgetAdjustmentInput(body: unknown) {
   return { amount, reason, rowVersion, idempotencyKey };
 }
 
-function dashboardActivityTone(value: string) {
-  const normalized = value.toLowerCase();
-  if (normalized.includes("reject") || normalized.includes("error") || normalized.includes("failed") || normalized.includes("exceeded")) return "danger";
-  if (normalized.includes("hold") || normalized.includes("delayed")) return "warning";
-  if (normalized.includes("complete") || normalized.includes("approve") || normalized.includes("apply")) return "success";
-  if (normalized.includes("disbursement") || normalized.includes("payment")) return "payment";
-  return "info";
-}
-
-function dashboardAuditActionLabel(action: string) {
-  const map: Record<string, string> = {
-    create: "생성",
-    update: "수정",
-    delete: "삭제",
-    apply: "반영",
-    request: "요청",
-    approve: "승인",
-    approved: "승인",
-    reject: "반려",
-    rejected: "반려",
-    hold: "보류",
-    held: "보류",
-    verify: "검증",
-    retry: "재처리",
-    reschedule: "일정 변경",
-    execution_approval: "지급 실행 확인",
-  };
-  return map[action] ?? action;
-}
-
-type DashboardAuditLog = Prisma.AuditLogGetPayload<{ include: { actor: true } }>;
-
-function toDashboardAuditActivity(log: DashboardAuditLog, user: AuthUser): TableRow {
-  const canSeeDetails = hasPermission(user, "system:manage") || log.actorId === user.id;
-  const actor = canSeeDetails ? log.actor.name : "권한 범위 내 사용자";
-  const entity = canSeeDetails ? `${log.entityType}:${log.entityId}` : log.entityType;
-  const action = dashboardAuditActionLabel(log.action);
-  return {
-    제목: `감사 로그 · ${action}`,
-    설명: `${actor} · ${entity}`,
-    메타: canSeeDetails ? (log.reason ?? entity) : "권한에 따라 상세 마스킹",
-    생성일시: log.createdAt.toISOString(),
-    톤: dashboardActivityTone(`${log.entityType} ${log.action}`),
-    원천: "AuditLog",
-  };
-}
-
-function toDashboardNotificationActivity(notification: { title: string; message: string; entityType: string | null; entityId: string | null; type: NotificationType; createdAt: Date }): TableRow {
-  return {
-    제목: notification.title,
-    설명: notification.message,
-    메타: notification.entityId ?? notification.entityType ?? "알림",
-    생성일시: notification.createdAt.toISOString(),
-    톤: dashboardActivityTone(notification.type),
-    원천: "Notification",
-  };
-}
-
-async function dashboardRecentActivities(user: AuthUser) {
-  const [logs, notifications] = await Promise.all([
-    prisma.auditLog.findMany({
-      include: { actor: true },
-      orderBy: { createdAt: "desc" },
-      take: 20,
-    }),
-    prisma.notification.findMany({
-      where: { userId: user.id },
-      orderBy: { createdAt: "desc" },
-      take: 20,
-    }),
-  ]);
-  return [
-    ...logs.map((log) => toDashboardAuditActivity(log, user)),
-    ...notifications.map(toDashboardNotificationActivity),
-  ]
-    .sort((a, b) => new Date(b.생성일시).getTime() - new Date(a.생성일시).getTime())
-    .slice(0, 8);
-}
-
 export const dashboardRoutes: FastifyPluginAsync = async (app) => {
-  async function dashboardRows(user: AuthUser) {
-    const [items, activities] = await Promise.all([
-      prisma.paymentRequest.findMany({
-        include: {
-          department: true,
-          requester: true,
-          vendor: true,
-          approvalSteps: true,
-        },
-        orderBy: { requestedAt: "desc" },
-        take: 50,
-      }),
-      dashboardRecentActivities(user),
-    ]);
-    const activitiesJson = JSON.stringify(activities);
+  async function dashboardRows() {
+    const items = await prisma.paymentRequest.findMany({
+      // 소프트 삭제된 결제 요청은 대시보드에서도 제외한다.
+      where: { deletedAt: null },
+      include: {
+        department: true,
+        requester: true,
+        vendor: true,
+        approvalSteps: true,
+      },
+      orderBy: { requestedAt: "desc" },
+      take: 50,
+    });
     return items.map((item) => ({
       요청번호: item.requestCode,
       제목: item.reason,
@@ -1604,7 +1271,6 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
       예산확인: item.budgetItemId ? "확인 완료" : "확인 전",
       처리기한: formatDate(addDays(item.requestedAt, 3)),
       결재단계: `${item.approvalSteps.filter((step) => step.status === "APPROVED").length}/${item.approvalSteps.length}`,
-      최근활동JSON: activitiesJson,
     }));
   }
 
@@ -1613,7 +1279,7 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
     if (!user) return;
     if (!hasPermission(user, "dashboard:read")) return fail(reply, "FORBIDDEN", "대시보드 조회 권한이 없습니다.", 403);
 
-    const rows = await dashboardRows(user);
+    const rows = await dashboardRows();
 
     return reply.send(rowsResponse(request, rows));
   });
@@ -1624,7 +1290,7 @@ export const dashboardRoutes: FastifyPluginAsync = async (app) => {
     if (!hasPermission(user, "dashboard:read")) return fail(reply, "FORBIDDEN", "대시보드 조회 권한이 없습니다.", 403);
 
     const params = request.params as { requestCode: string };
-    const row = (await dashboardRows(user)).find((item) => item.요청번호 === params.requestCode) ?? null;
+    const row = (await dashboardRows()).find((item) => item.요청번호 === params.requestCode) ?? null;
     return reply.send(success(request, row));
   });
 
@@ -1779,85 +1445,6 @@ export const budgetRoutes: FastifyPluginAsync = async (app) => {
     }
   });
 
-  app.post("/budgets/:departmentName/adjustments/:adjustmentId/:action", async (request, reply) => {
-    const user = await requireAuth(request, reply);
-    if (!user) return;
-    if (!can(user, "budget:read")) return fail(reply, "FORBIDDEN", "예산 조정 상태 변경 권한이 없습니다.", 403);
-
-    const params = request.params as { departmentName: string; adjustmentId: string; action: string };
-    const nextStatus = params.action === "cancel"
-      ? BudgetAdjustmentStatus.CANCELLED
-      : params.action === "reject"
-        ? BudgetAdjustmentStatus.REJECTED
-        : null;
-    if (!nextStatus) return fail(reply, "VALIDATION_ERROR", "지원하지 않는 예산 조정 액션입니다.", 400);
-
-    const record = bodyRecord(request.body);
-    const reason = readStringValue(record, ["reason", "처리 사유", "조정 사유"]) || (nextStatus === BudgetAdjustmentStatus.CANCELLED ? "예산 조정 취소" : "예산 조정 반려");
-    const idempotencyKey = readStringValue(record, ["idempotencyKey"]);
-    if (idempotencyKey) {
-      const existingRequest = await prisma.auditLog.findUnique({ where: { idempotencyKey } });
-      if (existingRequest?.afterValue) return reply.send(success(request, existingRequest.afterValue, { idempotencyReplay: true }));
-    }
-
-    const before = await prisma.budgetAdjustment.findUnique({
-      where: { id: params.adjustmentId },
-      include: { budget: { include: { department: true } }, requester: true },
-    });
-    if (!before || before.budget.department.name !== params.departmentName) return fail(reply, "NOT_FOUND", "예산 조정 요청을 찾을 수 없습니다.", 404);
-    if (before.status === nextStatus) {
-      const budget = await prisma.budget.findUnique({ where: { id: before.budgetId }, include: budgetRowInclude });
-      return reply.send(success(request, {
-        adjustment: toBudgetAdjustmentRow(before),
-        budget: budget ? toBudgetRow(budget) : null,
-        rollbackPolicy: "원장 변경 없음",
-      }, { idempotencyReplay: true }));
-    }
-    if (before.status === BudgetAdjustmentStatus.APPLIED) {
-      return fail(reply, "LEDGER_ALREADY_APPLIED", "이미 원장에 반영된 조정은 취소/반려할 수 없습니다. 반대 조정 요청 또는 보정 전표로 처리해야 합니다.", 409);
-    }
-    if (before.status !== BudgetAdjustmentStatus.PENDING_APPROVAL) {
-      return fail(reply, "WORKFLOW_LOCKED", "이미 종료된 예산 조정 요청은 상태를 변경할 수 없습니다.", 409);
-    }
-
-    const result = await prisma.$transaction(async (tx) => {
-      const updateResult = await tx.budgetAdjustment.updateMany({
-        where: { id: before.id, status: BudgetAdjustmentStatus.PENDING_APPROVAL },
-        data: { status: nextStatus },
-      });
-      if (updateResult.count !== 1) throw new Error("BUDGET_ADJUSTMENT_CONFLICT");
-      const after = await tx.budgetAdjustment.findUniqueOrThrow({
-        where: { id: before.id },
-        include: { budget: { include: { department: true } }, requester: true },
-      });
-      const budget = await tx.budget.findUniqueOrThrow({ where: { id: before.budgetId }, include: budgetRowInclude });
-      const response = {
-        adjustment: toBudgetAdjustmentRow(after),
-        budget: toBudgetRow(budget),
-        rollbackPolicy: "원장 미반영 상태에서 종료 · 예산 원장 rollback 없음",
-      };
-      await tx.auditLog.create({
-        data: {
-          entityType: "budget_adjustment",
-          entityId: before.id,
-          actorId: user.id,
-          action: params.action,
-          beforeValue: jsonRow(toBudgetAdjustmentRow(before)),
-          afterValue: response as Prisma.InputJsonObject,
-          reason,
-          idempotencyKey,
-          ...auditRequestContext(request),
-        },
-      });
-      return response;
-    }).catch((error) => {
-      if (error instanceof Error && error.message === "BUDGET_ADJUSTMENT_CONFLICT") return null;
-      throw error;
-    });
-    if (!result) return fail(reply, "CONFLICT", "예산 조정 요청 상태가 이미 변경되었습니다. 이력을 새로고침해주세요.", 409);
-    return reply.send(success(request, result, { action: params.action }));
-  });
-
   app.post("/budgets", async (request, reply) => {
     const user = await requireAuth(request, reply);
     if (!user) return;
@@ -1977,7 +1564,7 @@ export const budgetRoutes: FastifyPluginAsync = async (app) => {
       for (const key of ["amount", "rowVersion", "예산RowVersion", "조정 금액", "조정금액"]) {
         if (key in body) payload[key] = (body as Record<string, unknown>)[key];
       }
-      return app.inject({ method: "POST", url: `/api/budgets/${encodeURIComponent(params.departmentName)}/adjustments`, headers: forwardedInjectHeaders(request.headers), cookies: definedCookies(request.cookies), payload }).then((response) => {
+      return app.inject({ method: "POST", url: `/api/budgets/${encodeURIComponent(params.departmentName)}/adjustments`, headers: forwardableHeaders(request.headers), cookies: definedCookies(request.cookies), payload }).then((response) => {
         reply.status(response.statusCode).headers(response.headers).send(response.body);
       });
     }
@@ -1987,7 +1574,7 @@ export const budgetRoutes: FastifyPluginAsync = async (app) => {
     for (const key of ["rowVersion", "예산RowVersion"]) {
       if (key in body) payload[key] = (body as Record<string, unknown>)[key];
     }
-    return app.inject({ method: "PATCH", url: `/api/budgets/${encodeURIComponent(params.departmentName)}`, headers: forwardedInjectHeaders(request.headers), cookies: definedCookies(request.cookies), payload }).then((response) => {
+    return app.inject({ method: "PATCH", url: `/api/budgets/${encodeURIComponent(params.departmentName)}`, headers: forwardableHeaders(request.headers), cookies: definedCookies(request.cookies), payload }).then((response) => {
       reply.status(response.statusCode).headers(response.headers).send(response.body);
     });
   });
@@ -2148,7 +1735,7 @@ export const vendorRoutes: FastifyPluginAsync = async (app) => {
     const body = request.body && typeof request.body === "object" ? (request.body as { idempotencyKey?: unknown; reason?: unknown }) : {};
     const idempotencyKey = typeof body.idempotencyKey === "string" && body.idempotencyKey ? body.idempotencyKey : `vendor-delete:${before.id}:${before.rowVersion}`;
     const reason = typeof body.reason === "string" && body.reason ? body.reason : "거래처 비활성화";
-    return app.inject({ method: "PATCH", url: `/api/vendors/${encodeURIComponent(params.vendorName)}`, headers: forwardedInjectHeaders(request.headers), cookies: definedCookies(request.cookies), payload: { 상태: "비활성", 작업사유: reason, rowVersion: String(before.rowVersion), idempotencyKey } }).then((response) => {
+    return app.inject({ method: "PATCH", url: `/api/vendors/${encodeURIComponent(params.vendorName)}`, headers: forwardableHeaders(request.headers), cookies: definedCookies(request.cookies), payload: { 상태: "비활성", 작업사유: reason, rowVersion: String(before.rowVersion), idempotencyKey } }).then((response) => {
       reply.status(response.statusCode).headers(response.headers).send(response.body);
     });
   });
@@ -2170,7 +1757,7 @@ export const vendorRoutes: FastifyPluginAsync = async (app) => {
     return app.inject({
       method: "PATCH",
       url: `/api/vendors/${encodeURIComponent(params.vendorName)}`,
-      headers: forwardedInjectHeaders(request.headers),
+      headers: forwardableHeaders(request.headers),
       cookies: definedCookies(request.cookies),
       payload: {
         ...readStringPatch(body.patch),
@@ -2405,41 +1992,23 @@ export const reportRoutes: FastifyPluginAsync = async (app) => {
     const item = await prisma.reportRun.findFirst({ where: { name: (request.params as { reportName: string }).reportName }, include: { creator: true } });
     if (!item) return fail(reply, "NOT_FOUND", "보고서를 찾을 수 없습니다.", 404);
 
-    const rowLimitIssue = reportDownloadLimitIssue({ rowCount: item.rowCount });
-    if (rowLimitIssue) return fail(reply, rowLimitIssue.code, rowLimitIssue.message, 413);
-
-    let artifactItem: ReportRunWithCreator;
-    let download: Awaited<ReturnType<typeof readReportArtifactDownload>>;
-    try {
-      artifactItem = await ensureReportArtifact(item);
-      download = await readReportArtifactDownload(artifactItem, format);
-    } catch {
-      return fail(reply, "REPORT_ARTIFACT_UNAVAILABLE", "보고서 산출물 저장소에서 파일을 읽을 수 없습니다.", 500);
-    }
-    if (!download) return fail(reply, "REPORT_ARTIFACT_INVALID", "저장된 보고서 산출물 형식이 올바르지 않습니다.", 500);
-
-    const sizeLimitIssue = reportDownloadLimitIssue({ rowCount: artifactItem.rowCount, contentBytes: download.limits.contentBytes });
-    if (sizeLimitIssue) return fail(reply, sizeLimitIssue.code, sizeLimitIssue.message, 413);
-
+    const download = buildReportDownload(item, format);
     await prisma.auditLog.create({
       data: {
         entityType: "report_run",
-        entityId: artifactItem.id,
+        entityId: item.id,
         actorId: user.id,
         action: `download_${format}`,
         afterValue: jsonRow({
-          보고서명: artifactItem.name,
+          보고서명: item.name,
           형식: format,
           파일명: download.fileName,
-          행수: String(artifactItem.rowCount),
-          contentBytes: String(download.limits.contentBytes),
-          artifactKey: artifactItem.artifactKey ?? "",
         }),
         reason: "보고서 다운로드",
         ...auditRequestContext(request),
       },
     });
-    return reply.send(success(request, download, { format, artifactKey: artifactItem.artifactKey ?? "" }));
+    return reply.send(success(request, download, { format }));
   });
 
   app.post("/reports", async (request, reply) => {
@@ -2462,8 +2031,6 @@ export const reportRoutes: FastifyPluginAsync = async (app) => {
     }
     const period = parseReportPeriod(row.기간);
     const created = await prisma.$transaction(async (tx) => {
-      const drilldownSnapshot = await buildReportDrilldownSnapshot(tx, row);
-      const snapshotRowCount = Object.values(drilldownSnapshot.sections).reduce((sum, section) => sum + section.rows.length, 0);
       const item = await tx.reportRun.create({
         data: {
           createdBy: user.id,
@@ -2472,8 +2039,8 @@ export const reportRoutes: FastifyPluginAsync = async (app) => {
           periodStart: period.periodStart,
           periodEnd: period.periodEnd,
           status: ReportRunStatus.READY,
-          summary: writeReportSummaryMeta(row.요약 ?? "사용자 생성 보고서", row.공유권한 ?? row.공유, drilldownSnapshot, { department: row.부서, vendor: row.거래처 }),
-          rowCount: Number(row.행수 ?? row.rowCount ?? 0) || snapshotRowCount,
+          summary: writeReportSummaryMeta(row.요약 ?? "사용자 생성 보고서", row.공유권한 ?? row.공유),
+          rowCount: Number(row.행수 ?? row.rowCount ?? 0) || 0,
         },
         include: { creator: true },
       });
@@ -2484,35 +2051,7 @@ export const reportRoutes: FastifyPluginAsync = async (app) => {
       throw error;
     });
     if (!created) return fail(reply, "IDEMPOTENCY_CONFLICT", "이미 다른 처리에 사용된 idempotencyKey입니다.", 409);
-    try {
-      const artifact = await writeReportArtifact(created);
-      const artifactItem = await prisma.reportRun.update({
-        where: { id: created.id },
-        data: { artifactKey: artifact.artifactKey },
-        include: { creator: true },
-      });
-      await prisma.auditLog.create({
-        data: {
-          entityType: "report_run",
-          entityId: artifactItem.id,
-          actorId: user.id,
-          action: "artifact_stored",
-          afterValue: jsonRow({
-            보고서명: artifactItem.name,
-            artifactKey: artifact.artifactKey,
-            byteSize: String(artifact.byteSize),
-            checksum: artifact.checksum,
-            storedAt: artifact.storedAt,
-          }),
-          reason: "보고서 artifact object storage 저장",
-          ...auditRequestContext(request),
-        },
-      });
-      return reply.send(success(request, toReportRow(artifactItem), { created: true, artifactKey: artifact.artifactKey }));
-    } catch {
-      await prisma.reportRun.update({ where: { id: created.id }, data: { status: ReportRunStatus.FAILED } }).catch(() => undefined);
-      return fail(reply, "REPORT_ARTIFACT_STORE_FAILED", "보고서 산출물 저장에 실패했습니다.", 500);
-    }
+    return reply.send(success(request, toReportRow(created), { created: true }));
   });
 
   app.patch("/reports/:reportName", async (request, reply) => {
@@ -2542,13 +2081,8 @@ export const reportRoutes: FastifyPluginAsync = async (app) => {
     }
     const updated = await prisma.$transaction(async (tx) => {
       const beforeSummaryMeta = readReportSummaryMeta(before.summary);
-      const nextSummary = patch.요약 !== undefined || patch.공유권한 !== undefined || patch.공유 !== undefined || patch.부서 !== undefined || patch.거래처 !== undefined
-        ? writeReportSummaryMeta(
-          patch.요약 ?? beforeSummaryMeta.summary,
-          patch.공유권한 ?? patch.공유 ?? beforeSummaryMeta.access,
-          beforeSummaryMeta.drilldown,
-          { department: patch.부서 ?? beforeSummaryMeta.department, vendor: patch.거래처 ?? beforeSummaryMeta.vendor },
-        )
+      const nextSummary = patch.요약 !== undefined || patch.공유권한 !== undefined || patch.공유 !== undefined
+        ? writeReportSummaryMeta(patch.요약 ?? before.summary, patch.공유권한 ?? patch.공유 ?? beforeSummaryMeta.access)
         : before.summary;
       const updateResult = await tx.reportRun.updateMany({
         where: { id: before.id, rowVersion: before.rowVersion },
@@ -2569,15 +2103,7 @@ export const reportRoutes: FastifyPluginAsync = async (app) => {
       throw error;
     });
     if (!updated) return fail(reply, "CONFLICT", "보고서 정보가 이미 변경되었습니다. 목록을 새로고침한 뒤 다시 시도해주세요.", 409);
-    try {
-      const artifact = await writeReportArtifact(updated);
-      const artifactItem = updated.artifactKey === artifact.artifactKey
-        ? updated
-        : await prisma.reportRun.update({ where: { id: updated.id }, data: { artifactKey: artifact.artifactKey }, include: { creator: true } });
-      return reply.send(success(request, toReportRow(artifactItem), { artifactKey: artifact.artifactKey }));
-    } catch {
-      return fail(reply, "REPORT_ARTIFACT_STORE_FAILED", "보고서 산출물 갱신에 실패했습니다.", 500);
-    }
+    return reply.send(success(request, toReportRow(updated)));
   });
 
   app.delete("/reports/:reportName", async (request, reply) => {
@@ -2637,7 +2163,7 @@ export const reportRoutes: FastifyPluginAsync = async (app) => {
       return app.inject({
         method: "DELETE",
         url: `/api/reports/${encodeURIComponent(params.reportName)}`,
-        headers: forwardedInjectHeaders(request.headers),
+        headers: forwardableHeaders(request.headers),
         cookies: definedCookies(request.cookies),
         payload: metadata,
       }).then((response) => {
@@ -2647,7 +2173,7 @@ export const reportRoutes: FastifyPluginAsync = async (app) => {
     return app.inject({
       method: "PATCH",
       url: `/api/reports/${encodeURIComponent(params.reportName)}`,
-      headers: forwardedInjectHeaders(request.headers),
+      headers: forwardableHeaders(request.headers),
       cookies: definedCookies(request.cookies),
       payload: { ...patch, ...metadata },
     }).then((response) => {
@@ -2747,6 +2273,12 @@ export const settingRoutes: FastifyPluginAsync = async (app) => {
       }
       throw error;
     });
+
+    if (key === "approvalPolicy") {
+      await syncDepartmentsFromApprovalPolicy(input.snapshot).catch((error) => {
+        request.log?.warn?.({ err: error }, "approval policy department sync failed");
+      });
+    }
 
     return reply.send(success(request, saved.afterValue, { key, saved: true, auditLogId: saved.id }));
   });
@@ -2870,7 +2402,7 @@ export const settingRoutes: FastifyPluginAsync = async (app) => {
 
     const params = request.params as { roleId: string };
     const before = await prisma.role.findFirst({
-      where: { OR: [{ id: params.roleId }, { name: params.roleId }, { code: params.roleId }] },
+      where: { OR: isUuid(params.roleId) ? [{ id: params.roleId }, { name: params.roleId }, { code: params.roleId }] : [{ name: params.roleId }, { code: params.roleId }] },
       include: { _count: { select: { users: true } } },
     });
     if (!before) return reply.send(success(request, null));
@@ -2896,7 +2428,6 @@ export const settingRoutes: FastifyPluginAsync = async (app) => {
       const duplicate = await prisma.role.findFirst({ where: { id: { not: before.id }, name: nextName } });
       if (duplicate) return fail(reply, "VALIDATION_ERROR", "이미 등록된 권한 그룹명입니다.", 400);
     }
-    const shouldRevokeSessions = roleSessionInvalidationNeeded(before, body);
 
     const updated = await prisma.$transaction(async (tx) => {
       const updateResult = await tx.role.updateMany({
@@ -2911,29 +2442,13 @@ export const settingRoutes: FastifyPluginAsync = async (app) => {
       if (updateResult.count !== 1) throw new Error("ROW_VERSION_CONFLICT");
       const item = await tx.role.findUniqueOrThrow({ where: { id: before.id }, include: { _count: { select: { users: true } } } });
       await createAudit(tx, request, user, "role", before.id, "settings_role_update", toRoleAuditRow(before), toRoleAuditRow(item), typeof body.tag === "string" ? body.tag : undefined, idempotencyKey);
-      if (!shouldRevokeSessions) return { item, sessionsRevoked: 0 };
-
-      const affectedUsers = await tx.userRole.findMany({ where: { roleId: before.id }, select: { userId: true } });
-      const sessionsRevoked = await revokeActiveSessionsForUsers(tx, affectedUsers.map((item) => item.userId));
-      if (sessionsRevoked > 0) {
-        await createAudit(tx, request, user, "role", before.id, "settings_role_session_revoke", null, {
-          id: before.id,
-          name: before.name,
-          sessionsRevoked: String(sessionsRevoked),
-          affectedUsers: String(affectedUsers.length),
-          policy: "권한 그룹 permission/status 변경 즉시 재로그인 요구",
-        }, "권한 변경 즉시 반영");
-      }
-      return { item, sessionsRevoked };
+      return item;
     }).catch((error) => {
       if (error instanceof Error && error.message === "ROW_VERSION_CONFLICT") return null;
       throw error;
     });
     if (!updated) return fail(reply, "CONFLICT", "권한 그룹 정보가 이미 변경되었습니다. 목록을 새로고침한 뒤 다시 시도해주세요.", 409);
-    return reply.send(success(request, toRoleSettingsDto(updated.item), {
-      sessionsRevoked: updated.sessionsRevoked,
-      sessionPolicy: shouldRevokeSessions ? "권한 그룹 변경 대상 사용자는 다음 요청부터 재로그인이 필요합니다." : "권한에 영향 없는 변경입니다.",
-    }));
+    return reply.send(success(request, toRoleSettingsDto(updated)));
   });
 
   app.delete("/settings/roles/:roleId", async (request, reply) => {
@@ -2954,7 +2469,7 @@ export const settingRoutes: FastifyPluginAsync = async (app) => {
       }
     }
     const before = await prisma.role.findFirst({
-      where: { OR: [{ id: params.roleId }, { name: params.roleId }, { code: params.roleId }] },
+      where: { OR: isUuid(params.roleId) ? [{ id: params.roleId }, { name: params.roleId }, { code: params.roleId }] : [{ name: params.roleId }, { code: params.roleId }] },
       include: { _count: { select: { users: true } } },
     });
     if (!before) return reply.send(success(request, null));
@@ -3042,8 +2557,7 @@ export const settingRoutes: FastifyPluginAsync = async (app) => {
     if (!user) return;
     if (!hasPermission(user, "system:manage")) return fail(reply, "FORBIDDEN", "시스템 설정 수정 권한이 없습니다.", 403);
 
-    const params = request.params as { userName: string };
-    const before = await prisma.user.findFirst({ where: settingUserWhere(params.userName), include: { department: true, roles: { include: { role: true } } } });
+    const before = await prisma.user.findFirst({ where: { name: (request.params as { userName: string }).userName }, include: { department: true, roles: { include: { role: true } } } });
     if (!before) return reply.send(success(request, null));
     const patch = readStringPatch(request.body);
     const idempotencyKey = patch.idempotencyKey?.trim() || undefined;
@@ -3061,7 +2575,6 @@ export const settingRoutes: FastifyPluginAsync = async (app) => {
     if (!Number.isInteger(expectedRowVersion) || expectedRowVersion !== before.rowVersion) {
       return fail(reply, "CONFLICT", "사용자 권한 정보가 이미 변경되었습니다. 목록을 새로고침한 뒤 다시 시도해주세요.", 409);
     }
-    const shouldRevokeSessions = patch.권한그룹 !== undefined || patch.상태 !== undefined || patch.부서 !== undefined;
 
     const updated = await prisma.$transaction(async (tx) => {
       const department = patch.부서 ? await tx.department.findFirst({ where: { name: patch.부서 } }) : null;
@@ -3084,25 +2597,13 @@ export const settingRoutes: FastifyPluginAsync = async (app) => {
       }
       const after = await tx.user.findUniqueOrThrow({ where: { id: before.id }, include: { department: true, roles: { include: { role: true } } } });
       await createAudit(tx, request, user, "user", before.id, "settings_update", toSettingRow(before), toSettingRow(after), patch.권한그룹 ?? patch.상태, idempotencyKey);
-      const sessionsRevoked = shouldRevokeSessions ? await revokeActiveSessionsForUsers(tx, [before.id]) : 0;
-      if (sessionsRevoked > 0) {
-        await createAudit(tx, request, user, "user", before.id, "settings_user_session_revoke", null, {
-          사용자: after.name,
-          부서: after.department.name,
-          sessionsRevoked: String(sessionsRevoked),
-          policy: "사용자 권한/상태/부서 변경 즉시 재로그인 요구",
-        }, "사용자 권한 변경 즉시 반영");
-      }
-      return { item: after, sessionsRevoked };
+      return after;
     }).catch((error) => {
       if (error instanceof Error && error.message === "ROW_VERSION_CONFLICT") return null;
       throw error;
     });
     if (!updated) return fail(reply, "CONFLICT", "사용자 권한 정보가 이미 변경되었습니다. 목록을 새로고침한 뒤 다시 시도해주세요.", 409);
-    return reply.send(success(request, toSettingRow(updated.item), {
-      sessionsRevoked: updated.sessionsRevoked,
-      sessionPolicy: shouldRevokeSessions ? "대상 사용자는 다음 요청부터 재로그인이 필요합니다." : "세션에 영향 없는 변경입니다.",
-    }));
+    return reply.send(success(request, toSettingRow(updated)));
   });
 
   app.delete("/settings/:userName", async (request, reply) => {
@@ -3111,11 +2612,11 @@ export const settingRoutes: FastifyPluginAsync = async (app) => {
     if (!hasPermission(user, "system:manage")) return fail(reply, "FORBIDDEN", "사용자 비활성화 권한이 없습니다.", 403);
     const params = request.params as { userName: string };
     const direct = readStringPatch(request.body);
-    const before = await prisma.user.findFirst({ where: settingUserWhere(params.userName), include: { department: true, roles: { include: { role: true } } } });
+    const before = await prisma.user.findFirst({ where: { name: params.userName }, include: { department: true, roles: { include: { role: true } } } });
     if (!before) return reply.send(success(request, null));
     if (!before.isActive) return reply.send(success(request, toSettingRow(before), { deleted: true, alreadyInactive: true }));
     const rowVersion = direct.rowVersion ?? direct.사용자RowVersion ?? String(before.rowVersion);
-    return app.inject({ method: "PATCH", url: `/api/settings/${encodeURIComponent(params.userName)}`, headers: forwardedInjectHeaders(request.headers), cookies: definedCookies(request.cookies), payload: { 상태: "비활성", rowVersion, 사용자RowVersion: rowVersion, idempotencyKey: direct.idempotencyKey ?? `settings-user-deactivate-${before.id}-${before.rowVersion}` } }).then((response) => {
+    return app.inject({ method: "PATCH", url: `/api/settings/${encodeURIComponent(params.userName)}`, headers: forwardableHeaders(request.headers), cookies: definedCookies(request.cookies), payload: { 상태: "비활성", rowVersion, 사용자RowVersion: rowVersion, idempotencyKey: direct.idempotencyKey ?? `settings-user-deactivate-${before.id}-${before.rowVersion}` } }).then((response) => {
       reply.status(response.statusCode).headers(response.headers).send(response.body);
     });
   });
@@ -3131,7 +2632,7 @@ export const settingRoutes: FastifyPluginAsync = async (app) => {
     return app.inject({
       method: "PATCH",
       url: `/api/settings/${encodeURIComponent(params.userName)}`,
-      headers: forwardedInjectHeaders(request.headers),
+      headers: forwardableHeaders(request.headers),
       cookies: definedCookies(request.cookies),
       payload: { ...patch, ...actionPatch, ...(rowVersion ? { rowVersion, 사용자RowVersion: rowVersion } : {}), ...(idempotencyKey ? { idempotencyKey } : {}) },
     }).then((response) => {
@@ -3225,7 +2726,6 @@ export const favoriteRoutes: FastifyPluginAsync = async (app) => {
       return fail(reply, "CONFLICT", "즐겨찾기 정보가 이미 변경되었습니다. 목록을 새로고침한 뒤 다시 시도해주세요.", 409);
     }
     const beforeFilters = favoriteFiltersFromJson(before.filters);
-    const nextLastUsedAt = favoriteLastUsedAtFromRow(patch);
     const updated = await prisma.$transaction(async (tx) => {
       const updateResult = await tx.favoriteItem.updateMany({
         where: { id: before.id, rowVersion: before.rowVersion },
@@ -3246,7 +2746,7 @@ export const favoriteRoutes: FastifyPluginAsync = async (app) => {
             : {}),
           ...(patch.순서 !== undefined ? { sortOrder: favoriteSortOrder(patch.순서, before.sortOrder) } : {}),
           isActive: patch.상태 ? patch.상태 === "활성" : before.isActive,
-          ...(nextLastUsedAt ? { lastUsedAt: nextLastUsedAt } : {}),
+          lastUsedAt: new Date(),
           rowVersion: { increment: 1 },
         },
       });
@@ -3320,18 +2820,18 @@ export const favoriteRoutes: FastifyPluginAsync = async (app) => {
       return app.inject({
         method: "DELETE",
         url: `/api/favorites/${encodeURIComponent(params.label)}`,
-        headers: forwardedInjectHeaders(request.headers),
+        headers: forwardableHeaders(request.headers),
         cookies: definedCookies(request.cookies),
         payload: metadata,
       }).then((response) => {
         reply.status(response.statusCode).headers(response.headers).send(response.body);
       });
     }
-    const actionPatch = params.action === "open" ? { 상태: "활성", 최근사용: new Date().toISOString() } : {};
+    const actionPatch = params.action === "open" ? { 상태: "활성" } : {};
     return app.inject({
       method: "PATCH",
       url: `/api/favorites/${encodeURIComponent(params.label)}`,
-      headers: forwardedInjectHeaders(request.headers),
+      headers: forwardableHeaders(request.headers),
       cookies: definedCookies(request.cookies),
       payload: { ...patch, ...actionPatch, ...metadata },
     }).then((response) => {

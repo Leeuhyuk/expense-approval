@@ -5,10 +5,9 @@ import { hasPermission, requireAuth } from "../auth/session.js";
 import { validateDisbursementFinancialClose } from "../controls/financialClose.js";
 import { notificationExpiresAt } from "../domain/notificationRetention.js";
 import { prisma } from "../db/prisma.js";
-import { internalBankAccountVerificationPolicy, verifyBankAccount, type BankAccountVerificationResult } from "../integrations/bankAccountVerification.js";
 import { decryptBankAccount } from "../security/bankAccountCrypto.js";
 import { fail, success } from "../utils/response.js";
-import { auditRequestContext, definedCookies, forwardedInjectHeaders, filterAndSortRows, formatDate, formatWon, jsonRow, paginateRows, readListFilters, readStringPatch, type TableRow } from "./rowUtils.js";
+import { auditRequestContext, definedCookies, filterAndSortRows, formatDate, formatWon, forwardableHeaders, jsonRow, paginateRows, readListFilters, readStringPatch, type TableRow } from "./rowUtils.js";
 
 const listQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
@@ -128,65 +127,19 @@ function toAccountStatus(value: string) {
   return map[value];
 }
 
-function accountVerificationPolicy(item: DisbursementWithRelations): BankAccountVerificationResult {
-  return internalBankAccountVerificationPolicy({
-    currentDisbursementStatus: item.accountVerificationStatus,
-    currentVendorStatus: item.vendor.accountVerificationStatus,
-    vendorActive: item.vendor.isActive && item.vendor.status === VendorStatus.ACTIVE,
-  });
-}
-
-function disbursementRetryPolicy(item: DisbursementWithRelations, accountPolicy = accountVerificationPolicy(item)) {
-  if (item.status !== DisbursementStatus.ERROR) {
-    return {
-      canRetry: false,
-      code: "NOT_ERROR_STATUS",
-      message: "오류 상태의 지급 건만 재처리할 수 있습니다.",
-    };
-  }
-  if (accountPolicy.status !== AccountVerificationStatus.VERIFIED) {
-    return {
-      canRetry: false,
-      code: accountPolicy.code,
-      message: `${accountPolicy.message} 계좌 재확인 완료 후 재처리할 수 있습니다.`,
-    };
-  }
-  return {
-    canRetry: true,
-    code: "RETRY_READY",
-    message: "계좌 확인이 완료되어 지급 예정 상태로 되돌린 뒤 재처리할 수 있습니다.",
-  };
-}
-
 function toDisbursementRow(item: DisbursementWithRelations): TableRow {
-  const accountPolicy = accountVerificationPolicy(item);
-  const retryPolicy = disbursementRetryPolicy(item, accountPolicy);
-  const scheduleWarning = validateDisbursementScheduledDate(formatDate(item.scheduledDate));
   return {
     지급번호: item.disbursementCode,
     지급예정일: formatDate(item.scheduledDate),
-    지급예정일업무일: scheduleWarning ? "불가" : "가능",
-    지급일정정책: disbursementSchedulePolicyDescription,
-    다음지급가능일: nextBankBusinessDate(),
-    지급일정경고: scheduleWarning,
     거래처: item.vendor.name,
     은행: `${item.vendor.bankName} ${item.vendor.bankAccountMasked}`,
     계좌확인: displayAccountStatus(item.accountVerificationStatus),
-    거래처계좌확인: displayAccountStatus(item.vendor.accountVerificationStatus),
-    계좌검증Adapter: accountPolicy.adapter,
-    계좌검증코드: accountPolicy.code,
-    계좌검증사유: accountPolicy.message,
-    계좌검증재시도: accountPolicy.retryable ? "가능" : "불가",
-    재처리가능: retryPolicy.canRetry ? "가능" : "불가",
-    재처리차단코드: retryPolicy.code,
-    재처리정책: retryPolicy.message,
     금액: formatWon(item.amount),
     지급상태: displayDisbursementStatus(item.status),
     승인번호: item.paymentRequest.requestCode,
     부서: item.paymentRequest.department.name,
     담당자: item.paymentRequest.requester.name,
     rowVersion: String(item.rowVersion),
-    지급RowVersion: String(item.rowVersion),
   };
 }
 
@@ -225,71 +178,6 @@ function isExecutePatch(patch: TableRow) {
 const executableDisbursementStatuses: DisbursementStatus[] = [DisbursementStatus.SCHEDULED, DisbursementStatus.DUE_TODAY, DisbursementStatus.HELD];
 const holdableDisbursementStatuses: DisbursementStatus[] = [DisbursementStatus.SCHEDULED, DisbursementStatus.DUE_TODAY, DisbursementStatus.ERROR];
 const bankTransferExportStatuses: DisbursementStatus[] = [DisbursementStatus.SCHEDULED, DisbursementStatus.DUE_TODAY];
-const bankScheduleCutoffHourKst = 16;
-const defaultBankHolidayDates = new Set([
-  "2026-01-01",
-  "2026-02-16",
-  "2026-02-17",
-  "2026-02-18",
-  "2026-03-01",
-  "2026-05-05",
-  "2026-05-24",
-  "2026-08-15",
-  "2026-09-24",
-  "2026-09-25",
-  "2026-09-26",
-  "2026-10-03",
-  "2026-10-09",
-  "2026-12-25",
-]);
-const disbursementSchedulePolicyDescription = `은행 영업일만 선택 가능 · 주말/휴일 제외 · KST ${bankScheduleCutoffHourKst}:00 이후 당일 변경 불가`;
-
-function configuredBankHolidayDates() {
-  const configured = (process.env.ERP_BANK_HOLIDAYS ?? "")
-    .split(",")
-    .map((value) => value.trim())
-    .filter((value) => /^\d{4}-\d{2}-\d{2}$/.test(value));
-  return new Set([...defaultBankHolidayDates, ...configured]);
-}
-
-function parseDateOnly(value: string) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
-  const date = new Date(`${value}T00:00:00.000Z`);
-  return Number.isNaN(date.getTime()) || formatDate(date) !== value ? null : date;
-}
-
-function dateOnlyInKst(now: Date) {
-  const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
-  return new Date(Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth(), kst.getUTCDate()));
-}
-
-function currentHourInKst(now: Date) {
-  return new Date(now.getTime() + 9 * 60 * 60 * 1000).getUTCHours();
-}
-
-function isBankBusinessDate(date: Date) {
-  const day = date.getUTCDay();
-  return day !== 0 && day !== 6 && !configuredBankHolidayDates().has(formatDate(date));
-}
-
-function nextBankBusinessDate(from = new Date()) {
-  const start = dateOnlyInKst(from);
-  const candidate = new Date(start);
-  if (currentHourInKst(from) >= bankScheduleCutoffHourKst) candidate.setUTCDate(candidate.getUTCDate() + 1);
-  while (!isBankBusinessDate(candidate)) candidate.setUTCDate(candidate.getUTCDate() + 1);
-  return formatDate(candidate);
-}
-
-function validateDisbursementScheduledDate(value: string, now = new Date()) {
-  const date = parseDateOnly(value);
-  if (!date) return "유효한 지급 예정일이 필요합니다.";
-  if (!isBankBusinessDate(date)) return `지급 예정일은 은행 영업일이어야 합니다. ${disbursementSchedulePolicyDescription}`;
-  const today = dateOnlyInKst(now);
-  if (formatDate(date) === formatDate(today) && currentHourInKst(now) >= bankScheduleCutoffHourKst) {
-    return `KST ${bankScheduleCutoffHourKst}:00 이후에는 당일 지급 예정일로 변경할 수 없습니다. 다음 가능일: ${nextBankBusinessDate(now)}`;
-  }
-  return "";
-}
 
 function resolveDisbursementAction(before: DisbursementWithRelations, patch: TableRow): DisbursementMutationAction {
   if (isExecutePatch(patch)) return "execute";
@@ -324,8 +212,9 @@ export function validateExecutionControls(before: DisbursementWithRelations, pat
   if (!executableDisbursementStatuses.includes(before.status)) {
     return "지급 예정, 오늘 지급, 보류 상태만 지급 실행할 수 있습니다.";
   }
-  const accountPolicy = accountVerificationPolicy(before);
-  if (accountPolicy.status !== AccountVerificationStatus.VERIFIED) return accountPolicy.message;
+  if (before.accountVerificationStatus !== AccountVerificationStatus.VERIFIED || before.vendor.accountVerificationStatus !== AccountVerificationStatus.VERIFIED) {
+    return "계좌 확인 완료 건만 지급 실행할 수 있습니다.";
+  }
   if (before.paymentRequest.status !== PaymentRequestStatus.APPROVED) return "승인 완료된 결제 요청만 지급 실행할 수 있습니다.";
   if (before.paymentRequest.approvalSteps.length > 0 && before.paymentRequest.approvalSteps.some((step) => step.status !== ApprovalStatus.APPROVED)) {
     return "모든 결재 단계가 승인 완료되어야 지급 실행할 수 있습니다.";
@@ -385,22 +274,23 @@ export function validateDisbursementMutationControls(before: DisbursementWithRel
   }
 
   if (action === "retry") {
-    const retryPolicy = disbursementRetryPolicy(before);
-    if (!retryPolicy.canRetry) return retryPolicy.message;
+    if (before.status !== DisbursementStatus.ERROR) return "오류 상태의 지급 건만 재처리할 수 있습니다.";
+    if (before.accountVerificationStatus !== AccountVerificationStatus.VERIFIED || before.vendor.accountVerificationStatus !== AccountVerificationStatus.VERIFIED) {
+      return "계좌 재확인 완료 후 재처리할 수 있습니다.";
+    }
     return "";
   }
 
   if (action === "verify") {
     if (before.status === DisbursementStatus.COMPLETED) return "지급 완료 건은 계좌 재확인으로 상태를 변경할 수 없습니다.";
-    if (accountVerificationPolicy(before).code === "VENDOR_ACCOUNT_INACTIVE") return "비활성 거래처 계좌는 지급 건에서 재확인할 수 없습니다.";
+    if (!before.vendor.isActive) return "비활성 거래처 계좌는 지급 건에서 재확인할 수 없습니다.";
     if (patch.지급상태 && patch.지급상태 !== "지급 예정") return "계좌 재확인은 지급 예정 상태 복구만 함께 처리할 수 있습니다.";
     return "";
   }
 
   if (action === "reschedule") {
     if (before.status === DisbursementStatus.COMPLETED) return "지급 완료 건은 지급 예정일을 변경할 수 없습니다.";
-    const scheduleError = validateDisbursementScheduledDate(patch.지급예정일);
-    if (scheduleError) return scheduleError;
+    if (Number.isNaN(new Date(patch.지급예정일).getTime())) return "유효한 지급 예정일이 필요합니다.";
     return "";
   }
 
@@ -902,23 +792,6 @@ export const disbursementRoutes: FastifyPluginAsync = async (app) => {
       if (controlError) return fail(reply, "DISBURSEMENT_CONTROL_FAILED", controlError, 409);
     }
 
-    let bankVerificationResult: BankAccountVerificationResult | null = null;
-    if (workflowAction === "verify") {
-      bankVerificationResult = await verifyBankAccount({
-        bankName: before.vendor.bankName,
-        accountEncrypted: before.vendor.bankAccountEncrypted,
-        accountHolder: before.vendor.name,
-        businessNumber: before.vendor.businessNumber,
-        disbursementCode: before.disbursementCode,
-        currentDisbursementStatus: before.accountVerificationStatus,
-        currentVendorStatus: before.vendor.accountVerificationStatus,
-        vendorActive: before.vendor.isActive && before.vendor.status === VendorStatus.ACTIVE,
-      });
-      if (bankVerificationResult.status !== AccountVerificationStatus.VERIFIED) {
-        return fail(reply, "BANK_ACCOUNT_VERIFICATION_FAILED", bankVerificationResult.message, 409);
-      }
-    }
-
     const data: Prisma.DisbursementUpdateInput = {
       rowVersion: { increment: 1 },
     };
@@ -933,11 +806,7 @@ export const disbursementRoutes: FastifyPluginAsync = async (app) => {
       if (!accountStatus) return fail(reply, "VALIDATION_ERROR", "지원하지 않는 계좌 확인 상태입니다.", 400);
       data.accountVerificationStatus = accountStatus;
     }
-    if (patch.지급예정일) {
-      const scheduledDate = parseDateOnly(patch.지급예정일);
-      if (!scheduledDate) return fail(reply, "VALIDATION_ERROR", "유효한 지급 예정일이 필요합니다.", 400);
-      data.scheduledDate = scheduledDate;
-    }
+    if (patch.지급예정일) data.scheduledDate = new Date(patch.지급예정일);
 
     let updated: DisbursementWithRelations;
     try {
@@ -1002,7 +871,7 @@ export const disbursementRoutes: FastifyPluginAsync = async (app) => {
             action: workflowAction,
             beforeValue: jsonRow(toDisbursementRow(before)),
             afterValue: jsonRow(toDisbursementRow(item)),
-            reason: patch["지급 보류 사유"] ?? patch["지급 오류 메모"] ?? bankVerificationResult?.message ?? undefined,
+            reason: patch["지급 보류 사유"] ?? patch["지급 오류 메모"] ?? undefined,
             idempotencyKey,
             ...auditRequestContext(request),
           },
@@ -1113,7 +982,7 @@ export const disbursementRoutes: FastifyPluginAsync = async (app) => {
     return app.inject({
       method: "PATCH",
       url: `/api/disbursements/${encodeURIComponent(params.disbursementCode)}`,
-      headers: forwardedInjectHeaders(request.headers),
+      headers: forwardableHeaders(request.headers),
       cookies: definedCookies(request.cookies),
       payload: patch,
     }).then((response) => {

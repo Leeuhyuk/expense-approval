@@ -1,6 +1,5 @@
 import type { PrismaClient } from "../../generated/prisma/index.js";
 import { prisma } from "../db/prisma.js";
-import { evaluateLatencyTargets } from "./performancePolicy.js";
 
 export type OperationalAlertSeverity = "warning" | "critical";
 
@@ -121,41 +120,6 @@ async function securityEventCounts(since: Date, db: Pick<PrismaClient, "security
   return Object.fromEntries(rows.map((row) => [row.eventType, row._count._all]));
 }
 
-function metadataNumber(value: unknown, key: string) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const item = (value as Record<string, unknown>)[key];
-  const parsed = typeof item === "number" ? item : typeof item === "string" ? Number(item) : Number.NaN;
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function percentile(values: number[], ratio: number) {
-  if (values.length === 0) return null;
-  const sorted = [...values].sort((a, b) => a - b);
-  const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * ratio) - 1));
-  return sorted[index];
-}
-
-async function slowQueryLatencyMetrics(since: Date, db: Pick<PrismaClient, "securityEvent">) {
-  const rows = await db.securityEvent.findMany({
-    where: {
-      eventType: "slow_query",
-      createdAt: { gte: since },
-    },
-    select: { metadata: true },
-    orderBy: { createdAt: "desc" },
-    take: 1_000,
-  });
-  const durations = rows
-    .map((row) => metadataNumber(row.metadata, "durationMs"))
-    .filter((value): value is number => value !== null);
-  return {
-    sampleSize: durations.length,
-    p95LatencyMs: percentile(durations, 0.95),
-    p99LatencyMs: percentile(durations, 0.99),
-    maxLatencyMs: durations.length ? Math.max(...durations) : null,
-  };
-}
-
 export async function getOperationalAlertSummary(
   env: NodeJS.ProcessEnv = process.env,
   db: Pick<PrismaClient, "$queryRaw" | "securityEvent"> = prisma,
@@ -166,17 +130,10 @@ export async function getOperationalAlertSummary(
   const database = await checkDatabase(db);
   let countsByEventType: Record<string, number> = {};
   let eventReadError: string | null = null;
-  let latency = {
-    sampleSize: 0,
-    p95LatencyMs: null as number | null,
-    p99LatencyMs: null as number | null,
-    maxLatencyMs: null as number | null,
-  };
 
   if (database.ok) {
     try {
       countsByEventType = await securityEventCounts(since, db);
-      latency = await slowQueryLatencyMetrics(since, db);
     } catch (error) {
       eventReadError = error instanceof Error ? error.message : "security event summary failed";
     }
@@ -207,8 +164,6 @@ export async function getOperationalAlertSummary(
   const eventRules = operationalAlertRules.map((rule) => evaluateAlertRule(rule, countsByEventType, env));
   const rules = [dbRule, eventReadRule, ...eventRules];
   const triggered = rules.filter((rule) => !rule.ok);
-  const eventsReviewed = Object.values(countsByEventType).reduce((sum, count) => sum + count, 0) + (database.ok ? 0 : 1) + (eventReadError ? 1 : 0);
-  const ruleFailureRatePercent = rules.length > 0 ? Math.round((triggered.length / rules.length) * 10_000) / 100 : 0;
 
   return {
     ok: triggered.length === 0,
@@ -220,21 +175,5 @@ export async function getOperationalAlertSummary(
     eventReadError,
     rules,
     triggered,
-    metrics: {
-      eventsReviewed,
-      ruleFailureRatePercent,
-      criticalTriggered: triggered.filter((rule) => rule.severity === "critical").length,
-      warningTriggered: triggered.filter((rule) => rule.severity === "warning").length,
-      p95LatencyMs: latency.p95LatencyMs ?? database.latencyMs,
-      p99LatencyMs: latency.p99LatencyMs,
-      maxLatencyMs: latency.maxLatencyMs,
-      latencySampleSize: latency.sampleSize,
-      dbLatencyMs: database.latencyMs,
-      latencyTargets: evaluateLatencyTargets({
-        p95LatencyMs: latency.p95LatencyMs ?? database.latencyMs,
-        p99LatencyMs: latency.p99LatencyMs,
-        latencySampleSize: latency.sampleSize,
-      }, env),
-    },
   };
 }

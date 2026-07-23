@@ -4,7 +4,7 @@ import { scanArtifactDirectory } from "./frontendArtifactScanner.mjs";
 const artifactDir = process.argv[2] || process.env.FRONTEND_ARTIFACT_DIR || "dist";
 
 try {
-  const result = scanArtifactDirectory(artifactDir, { requireHostingPolicy: true });
+  const result = scanArtifactDirectory(artifactDir);
   if (result.issues.length > 0) {
     console.error(`[frontend-artifact] FAIL scanned ${result.scannedFiles} files in ${result.root}`);
     for (const issue of result.issues.slice(0, 30)) {

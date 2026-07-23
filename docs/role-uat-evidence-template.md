@@ -135,17 +135,6 @@
 | requestId 전달 안내 | TBD |
 | Hypercare 연락 채널 | TBD |
 
-## Pilot Feedback Metrics
-
-| 항목 | 값 |
-| --- | --- |
-| 파일럿 만족도 점수 | TBD |
-| 업무 처리 시간 기준/실측 | TBD |
-| 오류 빈도 | TBD |
-| 문의 유형 분류 | TBD |
-| go-live 전 반영 결정 | TBD |
-| Backlog 또는 변경 증빙 | TBD |
-
 ## Final Role Sign-Off
 
 | 책임 영역 | 승인자 | 승인 시각 | 증적 링크 또는 ID |

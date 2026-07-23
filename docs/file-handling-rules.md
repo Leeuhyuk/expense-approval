@@ -17,9 +17,9 @@
 
 ## PDF 미리보기
 
-- PDF, JPG, JPEG, PNG 파일은 미리보기 대상이다.
-- XLSX는 1차 범위에서 미리보기 대상이 아니며 다운로드로 처리한다.
-- PDF/이미지 미리보기 URL은 파일 다운로드와 동일하게 권한 검증 후 inline signed URL로 제공하며, `download_request` 접근 로그에 `disposition=inline`과 만료 시각을 기록한다.
+- PDF 파일은 미리보기 대상이다.
+- XLSX와 이미지는 1차 범위에서 미리보기 대상이 아니며 다운로드로 처리한다.
+- PDF 미리보기 URL은 파일 다운로드와 동일하게 권한 검증 후 signed URL로 제공한다.
 - 승인 완료 이후에도 권한이 있는 사용자는 미리보기만 가능하고 파일 교체는 차단한다.
 
 ## Storage 접근 제어
@@ -32,19 +32,9 @@
 - Upload signed path와 download signed path는 서로 호환되지 않는다.
 - Upload URL 발급은 소유 업무 대상 확인과 파일별 write 권한 검증을 통과해야 한다.
 - Download URL 발급은 로그인 사용자와 파일 owner/requester/approver/vendor 권한을 다시 검증해야 한다.
-- Download URL 발급은 업무 사유를 필수로 받고, `AuditLog`에 `download_request` 접근 로그로 남겨야 한다.
-- 접근 로그에는 파일명, owner, 크기, signed URL 만료 시각, 첨부 metadata 보관 정책, 감사 로그 보관 기준을 저장하고 signed URL token 원문은 저장하지 않는다.
 - Token이 없거나 만료되었거나 목적이 다른 `/api/files/{id}/content` 직접 접근은 `file_signed_url_rejected` 보안 이벤트로 남긴다.
 - Production release 환경에는 `S3_PUBLIC_BASE_URL`, `S3_PUBLIC_URL`, `FILE_STORAGE_PUBLIC_BASE_URL`, `FILE_STORAGE_PUBLIC_URL` 같은 공개 object URL 설정을 두지 않는다.
 - Production release 환경에는 `S3_SERVER_SIDE_ENCRYPTION_ENABLED=true` 또는 `FILE_STORAGE_ENCRYPTION_AT_REST=true` 증적을 둔다.
-
-## 업로드 UX와 복구
-
-- 결제 요청 증빙과 거래처 증빙 업로드는 진행률을 표시해야 한다.
-- 업로드 실패 row는 삭제하거나 같은 브라우저 세션의 원본 파일로 재시도할 수 있어야 한다.
-- 화면 이탈 또는 새로고침으로 업로드가 중단된 경우에는 recovery metadata를 보여주고, 원본 파일 재선택 또는 삭제로 정리한다.
-- 같은 선택 묶음에 중복 파일명이 있으면 저장소 ID로 구분되며 화면에는 중복 파일명 안내를 표시한다.
-- 대용량 파일은 10MB 정책으로 제한하고, presign 단계와 실제 upload 단계 양쪽에서 차단한다.
 
 ## 세금계산서 파일
 

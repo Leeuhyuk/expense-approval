@@ -12,10 +12,7 @@ import { notificationRoutes } from "./routes/notifications.js";
 import { operationsRoutes } from "./routes/operations.js";
 import { budgetRoutes, dashboardRoutes, favoriteRoutes, reportRoutes, settingRoutes, vendorRoutes } from "./routes/pageResources.js";
 import { paymentRequestRoutes } from "./routes/paymentRequests.js";
-import { registerDataQualityScheduler } from "./operations/dataQualityJobWorker.js";
-import { enforceOperationModeRestriction } from "./operations/operationMode.js";
 import { apiBodyLimitBytes, createRateLimitHook } from "./security/rateLimit.js";
-import { createSafeLoggerOptions } from "./security/logRedaction.js";
 import { createServerErrorHandler } from "./security/serverErrors.js";
 import { createSecurityEventFailureHook } from "./security/securityEvents.js";
 
@@ -51,7 +48,7 @@ function assertProductionCorsOrigin(allowedOrigins: string[]) {
 
 export async function buildApp(options: BuildAppOptions = {}) {
   const app = Fastify({
-    logger: options.logger === false ? false : createSafeLoggerOptions(),
+    logger: options.logger ?? true,
     genReqId: () => randomUUID(),
     bodyLimit: apiBodyLimitBytes(),
   });
@@ -63,13 +60,13 @@ export async function buildApp(options: BuildAppOptions = {}) {
 
   await app.register(cors, {
     credentials: true,
-    methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     origin: allowedOrigins,
+    methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "X-CSRF-Token"],
   });
   await app.register(cookie);
   app.addHook("onRequest", createRateLimitHook());
   app.addHook("preHandler", enforceCsrfProtection);
-  app.addHook("preHandler", enforceOperationModeRestriction);
   app.addHook("onSend", createSecurityEventFailureHook());
   await app.register(authRoutes, { prefix: "/api" });
   await app.register(healthRoutes, { prefix: "/api" });
@@ -85,8 +82,6 @@ export async function buildApp(options: BuildAppOptions = {}) {
   await app.register(reportRoutes, { prefix: "/api" });
   await app.register(settingRoutes, { prefix: "/api" });
   await app.register(favoriteRoutes, { prefix: "/api" });
-
-  registerDataQualityScheduler(app);
 
   return app;
 }

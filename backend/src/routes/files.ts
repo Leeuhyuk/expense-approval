@@ -3,26 +3,14 @@ import { createHmac, createHash, randomUUID, timingSafeEqual } from "node:crypto
 import { z } from "zod";
 import { hasPermission, requireAuth, type AuthUser } from "../auth/session.js";
 import { prisma } from "../db/prisma.js";
-import { retentionPolicyFor } from "../domain/retentionPolicy.js";
 import { attachmentExtension, attachmentScanStatus, isAllowedAttachmentContentType, maxAttachmentBytes, validateAttachmentUploadPolicy } from "../security/attachmentPolicy.js";
 import { scanAttachmentBuffer } from "../security/malwareScan.js";
 import { failWithSecurityEvent } from "../security/securityEvents.js";
 import { deleteStoredFile, readStoredFile, storageKeyFor, storedByteSize, writeStoredFile } from "../storage/attachmentStorage.js";
 import { success } from "../utils/response.js";
-import { auditRequestContext } from "./rowUtils.js";
+import { auditRequestContext, isUuid } from "./rowUtils.js";
 
 export const signedUrlTtlMs = 10 * 60 * 1000;
-
-const previewableAttachmentExtensions = new Set([".pdf", ".jpg", ".jpeg", ".png"]);
-const uuidIdentifierPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-export function isUuidIdentifier(value: string) {
-  return uuidIdentifierPattern.test(value.trim());
-}
-
-function canPreviewAttachmentFile(fileName: string) {
-  return previewableAttachmentExtensions.has(attachmentExtension(fileName));
-}
 
 const presignUploadSchema = z.object({
   ownerType: z.string().min(1),
@@ -43,11 +31,6 @@ const completeSchema = z.object({
 const listFilesQuerySchema = z.object({
   ownerType: z.string().min(1),
   ownerId: z.string().min(1),
-});
-
-const downloadQuerySchema = z.object({
-  reason: z.string().trim().min(3).max(300),
-  disposition: z.enum(["attachment", "inline"]).optional().default("attachment"),
 });
 
 function signingSecret() {
@@ -99,14 +82,10 @@ export function verifyToken(fileId: string, purpose: "upload" | "download", toke
   return timingSafeEqual(actualBuffer, expectedBuffer);
 }
 
-export function makeSignedPath(fileId: string, purpose: "upload" | "download", disposition: "attachment" | "inline" = "attachment") {
+export function makeSignedPath(fileId: string, purpose: "upload" | "download") {
   const expiresAt = Date.now() + signedUrlTtlMs;
   const token = signToken(fileId, purpose, expiresAt);
-  const path = purpose === "upload"
-    ? `/api/files/${fileId}/content?token=${encodeURIComponent(token)}`
-    : disposition === "inline"
-      ? `/api/files/${fileId}/content?preview=1&token=${encodeURIComponent(token)}`
-      : `/api/files/${fileId}/content?download=1&token=${encodeURIComponent(token)}`;
+  const path = purpose === "upload" ? `/api/files/${fileId}/content?token=${encodeURIComponent(token)}` : `/api/files/${fileId}/content?download=1&token=${encodeURIComponent(token)}`;
   return {
     url: path,
     expiresAt: new Date(expiresAt).toISOString(),
@@ -129,9 +108,9 @@ async function resolveOwner(ownerType: string, ownerId: string) {
   const normalizedType = ownerType.trim().toUpperCase();
   if (normalizedType === "PAYMENT_REQUEST") {
     const item = await prisma.paymentRequest.findFirst({
-      where: isUuidIdentifier(ownerId)
-        ? { OR: [{ id: ownerId }, { requestCode: ownerId }] }
-        : { requestCode: ownerId },
+      where: {
+        OR: isUuid(ownerId) ? [{ id: ownerId }, { requestCode: ownerId }] : [{ requestCode: ownerId }],
+      },
       include: {
         approvalSteps: true,
       },
@@ -140,11 +119,10 @@ async function resolveOwner(ownerType: string, ownerId: string) {
   }
 
   if (normalizedType === "VENDOR") {
-    const vendorAliases = [{ name: ownerId }, { businessNumber: ownerId }];
     const item = await prisma.vendor.findFirst({
-      where: isUuidIdentifier(ownerId)
-        ? { OR: [{ id: ownerId }, ...vendorAliases] }
-        : { OR: vendorAliases },
+      where: {
+        OR: isUuid(ownerId) ? [{ id: ownerId }, { name: ownerId }, { businessNumber: ownerId }] : [{ name: ownerId }, { businessNumber: ownerId }],
+      },
     });
     return item ? { ownerType: "VENDOR", ownerId: item.id, vendor: item } : null;
   }
@@ -208,7 +186,7 @@ function toFileDto(item: {
     storageKey: item.storageKey,
     checksum: item.checksum,
     scanStatus: attachmentScanStatus(item.checksum),
-    canPreview: canPreviewAttachmentFile(item.fileName),
+    canPreview: attachmentExtension(item.fileName) === ".pdf",
     createdAt: item.createdAt.toISOString(),
   };
 }
@@ -380,7 +358,7 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
 
   app.put("/files/:id/content", async (request, reply) => {
     const params = request.params as { id: string };
-    const query = request.query as { token?: string; download?: string; preview?: string };
+    const query = request.query as { token?: string };
     if (!verifyToken(params.id, "upload", query.token)) {
       return failFileSecurity(reply, request, {
         eventType: "file_signed_url_rejected",
@@ -678,20 +656,6 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
     const user = await requireAuth(request, reply);
     if (!user) return;
 
-    const input = downloadQuerySchema.safeParse(request.query);
-    if (!input.success) {
-      return failFileSecurity(reply, request, {
-        user,
-        eventType: "file_access_denied",
-        errorCode: "VALIDATION_ERROR",
-        message: "파일 다운로드 사유가 필요합니다.",
-        statusCode: 400,
-        targetType: "ATTACHMENT",
-        targetId: (request.params as { id: string }).id,
-        metadata: { issueCount: input.error.issues.length },
-      });
-    }
-
     const item = await prisma.attachment.findUnique({ where: { id: (request.params as { id: string }).id } });
     if (!item) {
       return failFileSecurity(reply, request, {
@@ -727,53 +691,17 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
       });
     }
 
-    if (input.data.disposition === "inline" && !canPreviewAttachmentFile(item.fileName)) {
-      return failFileSecurity(reply, request, {
-        user,
-        eventType: "file_access_denied",
-        errorCode: "VALIDATION_ERROR",
-        message: "미리보기를 지원하지 않는 파일 형식입니다.",
-        statusCode: 400,
-        targetType: "ATTACHMENT",
-        targetId: item.id,
-        metadata: { disposition: input.data.disposition, fileName: item.fileName },
-      });
-    }
-
-    const download = makeSignedPath(item.id, "download", input.data.disposition);
-    const retentionPolicy = retentionPolicyFor("attachment_metadata");
-    await prisma.auditLog.create({
-      data: {
-        entityType: "attachment",
-        entityId: item.id,
-        actorId: user.id,
-        action: "download_request",
-        afterValue: {
-          fileName: item.fileName,
-          ownerType: item.ownerType,
-          ownerId: item.ownerId,
-          byteSize: Number(item.byteSize),
-          downloadUrlExpiresAt: download.expiresAt,
-          disposition: input.data.disposition,
-          retentionPolicy: retentionPolicy?.disposition ?? "첨부 metadata 보관 정책",
-          accessLogRetention: retentionPolicyFor("audit_log")?.disposition ?? "감사 로그 보관 정책",
-        },
-        reason: input.data.reason,
-        ...auditRequestContext(request),
-      },
-    });
-
     return reply.send(
       success(request, {
         file: toFileDto(item),
-        download,
+        download: makeSignedPath(item.id, "download"),
       }),
     );
   });
 
   app.get("/files/:id/content", async (request, reply) => {
     const params = request.params as { id: string };
-    const query = request.query as { token?: string; download?: string; preview?: string };
+    const query = request.query as { token?: string };
     if (!verifyToken(params.id, "download", query.token)) {
       return failFileSecurity(reply, request, {
         eventType: "file_signed_url_rejected",
@@ -810,9 +738,8 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
     }
 
     const body = await readStoredFile(item.storageKey);
-    const contentDisposition = query.preview === "1" && canPreviewAttachmentFile(item.fileName) ? "inline" : "attachment";
     reply.header("Content-Type", item.contentType);
-    reply.header("Content-Disposition", `${contentDisposition}; filename="${encodeURIComponent(item.fileName)}"`);
+    reply.header("Content-Disposition", `attachment; filename="${encodeURIComponent(item.fileName)}"`);
     return reply.send(body);
   });
 
@@ -871,8 +798,6 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
       }
     }
 
-    const retentionPolicy = retentionPolicyFor("attachment_metadata");
-    const deletionReason = hasPermission(user, "system:manage") ? "관리자 보관 예외 삭제" : "초안/반려 첨부 삭제";
     const deleted = await prisma.$transaction(async (tx) => {
       await tx.auditLog.create({
         data: {
@@ -891,10 +816,7 @@ export const fileRoutes: FastifyPluginAsync = async (app) => {
             fileName: item.fileName,
             ownerType: item.ownerType,
             ownerId: item.ownerId,
-            retentionPolicy: retentionPolicy?.disposition ?? "첨부 metadata 보관 정책",
-            hardDeleteAllowed: retentionPolicy?.hardDeleteAllowed ?? false,
           },
-          reason: deletionReason,
           idempotencyKey: idempotencyKey || undefined,
           ...auditRequestContext(request),
         },

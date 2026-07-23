@@ -1,4 +1,4 @@
-import { StrictMode, type ChangeEvent, type CSSProperties, type FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { StrictMode, type ChangeEvent, type CSSProperties, type DragEvent, type FormEvent, type MouseEvent as ReactMouseEvent, type ReactNode, type WheelEvent as ReactWheelEvent, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import {
   AlertTriangle,
@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   CheckSquare,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   CircleDollarSign,
   ClipboardCheck,
@@ -19,7 +20,6 @@ import {
   CreditCard,
   Database,
   Download,
-  Eye,
   FileText,
   Filter,
   Gauge,
@@ -28,6 +28,8 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  PanelRight,
+  PanelRightClose,
   Pencil,
   PieChart,
   Plus,
@@ -51,37 +53,20 @@ import "./styles.css";
 import { featureItems, navItems, pageOrder, pages } from "./pageCatalog";
 import {
   erpApi,
-  type AccountLifecycleSummary,
-  type AuditLogSearchResult,
-  type AuditIntegrityReport,
-  type BusinessFailureAlertSummary,
-  type CapacityPlanningReport,
-  type DataQualityRunList,
   type FileDto,
   type FileOwnerType,
-  type FinancialControlReport,
-  type FinancialReconciliationSummary,
-  type ManualRecoverySummary,
-  type OperationModeStatus,
-  type OperationalAlertSummary,
-  type PasswordPolicySummary,
   type PaymentApprovalCandidate,
   type PaymentRequestMasterData,
-  type PerformancePolicyStatus,
-  type PermissionReviewReport,
-  type PrivacyAccessReport,
   type ReportDownloadFormat,
-  type ReportJobRunResult,
-  type RetentionPolicySummary,
   type ReportScheduleDto,
   type RoleSettingsDto,
   type RoleSettingsInput,
   type SystemSettingKey,
   type SystemSettingSnapshotMeta,
+  verifyRemoteReleaseIdentity,
 } from "./api/service";
-import { ApiRequestError } from "./api/errors";
 import { canAccessPage, canUseAction, getDefaultPage } from "./domain/accessControl";
-import { canPreviewAttachment, formatFileSize, prepareAttachmentDrafts } from "./domain/fileRules";
+import { formatFileSize, prepareAttachmentDrafts } from "./domain/fileRules";
 import { encodeSort, formatCurrencyWon, parseWon, type SortDirection } from "./domain/formatters";
 import {
   canExecuteDisbursement,
@@ -121,28 +106,24 @@ type TableController = {
   nextPage: () => void;
   previousPage: () => void;
   cyclePageSize: () => void;
+  setPageSize: (size: number) => void;
   cycleStatusFilter: () => void;
   setStatusFilter: (status: string) => void;
   refresh: () => void;
   sortByColumn: (column: string) => void;
   toggleRow: (row: TableRow) => void;
   toggleVisibleRows: () => void;
+  clearSelection: () => void;
   setActionMessage: (message: string) => void;
   createRow: (row: TableRow, message: string) => Promise<void>;
   updateSelectedRow: (patch: TableRow, message: string, options?: UpdateSelectedRowOptions) => Promise<void>;
   updateSelectedRows: (patch: TableRow | ((row: TableRow) => TableRow), message: string, predicate?: (row: TableRow) => boolean) => Promise<void>;
   executeSelectedRowAction: (action: string, input: { reason?: string; rowVersion?: number; idempotencyKey?: string; patch?: TableRow }, message: string) => Promise<void>;
+  deleteSelectedRows: (message: string, options?: { reason?: string; predicate?: (row: TableRow) => boolean; blockedMessage?: string }) => Promise<void>;
 };
 
 type UpdateSelectedRowOptions = {
   selectNextRow?: (rows: TableRow[], currentRow: TableRow, updatedRow: TableRow) => TableRow | null;
-};
-
-type TableMutationSnapshot = {
-  rows: TableRow[];
-  total: number;
-  selectedIds: Set<string>;
-  activeRowId: string;
 };
 
 type PendingCard = {
@@ -230,9 +211,6 @@ type PaymentRequestDraft = {
   requestDate: string;
   reason: string;
 };
-
-type PaymentFieldErrorKey = "row" | "vendor" | "department" | "requestDate" | "budget" | "amount" | "attachments" | "reason" | "approvalLine";
-type PaymentFieldErrors = Partial<Record<PaymentFieldErrorKey, string>>;
 
 type ApprovalStepState = "done" | "active" | "waiting" | "reject" | "hold";
 
@@ -322,7 +300,6 @@ type RolePermissionGroup = {
   tag: string;
   userCount: number;
   permissions: Record<PermissionColumn, boolean>;
-  permissionCodes: string[];
   status: "활성" | "비활성";
   rowVersion: number;
 };
@@ -412,7 +389,10 @@ type FavoriteItem = {
 type DetailFilterField = {
   label: string;
   value: string;
+  options?: string[];
+  onChange?: (value: string) => void;
 };
+
 
 type ShortcutDraft = {
   title: string;
@@ -431,68 +411,6 @@ const permissionCodesByColumn: Record<PermissionColumn, string[]> = {
   "보고서": ["report:read"],
   "시스템 설정": ["system:manage"],
 };
-
-type PermissionCatalogGroup = PermissionColumn | "공통" | "거래처" | "감사";
-
-type PermissionCatalogItem = {
-  code: string;
-  label: string;
-  group: PermissionCatalogGroup;
-  description: string;
-};
-
-const permissionCatalog: PermissionCatalogItem[] = [
-  { code: "dashboard:read", label: "대시보드 조회", group: "공통", description: "메인 현황과 업무 요약을 조회합니다." },
-  { code: "favorite:read", label: "즐겨찾기 조회", group: "공통", description: "개인 즐겨찾기와 공용 바로가기를 조회합니다." },
-  { code: "payment_request:create", label: "결제 요청 생성", group: "결제 요청", description: "새 결제 요청 초안을 생성합니다." },
-  { code: "payment_request:read_own", label: "본인 요청 조회", group: "결제 요청", description: "본인이 작성한 결제 요청을 조회합니다." },
-  { code: "payment_request:read_all", label: "전체 요청 조회", group: "결제 요청", description: "부서와 담당자 제한 없이 결제 요청을 조회합니다." },
-  { code: "payment_request:submit", label: "요청 제출", group: "결제 요청", description: "작성한 결제 요청을 결재선으로 상신합니다." },
-  { code: "payment_request:update_own", label: "본인 요청 수정", group: "결제 요청", description: "본인이 작성한 결제 요청을 수정합니다." },
-  { code: "approval:read_assigned", label: "배정 승인 조회", group: "승인 관리", description: "자신에게 배정된 승인 대상을 조회합니다." },
-  { code: "approval:act", label: "승인/반려 처리", group: "승인 관리", description: "승인, 반려, 보류 처리를 수행합니다." },
-  { code: "disbursement:read", label: "지급 조회", group: "지급 관리", description: "지급 예정과 지급 결과를 조회합니다." },
-  { code: "disbursement:execute", label: "지급 실행", group: "지급 관리", description: "승인 완료 건의 지급 실행을 처리합니다." },
-  { code: "disbursement:hold", label: "지급 보류", group: "지급 관리", description: "지급 대상 건을 보류 상태로 전환합니다." },
-  { code: "budget:read", label: "예산 조회", group: "예산 관리", description: "예산 잔액과 집행 현황을 조회합니다." },
-  { code: "report:read", label: "보고서 조회", group: "보고서", description: "정산, 운영, 감사 보고서를 조회합니다." },
-  { code: "vendor:read", label: "거래처 조회", group: "거래처", description: "거래처 기본 정보와 첨부 문서를 조회합니다." },
-  { code: "audit:read", label: "감사 로그 조회", group: "감사", description: "주요 데이터 변경 이력과 감사 로그를 조회합니다." },
-  { code: "system:manage", label: "시스템 설정 관리", group: "시스템 설정", description: "권한, 결재 정책, 연동 설정을 저장합니다." },
-];
-
-const allPermissionCodes = permissionCatalog.map((permission) => permission.code);
-const permissionExceptionPattern = /^exception:.+:\d{4}-\d{2}-\d{2}$/;
-
-function isPermissionExceptionCode(permission: string) {
-  return permissionExceptionPattern.test(permission.trim());
-}
-
-function normalizePermissionCodes(permissions: string[]) {
-  const clean = [...new Set(permissions.map((permission) => permission.trim()).filter(Boolean))];
-  const exceptionCodes = clean.filter(isPermissionExceptionCode);
-  const directCodes = clean.filter((permission) => !isPermissionExceptionCode(permission));
-  return directCodes.includes("*") ? ["*", ...exceptionCodes] : [...directCodes, ...exceptionCodes];
-}
-
-function expandedPermissionCodes(permissions: string[]) {
-  const normalized = normalizePermissionCodes(permissions);
-  const exceptionCodes = normalized.filter(isPermissionExceptionCode);
-  return normalized.includes("*") ? [...allPermissionCodes, ...exceptionCodes] : normalized;
-}
-
-function rolePermissionCodesFromColumns(columns: Record<PermissionColumn, boolean>) {
-  return normalizePermissionCodes(permissionColumns.flatMap((column) => (columns[column] ? permissionCodesByColumn[column] : [])));
-}
-
-function roleHasPermissionCode(group: Pick<RolePermissionGroup, "permissionCodes">, permissionCode: string) {
-  return group.permissionCodes.includes("*") || group.permissionCodes.includes(permissionCode);
-}
-
-function rolePermissionCodeCount(group: Pick<RolePermissionGroup, "permissionCodes">) {
-  const directCodes = normalizePermissionCodes(group.permissionCodes).filter((permission) => !isPermissionExceptionCode(permission));
-  return directCodes.includes("*") ? allPermissionCodes.length : directCodes.length;
-}
 
 function rolePermissionsToColumns(permissions: string[]): Record<PermissionColumn, boolean> {
   return Object.fromEntries(
@@ -532,7 +450,6 @@ const initialRoleGroups: RolePermissionGroup[] = defaultRolePolicies.map((role) 
   tag: role.tag,
   userCount: fallbackRoleUserCounts[role.code],
   permissions: rolePermissionsToColumns(role.permissions),
-  permissionCodes: normalizePermissionCodes(role.permissions),
   status: "활성",
   rowVersion: 1,
 }));
@@ -792,37 +709,8 @@ function readJsonRecord(value?: string | null) {
   }
 }
 
-function readJsonRecords(value?: string | null) {
-  if (!value) return [] as Array<Record<string, unknown>>;
-  try {
-    const parsed = JSON.parse(value);
-    return Array.isArray(parsed) ? parsed.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item)) : [];
-  } catch {
-    return [];
-  }
-}
-
-function jsonText(value: unknown) {
-  if (typeof value === "string") return value;
-  if (typeof value === "number" || typeof value === "boolean") return String(value);
-  return "";
-}
-
-const favoriteFilterFieldsByPage: Record<PageKey, Set<string>> = {
-  dashboard: new Set(["검색어", "상태", "부서", "결재상태", "지급상태"]),
-  "payment-request": new Set(["검색어", "상태", "부서", "거래처", "요청자", "긴급여부", "요청일"]),
-  approval: new Set(["검색어", "결재상태", "부서", "요청자", "처리기한", "요청일", "긴급여부"]),
-  disbursement: new Set(["검색어", "지급상태", "부서", "거래처", "은행", "계좌확인", "지급예정일"]),
-  budget: new Set(["검색어", "상태", "부서", "예산항목", "회계연도", "기간", "잔액"]),
-  vendors: new Set(["검색어", "상태", "계좌확인", "구분", "은행", "거래처명"]),
-  reports: new Set(["검색어", "유형", "부서", "거래처", "기간", "보고서명"]),
-  settings: new Set(["검색어", "상태", "유형", "권한그룹", "사용자", "부서"]),
-  favorites: new Set(["검색어", "상태", "유형", "소유자"]),
-};
-
 function normalizeFavoriteFilterField(pageKey: PageKey, field: string) {
   const statusField = statusColumnByPage[pageKey] ?? "상태";
-  const [rawBase, operator] = field.split("__");
   const aliases: Record<string, string> = {
     status: statusField,
     상태: statusField,
@@ -851,23 +739,13 @@ function normalizeFavoriteFilterField(pageKey: PageKey, field: string) {
     search: "검색어",
     검색어: "검색어",
   };
-  const normalizedBase = aliases[rawBase.trim()] ?? rawBase.trim();
-  return operator ? `${normalizedBase}__${operator}` : normalizedBase;
-}
-
-function favoriteFilterBaseField(field: string) {
-  return field.split("__")[0] ?? field;
-}
-
-function isFavoriteFilterFieldSupported(pageKey: PageKey, field: string) {
-  return favoriteFilterFieldsByPage[pageKey].has(favoriteFilterBaseField(field));
+  return aliases[field.trim()] ?? field.trim();
 }
 
 function normalizeFavoriteFilters(pageKey: PageKey, filters: Record<string, unknown>) {
   return Object.entries(filters).reduce<Partial<Record<string, string>>>((acc, [field, value]) => {
     if (typeof value === "string" && value.trim()) {
-      const normalizedField = normalizeFavoriteFilterField(pageKey, field);
-      if (isFavoriteFilterFieldSupported(pageKey, normalizedField)) acc[normalizedField] = value.trim();
+      acc[normalizeFavoriteFilterField(pageKey, field)] = value.trim();
     }
     return acc;
   }, {});
@@ -877,8 +755,7 @@ function favoriteFiltersFromTags(tags: string[], pageKey: PageKey) {
   return tags.reduce<Partial<Record<string, string>>>((acc, tag) => {
     const match = tag.match(/^([^:：]+)[:：]\s*(.+)$/);
     if (!match) return acc;
-    const normalizedField = normalizeFavoriteFilterField(pageKey, match[1]);
-    if (isFavoriteFilterFieldSupported(pageKey, normalizedField)) acc[normalizedField] = match[2].trim();
+    acc[normalizeFavoriteFilterField(pageKey, match[1])] = match[2].trim();
     return acc;
   }, {});
 }
@@ -917,18 +794,6 @@ function favoriteRouteStateFromRow(row: TableRow, pageKey: PageKey): FavoriteRou
   };
 }
 
-function favoriteUnsupportedFilterFields(item: FavoriteItem) {
-  const pageKey = favoritePageForItem(item);
-  const tagFields = item.filterTags.flatMap((tag) => {
-    const match = tag.match(/^([^:：]+)[:：]\s*(.+)$/);
-    return match ? [match[1]] : [];
-  });
-  const structuredFields = Object.keys(item.savedFilters ?? {});
-  return [...new Set([...tagFields, ...structuredFields]
-    .map((field) => normalizeFavoriteFilterField(pageKey, field))
-    .filter((field) => !isFavoriteFilterFieldSupported(pageKey, field)))]
-    .sort((left, right) => left.localeCompare(right, "ko-KR"));
-}
 function favoriteRouteStateFromItem(item: FavoriteItem): FavoriteRouteState {
   const pageKey = favoritePageForItem(item);
   const filters = {
@@ -954,7 +819,9 @@ function readFavoriteRouteState(pageKey: PageKey): FavoriteRouteState {
   };
 }
 
-function persistRouteState(pageKey: PageKey, routeState: FavoriteRouteState) {
+function applyFavoriteRouteState(item: FavoriteItem) {
+  const pageKey = favoritePageForItem(item);
+  const routeState = favoriteRouteStateFromItem(item);
   const currentTableState = readJsonRecord(window.localStorage.getItem(`erp-table-state:${pageKey}`));
   const nextTableState = {
     ...currentTableState,
@@ -965,42 +832,6 @@ function persistRouteState(pageKey: PageKey, routeState: FavoriteRouteState) {
   };
   window.localStorage.setItem(favoriteRouteStateKey(pageKey), JSON.stringify(routeState));
   window.localStorage.setItem(`erp-table-state:${pageKey}`, JSON.stringify(nextTableState));
-}
-
-function applyFavoriteRouteState(item: FavoriteItem) {
-  const pageKey = favoritePageForItem(item);
-  const routeState = favoriteRouteStateFromItem(item);
-  persistRouteState(pageKey, routeState);
-}
-
-function dashboardKpiRouteState(label: string): { pageKey: PageKey; routeState: FavoriteRouteState; message: string } {
-  if (label.includes("승인 대기")) {
-    return {
-      pageKey: "approval",
-      routeState: { filters: { "결재상태__in": "승인 대기|승인 진행 중" }, statusFilter: "전체 상태", sortColumn: "처리기한", sortDirection: "asc" },
-      message: "승인 대기 KPI 기준으로 승인 목록을 서버 필터 조회합니다.",
-    };
-  }
-  if (label.includes("마감")) {
-    const today = new Date().toISOString().slice(0, 10);
-    return {
-      pageKey: "approval",
-      routeState: { filters: { "결재상태__in": "승인 대기|승인 진행 중", "처리기한__lte": today }, statusFilter: "전체 상태", sortColumn: "처리기한", sortDirection: "asc" },
-      message: "오늘 마감 KPI 기준으로 처리기한 도래 승인 목록을 서버 필터 조회합니다.",
-    };
-  }
-  if (label.includes("지급")) {
-    return {
-      pageKey: "approval",
-      routeState: { filters: { 결재상태: "승인 완료" }, statusFilter: "승인 완료", sortColumn: "요청일", sortDirection: "desc" },
-      message: "이번 달 지급 KPI의 현재 산식인 승인 완료 금액 기준으로 승인 완료 목록을 서버 필터 조회합니다.",
-    };
-  }
-  return {
-    pageKey: "budget",
-    routeState: { filters: { 상태: "초과" }, statusFilter: "초과", sortColumn: "잔액", sortDirection: "asc" },
-    message: "예산 초과 KPI 기준으로 초과 예산 목록을 서버 필터 조회합니다.",
-  };
 }
 
 function favoriteFromRow(row: TableRow, index: number, fallbackOwner: string): FavoriteItem {
@@ -1055,23 +886,6 @@ function favoriteMutationKey(action: string, itemOrTitle: FavoriteItem | string,
   const title = typeof itemOrTitle === "string" ? itemOrTitle : itemOrTitle.title;
   const version = rowVersion ?? (typeof itemOrTitle === "string" ? "new" : itemOrTitle.rowVersion ?? "1");
   return `favorite-${action}-${title}-${version}-${Date.now()}`;
-}
-
-function favoriteRecentTimestamp(value: string) {
-  if (!value || value === "-") return 0;
-  const normalized = value.includes("T") ? value : value.replace(" ", "T");
-  const parsed = new Date(normalized).getTime();
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function sortFavoritesByRecentUse(items: FavoriteItem[]) {
-  return [...items].sort((a, b) => {
-    const recentDiff = favoriteRecentTimestamp(b.recentUsed) - favoriteRecentTimestamp(a.recentUsed);
-    if (recentDiff !== 0) return recentDiff;
-    const usageDiff = b.usageCount - a.usageCount;
-    if (usageDiff !== 0) return usageDiff;
-    return a.title.localeCompare(b.title);
-  });
 }
 
 function favoriteRowVersion(row?: TableRow | null) {
@@ -1173,19 +987,6 @@ function withPaymentAttachmentIds(patch: TableRow, attachments: AttachmentDraft[
   return attachmentIds.length > 0 ? { ...patch, 첨부파일ID: attachmentIds.join(",") } : patch;
 }
 
-function paymentFieldErrorsFromMessage(message: string): PaymentFieldErrors {
-  const normalized = message.toLowerCase();
-  const errors: PaymentFieldErrors = {};
-  if (normalized.includes("vendor") || message.includes("거래처")) errors.vendor = "활성 거래처를 선택하거나 거래처를 먼저 등록하세요.";
-  if (normalized.includes("department") || message.includes("부서")) errors.department = "backend에 등록된 부서를 선택하세요.";
-  if (normalized.includes("budget") || message.includes("예산")) errors.budget = "부서와 예산 항목, 잔액을 확인하세요.";
-  if (normalized.includes("attachment") || message.includes("첨부") || message.includes("증빙")) errors.attachments = "업로드 완료된 증빙 파일을 1개 이상 연결하세요.";
-  if (normalized.includes("date") || message.includes("요청일")) errors.requestDate = "요청일 형식을 확인하세요.";
-  if (normalized.includes("amount") || message.includes("금액")) errors.amount = "금액은 1원 이상이어야 합니다.";
-  if (message.includes("결재선") || message.includes("승인")) errors.approvalLine = "결재선 후보와 승인 정책을 확인하세요.";
-  return errors;
-}
-
 function getApprovalAssignees(row: TableRow | null, currentUser: AuthUser) {
   const lineText = row?.결재선 ?? currentUser.name;
   const currentAssignee = lineText.split(" 외 ")[0]?.trim() || currentUser.name;
@@ -1200,52 +1001,12 @@ function getApprovalAssignees(row: TableRow | null, currentUser: AuthUser) {
   }));
 }
 
-function approvalStepStateFromStatus(status: string, isCurrent: boolean): ApprovalStepState {
-  if (status === "승인 완료") return "done";
-  if (status === "반려") return "reject";
-  if (status === "보류") return "hold";
-  return isCurrent ? "active" : "waiting";
-}
-
-function approvalStepNote(status: string, actedAt: string, reason: string, isCurrent: boolean) {
-  if (status === "승인 대기") return isCurrent ? "처리 대기" : "대기";
-  return [status, actedAt, reason ? `사유: ${reason}` : ""].filter(Boolean).join(" · ");
-}
-
-function getStoredApprovalSteps(row: TableRow | null): ApprovalStepItem[] {
-  const storedSteps = readJsonRecords(row?.결재단계JSON);
-  return storedSteps.map((item, index) => {
-    const status = jsonText(item.status) || "승인 대기";
-    const actedAt = jsonText(item.actedAt);
-    const reason = jsonText(item.reason);
-    const isCurrent = item.isCurrent === true || jsonText(item.isCurrent) === "true";
-    return {
-      step: jsonText(item.step) || `${index + 1}차 결재`,
-      name: jsonText(item.approverName) || jsonText(item.name) || "승인자",
-      role: jsonText(item.role) || "승인자",
-      note: approvalStepNote(status, actedAt, reason, isCurrent),
-      state: approvalStepStateFromStatus(status, isCurrent),
-    };
-  });
-}
-
 function getApprovalSteps(row: TableRow | null, currentUser: AuthUser): ApprovalStepItem[] {
   const status = row?.결재상태 ?? "승인 대기";
-  const storedApprovalSteps = getStoredApprovalSteps(row);
-  if (storedApprovalSteps.length > 0) {
-    return [
-      {
-        step: "요청",
-        name: row?.요청자 ?? "요청자",
-        role: row?.부서 ?? "부서",
-        note: row?.요청일 ?? "요청일 미확인",
-        state: "done",
-      },
-      ...storedApprovalSteps,
-    ];
-  }
   const assignees = getApprovalAssignees(row, currentUser);
-  const completedCount = status === "승인 완료" ? assignees.length : status === "승인 진행 중" ? 1 : 0;
+  // 결재선 텍스트는 "현재 결재자 외 N명" 형식으로 남은 결재자만 담으므로,
+  // 종결 상태가 아니면 항상 첫 항목이 현재 처리 차례다.
+  const completedCount = status === "승인 완료" ? assignees.length : 0;
   const terminalState: ApprovalStepState | null = status === "반려" ? "reject" : status === "보류" ? "hold" : null;
 
   const approvalSteps = assignees.map((assignee, index) => {
@@ -1351,7 +1112,6 @@ function getLinkedApprovalRow(disbursementRow: TableRow | null) {
 }
 
 function getDisbursementRetryGuide(row: TableRow | null) {
-  if (row?.재처리정책) return row.재처리차단코드 ? `${row.재처리정책} (${row.재처리차단코드})` : row.재처리정책;
   const status = row?.지급상태 ?? "";
   const accountStatus = row?.계좌확인 ?? "";
 
@@ -1359,19 +1119,6 @@ function getDisbursementRetryGuide(row: TableRow | null) {
   if (accountStatus.includes("불일치")) return "계좌 불일치 건은 계좌 재확인 후 지급 예정 상태로 되돌려 재처리합니다.";
   if (accountStatus.includes("대기")) return "계좌 확인 대기 건은 계좌 확인 완료 후 지급 예정 상태로 되돌려 재처리합니다.";
   return "계좌 확인 완료 건은 지급 예정 상태로 되돌린 뒤 지급 실행을 재시도합니다.";
-}
-
-function canRetryDisbursementByPolicy(row: TableRow | null) {
-  if (row?.재처리가능) return row.재처리가능 === "가능";
-  return row?.지급상태 === "오류" && row?.계좌확인 === "확인 완료";
-}
-
-function canExecuteDisbursementByPolicy(row: TableRow | null) {
-  if (!row) return false;
-  if (!canExecuteDisbursement(row.지급상태, row.계좌확인)) return false;
-  if (row.거래처계좌확인 && row.거래처계좌확인 !== "확인 완료") return false;
-  if (row.계좌검증코드 && row.계좌검증코드 !== "BANK_ACCOUNT_VERIFIED") return false;
-  return true;
 }
 
 function buildDisbursementExecutePatch(currentUser: AuthUser, row?: TableRow | null): TableRow {
@@ -1441,7 +1188,6 @@ function buildVendorRow(draft: VendorDraft, previous?: TableRow): TableRow {
     담당자: draft.manager.trim(),
     은행: `${draft.bankName.trim()} ${draft.bankAccount.trim()}`.trim(),
     계좌확인: draft.accountStatus,
-    구분: getVendorBusinessType(draft.name.trim()),
     최근지급일: previous?.최근지급일 ?? "-",
     누적지급액: previous?.누적지급액 ?? "0 원",
     상태: draft.status,
@@ -1526,9 +1272,8 @@ function getVendorBusinessType(vendorName: string) {
   return "일반";
 }
 
-function roleGroupToPermissionCodes(group: Pick<RolePermissionGroup, "permissions" | "permissionCodes">) {
-  const directPermissions = normalizePermissionCodes(group.permissionCodes);
-  return directPermissions.length > 0 ? directPermissions : rolePermissionCodesFromColumns(group.permissions);
+function roleGroupToPermissionCodes(group: Pick<RolePermissionGroup, "permissions">) {
+  return [...new Set(permissionColumns.flatMap((column) => (group.permissions[column] ? permissionCodesByColumn[column] : [])))];
 }
 
 function roleDtoToGroup(role: RoleSettingsDto): RolePermissionGroup {
@@ -1538,7 +1283,6 @@ function roleDtoToGroup(role: RoleSettingsDto): RolePermissionGroup {
     tag: role.tag || role.code,
     userCount: role.userCount,
     permissions: rolePermissionsToColumns(role.permissions),
-    permissionCodes: normalizePermissionCodes(role.permissions),
     status: role.status,
     rowVersion: role.rowVersion,
   };
@@ -1564,7 +1308,7 @@ function assignedUserName(value: string) {
 
 function settingRowToAssignedUser(row: TableRow, fallbackId: string | number): AssignedUser {
   return {
-    id: row.사용자ID || row.사용자 || `assigned-${fallbackId}`,
+    id: row.사용자 || `assigned-${fallbackId}`,
     user: row.사용자,
     department: row.부서,
     groupName: row.권한그룹,
@@ -1606,15 +1350,6 @@ function systemSettingMutationKey(key: SystemSettingKey, expectedAuditLogId: str
   return `settings-config-${key}-${expectedAuditLogId ?? "initial"}-${stableJsonHash(value)}`;
 }
 
-function sessionRevocationNotice(meta: Record<string, string | number | boolean> | undefined) {
-  const sessionsRevoked = Number(meta?.sessionsRevoked ?? 0);
-  if (Number.isFinite(sessionsRevoked) && sessionsRevoked > 0) {
-    return ` 대상 사용자 ${sessionsRevoked}개 세션은 재로그인이 필요합니다.`;
-  }
-  const policy = typeof meta?.sessionPolicy === "string" ? meta.sessionPolicy : "";
-  return policy && !policy.includes("영향 없는") ? ` ${policy}` : "";
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
@@ -1640,48 +1375,45 @@ function cloneSettingsServerSnapshot(snapshot: SettingsServerSnapshot): Settings
     approvalLimits: snapshot.approvalLimits.map((limit) => ({ ...limit })),
     approvalRules: { ...snapshot.approvalRules },
     departmentSettings: snapshot.departmentSettings.map((department) => ({ ...department })),
-    roleGroups: snapshot.roleGroups.map((role) => {
-      const permissionCodes = Array.isArray((role as Partial<RolePermissionGroup>).permissionCodes)
-        ? normalizePermissionCodes(role.permissionCodes)
-        : rolePermissionCodesFromColumns(role.permissions);
-      return { ...role, permissions: { ...role.permissions }, permissionCodes };
-    }),
+    roleGroups: snapshot.roleGroups.map((role) => ({ ...role, permissions: { ...role.permissions } })),
     assignedUsers: snapshot.assignedUsers.map((user) => ({ ...user })),
     notificationSettings: snapshot.notificationSettings.map((setting) => ({ ...setting })),
     integrationSettings: snapshot.integrationSettings.map((setting) => ({ ...setting })),
   };
 }
 
-function getRoleTemplatePermissionCodes(template: RoleGroupDraft["template"]) {
+function getRoleTemplatePermissions(template: RoleGroupDraft["template"]): Record<PermissionColumn, boolean> {
   if (template === "관리 중심") {
-    return normalizePermissionCodes(["*"]);
+    return Object.fromEntries(permissionColumns.map((column) => [column, true])) as Record<PermissionColumn, boolean>;
   }
   if (template === "승인 중심") {
-    return normalizePermissionCodes([
-      "dashboard:read",
-      "favorite:read",
-      "payment_request:read_all",
-      "approval:read_assigned",
-      "approval:act",
-      "budget:read",
-      "report:read",
-    ]);
+    return {
+      "결제 요청": true,
+      "승인 관리": true,
+      "지급 관리": false,
+      "예산 관리": true,
+      "보고서": true,
+      "시스템 설정": false,
+    };
   }
   if (template === "조회 중심") {
-    return normalizePermissionCodes(["dashboard:read", "favorite:read", "report:read", "audit:read"]);
+    return {
+      "결제 요청": false,
+      "승인 관리": false,
+      "지급 관리": false,
+      "예산 관리": false,
+      "보고서": true,
+      "시스템 설정": false,
+    };
   }
-  return normalizePermissionCodes([
-    "dashboard:read",
-    "favorite:read",
-    "payment_request:create",
-    "payment_request:read_own",
-    "payment_request:submit",
-    "payment_request:update_own",
-  ]);
-}
-
-function getRoleTemplatePermissions(template: RoleGroupDraft["template"]): Record<PermissionColumn, boolean> {
-  return rolePermissionsToColumns(getRoleTemplatePermissionCodes(template));
+  return {
+    "결제 요청": true,
+    "승인 관리": false,
+    "지급 관리": false,
+    "예산 관리": false,
+    "보고서": false,
+    "시스템 설정": false,
+  };
 }
 
 function getNextApprovalLimit(limits: ApprovalLimitRow[]): ApprovalLimitRow {
@@ -1702,6 +1434,15 @@ function formatMillionWon(value: number) {
   return `${(value / 1_000_000).toFixed(1)}M`;
 }
 
+function getReportRowsByType(rows: TableRow[], reportType: string) {
+  if (reportType === "종합") return rows;
+  return rows.filter((row) => row.유형 === reportType || row.보고서명.includes(reportType));
+}
+
+function rowSearchText(row: TableRow) {
+  return Object.values(row).join(" ").toLowerCase();
+}
+
 
 function getReportFilterOptions(rows: TableRow[], field: "부서" | "거래처", fallbackRows: TableRow[], fallbackField: string, allLabel: string) {
   const values = new Set<string>();
@@ -1716,98 +1457,7 @@ function getReportFilterOptions(rows: TableRow[], field: "부서" | "거래처",
   return [allLabel, ...Array.from(values).filter(Boolean).sort((a, b) => a.localeCompare(b, "ko"))];
 }
 
-function normalizeReportSnapshotRows(value: unknown): TableRow[] {
-  return Array.isArray(value)
-    ? value.flatMap((item) => {
-      if (!item || typeof item !== "object" || Array.isArray(item)) return [];
-      return [Object.fromEntries(Object.entries(item as Record<string, unknown>).map(([key, cell]) => [key, jsonText(cell)])) as TableRow];
-    })
-    : [];
-}
-
-function buildLocalReportDrilldownSnapshot(reportName: string) {
-  return {
-    generatedAt: new Date().toISOString(),
-    source: `Local ReportRun snapshot · ${reportName}`,
-    sections: {
-      monthly: {
-        columns: ["월", "지급번호", "승인번호", "지급예정일", "거래처", "금액", "지급상태"],
-        rows: disbursementRows.slice(0, 40).map((row) => ({
-          월: `${Number(row.지급예정일?.slice(5, 7) || "0")}월 지급 추이`,
-          지급번호: row.지급번호,
-          승인번호: row.승인번호,
-          지급예정일: row.지급예정일,
-          거래처: row.거래처,
-          금액: row.금액,
-          지급상태: row.지급상태,
-        })),
-      },
-      department: {
-        columns: ["요청번호", "요청일", "부서", "거래처", "금액", "상태"],
-        rows: paymentRows.slice(0, 40).map((row) => ({
-          요청번호: row.요청번호,
-          요청일: row.요청일,
-          부서: row.부서,
-          거래처: row.거래처,
-          금액: row.금액,
-          상태: row.상태,
-        })),
-      },
-      approval: {
-        columns: ["요청번호", "요청일", "부서", "요청자", "금액", "결재상태"],
-        rows: approvalRows.slice(0, 40).map((row) => ({
-          요청번호: row.요청번호,
-          요청일: row.요청일,
-          부서: row.부서,
-          요청자: row.요청자,
-          금액: row.금액,
-          결재상태: row.결재상태,
-        })),
-      },
-    },
-  };
-}
-
-function getReportSnapshotSection(row: TableRow | null | undefined, kind: "monthly" | "department" | "approval") {
-  const snapshot = readJsonRecord(row?.드릴다운JSON);
-  const sections = snapshot.sections && typeof snapshot.sections === "object" && !Array.isArray(snapshot.sections) ? snapshot.sections as Record<string, unknown> : {};
-  const section = sections[kind];
-  if (!section || typeof section !== "object" || Array.isArray(section)) return null;
-  const columns = Array.isArray((section as { columns?: unknown }).columns)
-    ? ((section as { columns: unknown[] }).columns).map(jsonText).filter(Boolean)
-    : [];
-  const rows = normalizeReportSnapshotRows((section as { rows?: unknown }).rows);
-  if (columns.length === 0 || rows.length === 0) return null;
-  return {
-    columns,
-    rows,
-    source: `${jsonText(snapshot.source) || "ReportRun snapshot"}${jsonText(snapshot.generatedAt) ? ` · ${jsonText(snapshot.generatedAt).slice(0, 16).replace("T", " ")}` : ""}`,
-  };
-}
-
-function filterReportSnapshotRows(label: string, kind: "monthly" | "department" | "approval", rows: TableRow[]) {
-  const filtered = rows.filter((row) => {
-    if (kind === "monthly") {
-      const monthLabel = row.월?.replace(" 지급 추이", "") ?? "";
-      return Boolean(monthLabel) && (row.월 === label || label.includes(monthLabel));
-    }
-    if (kind === "department") return row.부서 === label || row.부서?.includes(label);
-    return (row.결재상태 || row.상태 || "").includes(label);
-  });
-  return filtered.length > 0 ? filtered : rows;
-}
-
-function getReportDrilldown(label: string, kind: "monthly" | "department" | "approval", report?: TableRow | null): ReportDrilldownState {
-  const snapshotSection = getReportSnapshotSection(report, kind);
-  if (snapshotSection) {
-    const titleSuffix = kind === "monthly" ? "지급 추이" : kind === "department" ? "부서 지출" : "승인 상태";
-    return {
-      title: `${label} ${titleSuffix} 원천 데이터`,
-      source: snapshotSection.source,
-      columns: snapshotSection.columns,
-      rows: filterReportSnapshotRows(label, kind, snapshotSection.rows),
-    };
-  }
+function getReportDrilldown(label: string, kind: "monthly" | "department" | "approval"): ReportDrilldownState {
   if (kind === "department") {
     const rows = paymentRows.filter((row) => row.부서 === label || row.부서?.includes(label)).slice(0, 12);
     return {
@@ -1835,9 +1485,9 @@ function getReportDrilldown(label: string, kind: "monthly" | "department" | "app
 }
 
 function getInitialDepartmentSettings(rows: TableRow[], roles: RolePermissionGroup[]) {
-  const sourceRows: TableRow[] = rows.length > 0
+  const sourceRows = rows.length > 0
     ? rows
-    : paymentDepartmentOptions.map((department, index) => ({
+    : paymentDepartmentOptions.map((department, index): TableRow => ({
       부서: department.replace(/^전체\s*/, "") || `신규 부서 ${index + 1}`,
       "배정 예산": "0",
       사용률: "0%",
@@ -1909,13 +1559,196 @@ function triggerUrlDownload(url: string, fileName: string) {
   anchor.remove();
 }
 
-function triggerUrlPreview(url: string) {
-  const previewWindow = window.open(url, "_blank", "noopener,noreferrer");
-  return Boolean(previewWindow);
-}
-
 function canDownloadDirectly(url: string) {
   return url.startsWith("/") || /^https?:\/\//i.test(url);
+}
+
+function isPreviewableImage(fileName: string, fileType = "") {
+  return fileType.startsWith("image/") || /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(fileName);
+}
+
+function isPreviewablePdf(fileName: string, fileType = "") {
+  return fileType === "application/pdf" || /\.pdf$/i.test(fileName);
+}
+
+function isPreviewableText(fileName: string, fileType = "") {
+  return fileType.startsWith("text/") || fileType === "application/json" || /\.(txt|log|md|csv|json)$/i.test(fileName);
+}
+
+type PreviewKind = "image" | "pdf" | "text";
+
+// 미리보기 팝업으로 열 수 있는 파일인지 판별한다. 이미지·PDF 외에 텍스트(txt/csv/md/json/log)도
+// 브라우저에서 바로 읽어 보여줄 수 있으므로 포함한다.
+function previewKindOf(fileName: string, fileType = ""): PreviewKind | null {
+  if (isPreviewableImage(fileName, fileType)) return "image";
+  if (isPreviewablePdf(fileName, fileType)) return "pdf";
+  if (isPreviewableText(fileName, fileType)) return "text";
+  return null;
+}
+
+type PreviewItem = { id: string; src: string; name: string; kind: PreviewKind };
+
+// 텍스트 첨부의 내용을 불러와 스크롤 가능한 영역에 보여준다. (blob/원격 URL 모두 지원)
+function TextPreview({ src, name }: { src: string; name: string }) {
+  const [state, setState] = useState<{ status: "loading" | "ready" | "error"; text: string }>({ status: "loading", text: "" });
+  useEffect(() => {
+    let alive = true;
+    setState({ status: "loading", text: "" });
+    fetch(src, { credentials: "include" })
+      .then((response) => {
+        if (!response.ok) throw new Error(String(response.status));
+        return response.text();
+      })
+      .then((text) => {
+        if (!alive) return;
+        // 아주 큰 파일은 앞부분만 보여주고 안내한다.
+        const limit = 200000;
+        const clipped = text.length > limit ? `${text.slice(0, limit)}\n\n… (이하 생략, 전체 ${text.length.toLocaleString()}자)` : text;
+        setState({ status: "ready", text: clipped });
+      })
+      .catch(() => {
+        if (alive) setState({ status: "error", text: "" });
+      });
+    return () => {
+      alive = false;
+    };
+  }, [src]);
+  if (state.status === "loading") return <div className="text-lightbox-frame text-lightbox-status">불러오는 중…</div>;
+  if (state.status === "error") return <div className="text-lightbox-frame text-lightbox-status">텍스트를 불러오지 못했습니다.</div>;
+  return <pre className="text-lightbox-frame" aria-label={`${name} 내용`}>{state.text}</pre>;
+}
+
+// 첨부 파일을 크게 보는 팝업. 이미지는 마우스 드래그 이동 + 휠 확대/축소를 지원하고,
+// PDF 등 문서는 브라우저 내장 뷰어(iframe)로 렌더링한다. 하단 중앙 정렬,
+// 썸네일 스트립과 이전/다음 이동을 공통으로 제공한다.
+function ImageLightbox({ items, index, onIndexChange, onClose }: { items: PreviewItem[]; index: number; onIndexChange: (index: number) => void; onClose: () => void }) {
+  const [scale, setScale] = useState(1);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const dragRef = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null);
+  const current = items[index];
+  const isImage = current?.kind === "image";
+
+  const goTo = (nextIndex: number) => onIndexChange((nextIndex + items.length) % items.length);
+
+  // 항목을 바꾸면 확대/이동을 초기화한다.
+  useEffect(() => {
+    setScale(1);
+    setOffset({ x: 0, y: 0 });
+  }, [index]);
+
+  useEffect(() => {
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+      else if (event.key === "ArrowLeft") goTo(index - 1);
+      else if (event.key === "ArrowRight") goTo(index + 1);
+    };
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [index, items.length]);
+
+  const clampScale = (value: number) => Math.min(8, Math.max(0.2, value));
+  const handleWheel = (event: ReactWheelEvent) => {
+    if (!isImage) return; // PDF는 내장 뷰어의 스크롤/확대를 그대로 사용한다.
+    setScale((currentScale) => clampScale(currentScale * (event.deltaY < 0 ? 1.12 : 0.89)));
+  };
+  const handleMouseDown = (event: ReactMouseEvent) => {
+    event.preventDefault();
+    dragRef.current = { startX: event.clientX, startY: event.clientY, originX: offset.x, originY: offset.y };
+  };
+  useEffect(() => {
+    const handleMove = (event: MouseEvent) => {
+      if (!dragRef.current) return;
+      setOffset({
+        x: dragRef.current.originX + (event.clientX - dragRef.current.startX),
+        y: dragRef.current.originY + (event.clientY - dragRef.current.startY),
+      });
+    };
+    const handleUp = () => {
+      dragRef.current = null;
+    };
+    window.addEventListener("mousemove", handleMove);
+    window.addEventListener("mouseup", handleUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMove);
+      window.removeEventListener("mouseup", handleUp);
+    };
+  }, []);
+
+  const reset = () => {
+    setScale(1);
+    setOffset({ x: 0, y: 0 });
+  };
+
+  if (!current) return null;
+  const hasMultiple = items.length > 1;
+
+  return (
+    <div className="image-lightbox-overlay" onClick={onClose} onWheel={handleWheel} role="dialog" aria-label={`${current.name} 미리보기`} aria-modal="true">
+      <button className="image-lightbox-close" onClick={onClose} type="button" aria-label="미리보기 닫기">
+        <X size={20} />
+      </button>
+      {hasMultiple && (
+        <button className="image-lightbox-nav prev" onClick={(event) => { event.stopPropagation(); goTo(index - 1); }} type="button" aria-label="이전 파일">
+          <ChevronLeft size={26} />
+        </button>
+      )}
+      {hasMultiple && (
+        <button className="image-lightbox-nav next" onClick={(event) => { event.stopPropagation(); goTo(index + 1); }} type="button" aria-label="다음 파일">
+          <ChevronRight size={26} />
+        </button>
+      )}
+      <div className="image-lightbox-stage" onClick={(event) => event.stopPropagation()}>
+        {isImage ? (
+          <img
+            alt={current.name}
+            className="image-lightbox-img"
+            draggable={false}
+            onMouseDown={handleMouseDown}
+            src={current.src}
+            style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})` }}
+          />
+        ) : current.kind === "text" ? (
+          <TextPreview key={current.id} name={current.name} src={current.src} />
+        ) : (
+          // 내장 PDF 뷰어의 툴바/사이드바/상태바를 숨겨 문서만 보이도록 한다.
+          <iframe className="pdf-lightbox-frame" src={`${current.src}${current.src.includes("#") ? "&" : "#"}toolbar=0&navpanes=0&statusbar=0&view=FitH`} title={`${current.name} 미리보기`} />
+        )}
+      </div>
+      <div className="image-lightbox-controls" onClick={(event) => event.stopPropagation()}>
+        {isImage ? (
+          <>
+            <button onClick={() => setScale((currentScale) => clampScale(currentScale * 0.89))} type="button" aria-label="축소">−</button>
+            <span>{Math.round(scale * 100)}%</span>
+            <button onClick={() => setScale((currentScale) => clampScale(currentScale * 1.12))} type="button" aria-label="확대">+</button>
+            <button onClick={reset} type="button">원본</button>
+            <small>{current.name}{hasMultiple ? ` · ${index + 1}/${items.length}` : ""} · 드래그 이동 · 휠 확대/축소</small>
+          </>
+        ) : (
+          <>
+            <a href={current.src} target="_blank" rel="noreferrer">새 탭에서 열기</a>
+            <small>{current.name}{hasMultiple ? ` · ${index + 1}/${items.length}` : ""} · {current.kind === "text" ? "텍스트 문서" : "PDF 문서"}</small>
+          </>
+        )}
+      </div>
+      {hasMultiple && (
+        <div className="image-lightbox-thumbs" onClick={(event) => event.stopPropagation()}>
+          {items.map((item, thumbIndex) => (
+            <button
+              aria-current={thumbIndex === index}
+              aria-label={`${item.name}로 이동`}
+              className={thumbIndex === index ? "active" : undefined}
+              key={item.id}
+              onClick={() => onIndexChange(thumbIndex)}
+              type="button"
+            >
+              {item.kind === "image" ? <img alt="" src={item.src} /> : <span className="thumb-doc"><FileText size={20} /></span>}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function matchAcceptedFiles(files: File[], accepted: AttachmentDraft[]) {
@@ -1938,7 +1771,6 @@ function toStoredAttachment(file: FileDto, fallbackId = file.id): AttachmentDraf
     byteSize: file.byteSize,
     status: isBlocked ? "error" : isClean ? "ready" : "uploading",
     scanStatus: file.scanStatus,
-    progressPercent: isClean ? 100 : 0,
     message: isBlocked ? "보안 검사 차단" : isClean ? undefined : "보안 검사 대기",
   };
 }
@@ -1953,29 +1785,11 @@ function toStoredVendorDocument(file: FileDto): VendorDocument {
 
 function mergeSyncedVendorDocuments(synced: VendorDocument[], current: VendorDocument[]) {
   const syncedIds = new Set(synced.map((document) => document.remoteId ?? document.id));
-  const syncedFingerprints = new Set(synced.map((document) => `${document.fileName}:${document.byteSize}`));
   const transientDocuments = current.filter((document) => {
     const documentKey = document.remoteId ?? document.id;
-    const fingerprint = `${document.fileName}:${document.byteSize}`;
-    return !syncedIds.has(documentKey)
-      && !syncedFingerprints.has(fingerprint)
-      && (document.status === "uploading" || document.status === "error" || document.message === deferredVendorUploadMessage);
+    return !syncedIds.has(documentKey) && (document.status === "uploading" || document.status === "error" || document.message === deferredVendorUploadMessage);
   });
   return [...synced, ...transientDocuments];
-}
-
-function mergeCompletedVendorUploads(uploaded: VendorDocument[], current: VendorDocument[], uploadingIds: Set<string>) {
-  const uploadedRemoteIds = new Set(
-    uploaded
-      .map((document) => document.remoteId)
-      .filter((remoteId): remoteId is string => Boolean(remoteId)),
-  );
-  const retainedDocuments = current.filter((document) => {
-    if (uploadingIds.has(document.id)) return false;
-    const remoteId = document.remoteId ?? document.id;
-    return !uploadedRemoteIds.has(remoteId);
-  });
-  return [...uploaded, ...retainedDocuments];
 }
 
 function fileMutationKey(action: string, ownerType: FileOwnerType, ownerId: string, stableId: string, detail = "") {
@@ -1985,84 +1799,8 @@ function fileMutationKey(action: string, ownerType: FileOwnerType, ownerId: stri
     .join(":");
 }
 
-function uploadRecoveryKey(ownerType: FileOwnerType, ownerId: string) {
-  return `erp-upload-recovery:${ownerType}:${ownerId}`;
-}
-
-function recoverableAttachment(attachment: AttachmentDraft): AttachmentDraft {
-  const wasUploading = attachment.status === "uploading";
-  return {
-    id: attachment.id,
-    remoteId: attachment.remoteId,
-    fileName: attachment.fileName,
-    byteSize: attachment.byteSize,
-    status: wasUploading ? "error" : attachment.status,
-    progressPercent: wasUploading ? 0 : attachment.progressPercent,
-    retryCount: attachment.retryCount,
-    scanStatus: attachment.scanStatus,
-    message: wasUploading
-      ? "업로드 중 화면 이탈 감지. 원본 파일을 다시 선택해 재시도하세요."
-      : attachment.message ?? "업로드 실패. 원본 파일을 다시 선택해 재시도하세요.",
-  };
-}
-
-function readUploadRecovery(ownerType: FileOwnerType, ownerId: string): AttachmentDraft[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = window.localStorage.getItem(uploadRecoveryKey(ownerType, ownerId));
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as AttachmentDraft[];
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .filter((attachment) => attachment && attachment.id && attachment.fileName && attachment.status !== "ready")
-      .map(recoverableAttachment);
-  } catch {
-    return [];
-  }
-}
-
-function replaceUploadRecoveryItems(ownerType: FileOwnerType, ownerId: string, items: AttachmentDraft[], touchedIds: string[] = items.map((item) => item.id)) {
-  if (typeof window === "undefined") return;
-  try {
-    const touched = new Set(touchedIds);
-    const existing = readUploadRecovery(ownerType, ownerId).filter((item) => !touched.has(item.id));
-    const next = [
-      ...existing,
-      ...items
-        .filter((item) => item.status !== "ready")
-        .map((item) => ({
-          id: item.id,
-          remoteId: item.remoteId,
-          fileName: item.fileName,
-          byteSize: item.byteSize,
-          status: item.status,
-          progressPercent: item.progressPercent,
-          retryCount: item.retryCount,
-          scanStatus: item.scanStatus,
-          message: item.message,
-        })),
-    ];
-    const key = uploadRecoveryKey(ownerType, ownerId);
-    if (next.length > 0) {
-      window.localStorage.setItem(key, JSON.stringify(next));
-    } else {
-      window.localStorage.removeItem(key);
-    }
-  } catch {
-    // Recovery metadata is best-effort. File storage remains the source of truth.
-  }
-}
-
-async function uploadAttachmentToStorage(
-  ownerType: FileOwnerType,
-  ownerId: string,
-  file: File,
-  fallbackId: string,
-  options: { onProgress?: (percent: number, message: string) => void } = {},
-) {
-  const notifyProgress = (percent: number, message: string) => options.onProgress?.(Math.max(0, Math.min(100, percent)), message);
+async function uploadAttachmentToStorage(ownerType: FileOwnerType, ownerId: string, file: File, fallbackId: string) {
   const uploadKey = fileMutationKey("upload", ownerType, ownerId, fallbackId, `${file.name}:${file.size}:${file.lastModified}`);
-  notifyProgress(4, "업로드 준비 중");
   const ticket = await erpApi.presignFileUpload({
     ownerType,
     ownerId,
@@ -2071,14 +1809,9 @@ async function uploadAttachmentToStorage(
     byteSize: file.size,
     idempotencyKey: `${uploadKey}:presign`,
   });
-  notifyProgress(12, "저장소 업로드 URL 발급 완료");
-  await erpApi.uploadFileContent(ticket.data.upload.url, file, (progress) => {
-    notifyProgress(12 + Math.round(progress.percent * 0.76), `${progress.percent}% 전송 중`);
-  });
-  notifyProgress(92, "보안 검사 완료 처리 중");
+  await erpApi.uploadFileContent(ticket.data.upload.url, file);
   const completed = await erpApi.completeFileUpload(ticket.data.file.id, { idempotencyKey: `${uploadKey}:complete` });
-  notifyProgress(100, "업로드 완료");
-  return { ...toStoredAttachment(completed.data, fallbackId), progressPercent: 100 };
+  return toStoredAttachment(completed.data, fallbackId);
 }
 
 function goToPage(pageKey: PageKey) {
@@ -2145,16 +1878,85 @@ function getRowId(pageKey: PageKey, row: TableRow) {
   return row[pages[pageKey].tableColumns[0]] ?? "";
 }
 
+// 우측 상세 패널 표시 모드. 화면(페이지 본문)과 상단바 토글이 함께 쓰도록 모듈 단위로 공유한다.
+type DetailPanelMode = "auto" | "always" | "hidden";
+const detailPanelModeStorageKey = "erp-detail-panel-mode";
+const detailPanelModeListeners = new Set<() => void>();
+let detailPanelModeValue: DetailPanelMode = (() => {
+  try {
+    const stored = window.localStorage.getItem(detailPanelModeStorageKey);
+    return stored === "always" || stored === "hidden" ? stored : "auto";
+  } catch {
+    return "auto";
+  }
+})();
+
+function setDetailPanelMode(next: DetailPanelMode) {
+  detailPanelModeValue = next;
+  try {
+    window.localStorage.setItem(detailPanelModeStorageKey, next);
+  } catch {
+    // 저장 실패해도 현재 세션 동안은 동작한다.
+  }
+  detailPanelModeListeners.forEach((listener) => listener());
+}
+
+function useDetailPanelMode() {
+  const [mode, setMode] = useState(detailPanelModeValue);
+  useEffect(() => {
+    const listener = () => setMode(detailPanelModeValue);
+    detailPanelModeListeners.add(listener);
+    listener();
+    return () => {
+      detailPanelModeListeners.delete(listener);
+    };
+  }, []);
+  return mode;
+}
+
+// 모드에 따라 상세 패널 노출 여부를 정한다. 기본(auto)은 기존처럼 선택했을 때만 표시한다.
+function useDetailOpen(hasSelection: boolean) {
+  const mode = useDetailPanelMode();
+  if (mode === "always") return true;
+  if (mode === "hidden") return false;
+  return hasSelection;
+}
+
+const detailPanelModeLabels: Record<DetailPanelMode, string> = {
+  auto: "상세 자동",
+  always: "상세 항상",
+  hidden: "상세 숨김",
+};
+
+const detailPanelModeTitles: Record<DetailPanelMode, string> = {
+  auto: "우측 상세: 행을 선택할 때만 표시 (클릭해서 항상 표시로 전환)",
+  always: "우측 상세: 항상 표시 (클릭해서 숨김으로 전환)",
+  hidden: "우측 상세: 숨김 (클릭해서 자동으로 전환)",
+};
+
+function DetailPanelModeToggle() {
+  const mode = useDetailPanelMode();
+  const nextMode: DetailPanelMode = mode === "auto" ? "always" : mode === "always" ? "hidden" : "auto";
+  return (
+    <button
+      aria-label={`우측 상세 표시 모드: ${detailPanelModeLabels[mode]}`}
+      className={`erp-detail-toggle mode-${mode}`}
+      onClick={() => setDetailPanelMode(nextMode)}
+      title={detailPanelModeTitles[mode]}
+      type="button"
+    >
+      {mode === "hidden" ? <PanelRightClose size={16} /> : <PanelRight size={16} />}
+      <span>{detailPanelModeLabels[mode]}</span>
+    </button>
+  );
+}
+
 function sameSelection(a: Set<string>, b: Set<string>) {
   if (a.size !== b.size) return false;
   for (const value of a) {
     if (!b.has(value)) return false;
   }
   return true;
-}
-
-function mutationErrorMessage(error: unknown, fallback: string) {
-  return error instanceof Error ? error.message : fallback;
 }
 
 function SortableColumnHeader({ column, table }: { column: string; table: TableController }) {
@@ -2195,6 +1997,142 @@ function TableStateRow({ colSpan, table }: { colSpan: number; table: TableContro
   return null;
 }
 
+// 클릭하면 옵션 목록이 펼쳐지는 필터 드롭다운. 기존 툴바 버튼 클래스를 재사용해 모양을 유지한다.
+function FilterDropdown({
+  value,
+  options,
+  onChange,
+  triggerClassName,
+  label,
+  icon,
+  ariaLabel,
+}: {
+  value: string;
+  options: string[];
+  onChange: (value: string) => void;
+  triggerClassName: string;
+  label?: string;
+  icon?: ReactNode;
+  ariaLabel?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handlePointer = (event: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) setOpen(false);
+    };
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", handlePointer);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("mousedown", handlePointer);
+      document.removeEventListener("keydown", handleKey);
+    };
+  }, [open]);
+
+  return (
+    <div className="filter-dropdown" ref={containerRef}>
+      <button
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        aria-label={ariaLabel ?? (label ? `${label} 필터` : "필터 선택")}
+        className={triggerClassName}
+        onClick={() => setOpen((current) => !current)}
+        type="button"
+      >
+        {label && <span>{label}</span>}
+        <b>{value}</b>
+        {icon ?? <ChevronDown size={16} />}
+      </button>
+      {open && (
+        <ul className="filter-dropdown-menu" role="listbox">
+          {options.map((option) => (
+            <li key={option}>
+              <button
+                aria-selected={option === value}
+                className={option === value ? "active" : undefined}
+                onClick={() => {
+                  onChange(option);
+                  setOpen(false);
+                }}
+                role="option"
+                type="button"
+              >
+                {option}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// 페이지당 표시 건수 선택 드롭다운. 목록 하단에 있으므로 메뉴가 위로 펼쳐진다.
+function RowsPerPageSelect({
+  pageSize,
+  options = [10, 20, 50],
+  onChange,
+  unit = "건씩",
+}: {
+  pageSize: number;
+  options?: number[];
+  onChange: (size: number) => void;
+  unit?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handlePointer = (event: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) setOpen(false);
+    };
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", handlePointer);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("mousedown", handlePointer);
+      document.removeEventListener("keydown", handleKey);
+    };
+  }, [open]);
+
+  return (
+    <div className="rows-select-dropdown" ref={containerRef}>
+      <button aria-expanded={open} aria-haspopup="listbox" aria-label="페이지당 표시 건수" className="rows-select" onClick={() => setOpen((current) => !current)} type="button">
+        {pageSize} {unit}
+        <ChevronDown size={15} />
+      </button>
+      {open && (
+        <ul className="rows-select-menu" role="listbox">
+          {options.map((option) => (
+            <li key={option}>
+              <button
+                aria-selected={option === pageSize}
+                className={option === pageSize ? "active" : undefined}
+                onClick={() => {
+                  onChange(option);
+                  setOpen(false);
+                }}
+                role="option"
+                type="button"
+              >
+                {option} {unit}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function DetailFilterPanel({
   fields,
   onApply,
@@ -2218,10 +2156,22 @@ function DetailFilterPanel({
       </header>
       <div>
         {fields.map((field) => (
-          <span key={field.label}>
+          <label className="detail-filter-field" key={field.label}>
             <b>{field.label}</b>
-            {field.value}
-          </span>
+            {field.options && field.onChange ? (
+              <select
+                aria-label={`${field.label} 필터 선택`}
+                onChange={(event) => field.onChange?.(event.currentTarget.value)}
+                value={field.value}
+              >
+                {field.options.map((option) => (
+                  <option key={option} value={option}>{option}</option>
+                ))}
+              </select>
+            ) : (
+              <span>{field.value}</span>
+            )}
+          </label>
         ))}
       </div>
       <footer>
@@ -2232,17 +2182,79 @@ function DetailFilterPanel({
   );
 }
 
-function ClosedDetailPanel({ onOpen, title }: { onOpen: () => void; title: string }) {
-  return (
-    <aside className="closed-detail-panel" aria-label={`${title} 닫힘`}>
-      <strong>{title}</strong>
-      <span>상세 패널이 닫혔습니다.</span>
-      <button onClick={onOpen} type="button">다시 열기</button>
-    </aside>
-  );
+// 실제 조회된 목록(table.rows)에서 필터 옵션 값을 누적 수집한다.
+// 필터를 걸어 목록이 좁아져도 옵션 목록은 줄지 않도록 한 번 본 값은 계속 유지한다.
+function useFilterUniverse(rows: TableRow[], columns: Array<{ key: string; kind?: "value" | "month" }>) {
+  const columnsKey = columns.map((column) => `${column.key}:${column.kind ?? "value"}`).join(",");
+  const [universe, setUniverse] = useState<Record<string, string[]>>({});
+  useEffect(() => {
+    setUniverse((previous) => {
+      let changed = false;
+      const next: Record<string, string[]> = { ...previous };
+      for (const column of columns) {
+        const set = new Set(next[column.key] ?? []);
+        const sizeBefore = set.size;
+        for (const row of rows) {
+          const raw = row[column.key] ?? "";
+          const value = column.kind === "month" ? raw.slice(0, 7) : raw;
+          if (column.kind === "month" ? /^\d{4}-\d{2}$/.test(value) : Boolean(value)) set.add(value);
+        }
+        if (set.size !== sizeBefore) {
+          next[column.key] = Array.from(set).sort((a, b) => (column.kind === "month" ? b.localeCompare(a) : a.localeCompare(b, "ko")));
+          changed = true;
+        }
+      }
+      return changed ? next : previous;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, columnsKey]);
+  return universe;
 }
 
-function useManagedTable(pageKey: PageKey, searchQuery: string, extraFilters: Partial<Record<string, string>> = emptyExtraFilters): TableController {
+// 목록 툴바 필터의 선택 값만 관리하고, 실제 조회에 쓰이는 extraFilters로 변환한다.
+// 옵션 목록은 조회 결과에서 나중에 수집되므로(useFilterUniverse) cycle/panelFields 호출 시점에 주입한다.
+// clearValue("전체...")로 시작하는 선택 값은 필터 해제로 간주해 조회에 반영하지 않는다.
+function useToolbarFilters(fields: Array<{ key: string; clearValue: string }>) {
+  const initial = () => Object.fromEntries(fields.map((field) => [field.key, field.clearValue]));
+  const [values, setValues] = useState<Record<string, string>>(initial);
+
+  const setValue = (key: string, value: string) => setValues((current) => ({ ...current, [key]: value }));
+  const reset = () => setValues(initial());
+  const cycle = (key: string, options: string[]) => {
+    if (options.length === 0) return;
+    setValues((current) => {
+      const index = Math.max(0, options.indexOf(current[key]));
+      return { ...current, [key]: options[(index + 1) % options.length] };
+    });
+  };
+
+  const extraFilters = useMemo(() => {
+    const output: Record<string, string> = {};
+    for (const field of fields) {
+      const value = values[field.key];
+      if (value && !value.startsWith("전체")) output[field.key] = value;
+    }
+    return output;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [values]);
+
+  const panelFields = (specs: Array<{ key: string; label: string; options: string[] }>): DetailFilterField[] =>
+    specs.map((spec) => ({
+      label: spec.label,
+      value: values[spec.key] ?? "",
+      options: spec.options,
+      onChange: (value: string) => setValue(spec.key, value),
+    }));
+
+  return { values, setValue, cycle, reset, extraFilters, panelFields };
+}
+
+function useManagedTable(
+  pageKey: PageKey,
+  searchQuery: string,
+  extraFilters: Partial<Record<string, string>> = emptyExtraFilters,
+  { autoSelectFirstRow = true }: { autoSelectFirstRow?: boolean } = {},
+): TableController {
   const statusOptions = filterOptionsByPage[pageKey] ?? defaultStatusOptions;
   const statusColumn = statusColumnByPage[pageKey];
   const storedTableState = (() => {
@@ -2342,34 +2354,22 @@ function useManagedTable(pageKey: PageKey, searchQuery: string, extraFilters: Pa
   useEffect(() => {
     const visibleIds = rows.map((row) => getRowId(pageKey, row)).filter(Boolean);
     setSelectedIds((current) => {
+      // 화면에서 사라진 선택은 정리하되, autoSelectFirstRow가 아니면 첫 행을 자동 선택하지 않는다.
       const next = new Set([...current].filter((id) => visibleIds.includes(id)));
-      if (next.size === 0 && visibleIds[0]) next.add(visibleIds[0]);
+      if (autoSelectFirstRow && next.size === 0 && visibleIds[0]) next.add(visibleIds[0]);
       return sameSelection(current, next) ? current : next;
     });
-    setActiveRowId((current) => (current && visibleIds.includes(current) ? current : visibleIds[0] ?? ""));
-  }, [pageKey, rows]);
+    setActiveRowId((current) => {
+      if (current && visibleIds.includes(current)) return current;
+      return autoSelectFirstRow ? visibleIds[0] ?? "" : "";
+    });
+  }, [autoSelectFirstRow, pageKey, rows]);
 
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const visiblePages = Array.from({ length: Math.min(5, pageCount) }, (_, index) => index + 1);
   const allVisibleSelected = rows.length > 0 && rows.every((row) => selectedIds.has(getRowId(pageKey, row)));
   const selectedRows = rows.filter((row) => selectedIds.has(getRowId(pageKey, row)));
   const selectedRow = rows.find((row) => getRowId(pageKey, row) === activeRowId) ?? rows.find((row) => selectedIds.has(getRowId(pageKey, row))) ?? rows[0] ?? null;
-
-  const captureMutationSnapshot = (): TableMutationSnapshot => ({
-    rows,
-    total,
-    selectedIds: new Set(selectedIds),
-    activeRowId,
-  });
-
-  const rollbackAndRequery = (snapshot: TableMutationSnapshot, message: string) => {
-    setRows(snapshot.rows);
-    setTotal(snapshot.total);
-    setSelectedIds(new Set(snapshot.selectedIds));
-    setActiveRowId(snapshot.activeRowId);
-    setActionMessage(`${message} · 변경 전 화면 상태로 되돌리고 서버 원본을 다시 조회합니다.`);
-    setRefreshVersion((current) => current + 1);
-  };
 
   const setPage = (nextPage: number) => {
     setPageState(Math.min(pageCount, Math.max(1, nextPage)));
@@ -2408,21 +2408,11 @@ function useManagedTable(pageKey: PageKey, searchQuery: string, extraFilters: Pa
     if (!selectedRow) return;
     const rowId = getRowId(pageKey, selectedRow);
     if (!rowId) return;
-    const snapshot = captureMutationSnapshot();
     setIsMutating(true);
     setErrorMessage("");
     try {
       const response = await erpApi.updatePageRow(pageKey, rowId, patch);
-      const updatedRow = response.data;
-      if (!updatedRow) {
-        setRows(snapshot.rows);
-        setTotal(snapshot.total);
-        setActiveRowId(rowId);
-        setSelectedIds(new Set([rowId]));
-        setActionMessage(`${message} · 서버가 갱신 행을 반환하지 않아 원본 목록을 다시 조회합니다.`);
-        setRefreshVersion((current) => current + 1);
-        return;
-      }
+      const updatedRow = response.data ?? { ...selectedRow, ...patch };
       const mergedRows = rows.map((currentRow) => (getRowId(pageKey, currentRow) === rowId ? updatedRow : currentRow));
       const nextRow = options?.selectNextRow?.(mergedRows, selectedRow, updatedRow);
       const nextSelectedId = nextRow ? getRowId(pageKey, nextRow) : getRowId(pageKey, updatedRow) || rowId;
@@ -2432,7 +2422,7 @@ function useManagedTable(pageKey: PageKey, searchQuery: string, extraFilters: Pa
       setActionMessage(message);
       setRefreshVersion((current) => current + 1);
     } catch (error) {
-      rollbackAndRequery(snapshot, `작업 실패: ${mutationErrorMessage(error, "요청을 처리하지 못했습니다.")}`);
+      setActionMessage(`작업 실패: ${error instanceof Error ? error.message : "요청을 처리하지 못했습니다."}`);
     } finally {
       setIsMutating(false);
     }
@@ -2445,39 +2435,15 @@ function useManagedTable(pageKey: PageKey, searchQuery: string, extraFilters: Pa
       setActionMessage("처리 가능한 선택 항목이 없습니다.");
       return;
     }
-    const snapshot = captureMutationSnapshot();
     setIsMutating(true);
     setErrorMessage("");
     try {
-      const settledResults = await Promise.allSettled(targetRows.map(async (targetRow) => {
-        const rowId = getRowId(pageKey, targetRow);
-        if (!rowId) throw new Error("행 ID를 확인할 수 없습니다.");
-        const nextPatch = typeof patch === "function" ? patch(targetRow) : patch;
-        const response = await erpApi.updatePageRow(pageKey, rowId, nextPatch);
-        if (!response.data) throw new Error("서버가 갱신 대상을 반환하지 않았습니다.");
-        return { rowId, row: response.data };
-      }));
-      const successfulRows = settledResults.flatMap((result) => result.status === "fulfilled" ? [result.value] : []);
-      const failedRows = settledResults.flatMap((result, index) => result.status === "rejected" ? [{ row: targetRows[index], reason: result.reason }] : []);
-      const updatedById = new Map(successfulRows.map((result) => [result.rowId, result.row]));
-      setRows((currentRows) => currentRows.map((currentRow) => updatedById.get(getRowId(pageKey, currentRow)) ?? currentRow));
-      const failedIds = failedRows.map((item) => getRowId(pageKey, item.row)).filter(Boolean);
-      setSelectedIds(new Set(failedIds));
-      setActiveRowId(failedIds[0] ?? "");
-      if (failedRows.length > 0) {
-        const failureSummary = failedRows.slice(0, 3).map((item) => {
-          const rowId = getRowId(pageKey, item.row) || "ID 없음";
-          const reason = item.reason instanceof Error ? item.reason.message : "처리 실패";
-          return `${rowId}: ${reason}`;
-        }).join(", ");
-        const hiddenCount = Math.max(0, failedRows.length - 3);
-        setActionMessage(`${message} · 성공 ${successfulRows.length}건 · 실패 ${failedRows.length}건 · 실패 항목 ${failureSummary}${hiddenCount ? ` 외 ${hiddenCount}건` : ""} · 성공 건은 반영하고 실패 건은 선택 유지`);
-      } else {
-        setActionMessage(message);
-      }
+      await Promise.all(targetRows.map((targetRow) => erpApi.updatePageRow(pageKey, getRowId(pageKey, targetRow), typeof patch === "function" ? patch(targetRow) : patch)));
+      // 선택을 유지해 일괄 처리 후에도 상세 패널과 결과 메시지가 계속 표시되도록 한다.
+      setActionMessage(message);
       setRefreshVersion((current) => current + 1);
     } catch (error) {
-      rollbackAndRequery(snapshot, `작업 실패: ${mutationErrorMessage(error, "선택 항목을 처리하지 못했습니다.")}`);
+      setActionMessage(`작업 실패: ${error instanceof Error ? error.message : "선택 항목을 처리하지 못했습니다."}`);
     } finally {
       setIsMutating(false);
     }
@@ -2488,7 +2454,6 @@ function useManagedTable(pageKey: PageKey, searchQuery: string, extraFilters: Pa
     if (!selectedRow) return;
     const rowId = getRowId(pageKey, selectedRow);
     if (!rowId) return;
-    const snapshot = captureMutationSnapshot();
     setIsMutating(true);
     setErrorMessage("");
     try {
@@ -2496,7 +2461,7 @@ function useManagedTable(pageKey: PageKey, searchQuery: string, extraFilters: Pa
       setActionMessage(message);
       setRefreshVersion((current) => current + 1);
     } catch (error) {
-      rollbackAndRequery(snapshot, `작업 실패: ${mutationErrorMessage(error, "요청을 처리하지 못했습니다.")}`);
+      setActionMessage(`작업 실패: ${error instanceof Error ? error.message : "요청을 처리하지 못했습니다."}`);
     } finally {
       setIsMutating(false);
     }
@@ -2504,20 +2469,51 @@ function useManagedTable(pageKey: PageKey, searchQuery: string, extraFilters: Pa
 
   const createRow = async (row: TableRow, message: string) => {
     if (isMutating) return;
-    const snapshot = captureMutationSnapshot();
     setIsMutating(true);
     setErrorMessage("");
     try {
       const response = await erpApi.createPageRow(pageKey, row);
-      const createdRow = response.data;
-      setActionMessage(message);
+      const createdRow = response.data ?? row;
+      const createdId = getRowId(pageKey, createdRow);
+      // 새로 만든 행은 정렬/페이지네이션에 밀려 사라지지 않도록 현재 목록 맨 앞에 바로 노출하고
+      // 선택 상태로 둔다. (선택 정리 useEffect가 화면 밖 선택을 제거하므로 재조회로 미루지 않는다.)
       setPageState(1);
-      const createdRowId = createdRow ? getRowId(pageKey, createdRow) : "";
-      setActiveRowId(createdRowId);
-      setSelectedIds(createdRowId ? new Set([createdRowId]) : new Set());
-      setRefreshVersion((current) => current + 1);
+      setRows((current) => [createdRow, ...current.filter((item) => getRowId(pageKey, item) !== createdId)]);
+      setTotal((current) => current + 1);
+      setActiveRowId(createdId);
+      setSelectedIds(createdId ? new Set([createdId]) : new Set());
+      setActionMessage(message);
     } catch (error) {
-      rollbackAndRequery(snapshot, `작업 실패: ${mutationErrorMessage(error, "요청을 생성하지 못했습니다.")}`);
+      setActionMessage(`작업 실패: ${error instanceof Error ? error.message : "요청을 생성하지 못했습니다."}`);
+    } finally {
+      setIsMutating(false);
+    }
+  };
+
+  // 선택한 행을 삭제한다. 백엔드는 소프트 삭제(행 보존 + 감사 로그)로 처리한다.
+  const deleteSelectedRows = async (
+    message: string,
+    options?: { reason?: string; predicate?: (row: TableRow) => boolean; blockedMessage?: string },
+  ) => {
+    if (isMutating) return;
+    const targets = selectedRows.filter((row) => (options?.predicate ? options.predicate(row) : true));
+    if (targets.length === 0) {
+      setActionMessage(options?.blockedMessage ?? "삭제할 항목을 먼저 선택하세요.");
+      return;
+    }
+    setIsMutating(true);
+    setErrorMessage("");
+    try {
+      const ids = targets.map((row) => getRowId(pageKey, row)).filter(Boolean);
+      await Promise.all(ids.map((id) => erpApi.deletePageRow(pageKey, id, { reason: options?.reason })));
+      const removed = new Set(ids);
+      setRows((current) => current.filter((row) => !removed.has(getRowId(pageKey, row))));
+      setTotal((current) => Math.max(0, current - ids.length));
+      setSelectedIds(new Set());
+      setActiveRowId("");
+      setActionMessage(message);
+    } catch (error) {
+      setActionMessage(`삭제 실패: ${error instanceof Error ? error.message : "요청을 처리하지 못했습니다."}`);
     } finally {
       setIsMutating(false);
     }
@@ -2557,6 +2553,7 @@ function useManagedTable(pageKey: PageKey, searchQuery: string, extraFilters: Pa
     nextPage: () => setPage(page + 1),
     previousPage: () => setPage(page - 1),
     cyclePageSize: () => setPageSize((current) => (current === 10 ? 20 : current === 20 ? 50 : 10)),
+    setPageSize: (size: number) => setPageSize(size),
     cycleStatusFilter: () => {
       const currentIndex = statusOptions.indexOf(statusFilter);
       setStatusFilterState(statusOptions[(currentIndex + 1) % statusOptions.length]);
@@ -2566,8 +2563,13 @@ function useManagedTable(pageKey: PageKey, searchQuery: string, extraFilters: Pa
     sortByColumn,
     toggleRow,
     toggleVisibleRows,
+    clearSelection: () => {
+      setSelectedIds(new Set());
+      setActiveRowId("");
+    },
     setActionMessage,
     createRow,
+    deleteSelectedRows,
     updateSelectedRow,
     updateSelectedRows,
     executeSelectedRowAction,
@@ -2671,7 +2673,7 @@ function TopNavigation() {
   ];
   return (
     <header className="top-nav">
-      <a className="brand" aria-label="홈" href="#landing">
+      <a className="brand" aria-label="홈" href="#">
         <LogoMark />
       </a>
       <nav className="nav-links" aria-label="주요 메뉴">
@@ -2961,13 +2963,12 @@ function MobilePreview() {
 
 function ErpApplication({ activePage }: { activePage: PageKey }) {
   const page = pages[activePage];
+  const ActiveIcon = page.icon;
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [authState, setAuthState] = useState<"checking" | "anonymous" | "authenticated">("checking");
+  const [releaseIdentityWarning, setReleaseIdentityWarning] = useState("");
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
-  const [expiredPasswordMode, setExpiredPasswordMode] = useState(false);
-  const [expiredNewPassword, setExpiredNewPassword] = useState("");
-  const [expiredNewPasswordConfirm, setExpiredNewPasswordConfirm] = useState("");
   const [loginMessage, setLoginMessage] = useState("");
   const [loginSubmitting, setLoginSubmitting] = useState(false);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
@@ -3004,13 +3005,27 @@ function ErpApplication({ activePage }: { activePage: PageKey }) {
   }, [activePage, notificationOpen]);
 
   useEffect(() => {
+    // 릴리즈 메타데이터가 주입된 배포 빌드에서만 backend와 동일성을 검증한다
+    // (dev/test 기동은 비교 대상이 없고 /health/version도 503을 반환한다).
+    if (import.meta.env.VITE_ERP_API_MODE !== "remote" || !import.meta.env.VITE_RELEASE_VERSION) return;
+    verifyRemoteReleaseIdentity()
+      .then((comparison) => {
+        // 메타데이터가 아예 없는 dev/test 기동은 검증 불가로 조용히 넘기고, 실제 불일치만 경고한다.
+        if (comparison.issues.some((issue) => issue.includes("mismatch"))) {
+          setReleaseIdentityWarning("배포 확인 필요: frontend와 backend 릴리즈 정보가 일치하지 않습니다. 운영자에게 문의해주세요.");
+        }
+      })
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
     let active = true;
     erpApi
       .getCurrentUser()
       .then((response) => {
         if (active) {
-          setCurrentUser(response.data);
-          setAuthState("authenticated");
+          setCurrentUser(response.data ?? null);
+          setAuthState(response.data ? "authenticated" : "anonymous");
         }
       })
       .catch(() => {
@@ -3037,49 +3052,10 @@ function ErpApplication({ activePage }: { activePage: PageKey }) {
       setCurrentUser(response.data);
       setAuthState("authenticated");
       setLoginPassword("");
-      setExpiredPasswordMode(false);
-      setExpiredNewPassword("");
-      setExpiredNewPasswordConfirm("");
     } catch (error) {
       setCurrentUser(null);
       setAuthState("anonymous");
-      if (error instanceof ApiRequestError && error.code === "PASSWORD_EXPIRED") {
-        setExpiredPasswordMode(true);
-        setLoginMessage("비밀번호가 만료되었습니다. 새 비밀번호를 설정한 뒤 다시 로그인하세요.");
-      } else {
-        setExpiredPasswordMode(false);
-        setLoginMessage(error instanceof Error ? error.message : "로그인에 실패했습니다.");
-      }
-    } finally {
-      setLoginSubmitting(false);
-    }
-  };
-
-  const handleExpiredPasswordChange = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const email = loginEmail.trim();
-    if (!email || !loginPassword || !expiredNewPassword || !expiredNewPasswordConfirm) {
-      setLoginMessage("이메일, 현재 비밀번호, 새 비밀번호를 모두 입력하세요.");
-      return;
-    }
-    if (expiredNewPassword !== expiredNewPasswordConfirm) {
-      setLoginMessage("새 비밀번호 확인이 일치하지 않습니다.");
-      return;
-    }
-    setLoginSubmitting(true);
-    try {
-      const response = await erpApi.changeExpiredPassword({
-        email,
-        currentPassword: loginPassword,
-        newPassword: expiredNewPassword,
-      });
-      setExpiredPasswordMode(false);
-      setLoginPassword("");
-      setExpiredNewPassword("");
-      setExpiredNewPasswordConfirm("");
-      setLoginMessage(`비밀번호가 변경되었습니다. ${response.data.expiresAt.slice(0, 10)}까지 사용할 수 있습니다. 새 비밀번호로 로그인하세요.`);
-    } catch (error) {
-      setLoginMessage(error instanceof Error ? error.message : "비밀번호를 변경하지 못했습니다.");
+      setLoginMessage(error instanceof Error ? error.message : "로그인에 실패했습니다.");
     } finally {
       setLoginSubmitting(false);
     }
@@ -3117,17 +3093,8 @@ function ErpApplication({ activePage }: { activePage: PageKey }) {
     return (
       <LoginScreen
         email={loginEmail}
-        expiredMode={expiredPasswordMode}
         message={loginMessage}
-        newPassword={expiredNewPassword}
-        newPasswordConfirm={expiredNewPasswordConfirm}
-        onEmailChange={(value) => {
-          setLoginEmail(value);
-          if (expiredPasswordMode) setLoginMessage("");
-        }}
-        onExpiredPasswordSubmit={handleExpiredPasswordChange}
-        onNewPasswordChange={setExpiredNewPassword}
-        onNewPasswordConfirmChange={setExpiredNewPasswordConfirm}
+        onEmailChange={setLoginEmail}
         onPasswordChange={setLoginPassword}
         onSubmit={handleLogin}
         password={loginPassword}
@@ -3158,8 +3125,14 @@ function ErpApplication({ activePage }: { activePage: PageKey }) {
 
   return (
     <main className={sidebarOpen ? "erp-shell sidebar-open" : "erp-shell"}>
+      {releaseIdentityWarning && (
+        <div className="release-identity-warning" role="alert">
+          <AlertTriangle size={14} />
+          <span>{releaseIdentityWarning}</span>
+        </div>
+      )}
       <aside className="erp-sidebar">
-        <a className="erp-logo" href="#landing" aria-label="랜딩으로 이동">
+        <a className="erp-logo" href="#" aria-label="랜딩으로 이동">
           <LogoMark small />
         </a>
         <nav className="erp-nav" aria-label="ERP 메뉴">
@@ -3204,11 +3177,15 @@ function ErpApplication({ activePage }: { activePage: PageKey }) {
             open={notificationOpen}
             unreadCount={unreadNotificationCount}
           />
+          <DetailPanelModeToggle />
           <div className="erp-profile">
             <div className="avatar" />
             <span>
               {currentUser.name}
-              <small>{currentUser.departmentName}</small>
+              {/* 로그인 계정(아이디)을 함께 노출해 어떤 계정으로 접속했는지 바로 확인할 수 있게 한다. */}
+              <small title={`${currentUser.departmentName} · ${currentUser.email}`}>
+                {currentUser.departmentName} · <b className="erp-profile-login">{currentUser.email}</b>
+              </small>
             </span>
             <button aria-label="로그아웃" className="erp-logout-button" onClick={handleLogout} title="로그아웃" type="button">
               <LogOut size={16} />
@@ -3217,6 +3194,40 @@ function ErpApplication({ activePage }: { activePage: PageKey }) {
         </header>
 
         <div className={`erp-content erp-content-${activePage}`}>
+          {false && (
+            <section className="page-head">
+              <div>
+                <p>{page.subtitle}</p>
+                <div className="breadcrumb">
+                  <ActiveIcon size={16} />
+                  <span>ERP</span>
+                  <ChevronRight size={14} />
+                  <b>{page.title}</b>
+                </div>
+              </div>
+              <div className="page-actions">
+                <button className="ghost-action">
+                  <Download size={17} />
+                </button>
+                <button className="ghost-action">
+                  <Filter size={17} />
+                  필터
+                </button>
+                <button className="erp-primary">
+                  <Plus size={18} />
+                  {page.cta}
+                </button>
+              </div>
+            </section>
+          )}
+
+          {false && (
+            <section className="kpi-row">
+              {page.kpis.map((kpi) => (
+                <KpiCard item={kpi} key={kpi.label} />
+              ))}
+            </section>
+          )}
 
           <PageBody activePage={activePage} currentUser={currentUser} notifications={activeNotifications} page={page} searchQuery={searchQuery} />
         </div>
@@ -3239,14 +3250,8 @@ function AuthGateScreen({ message }: { message: string }) {
 
 function LoginScreen({
   email,
-  expiredMode,
   message,
-  newPassword,
-  newPasswordConfirm,
   onEmailChange,
-  onExpiredPasswordSubmit,
-  onNewPasswordChange,
-  onNewPasswordConfirmChange,
   onPasswordChange,
   onSubmit,
   password,
@@ -3254,14 +3259,8 @@ function LoginScreen({
   submitting,
 }: {
   email: string;
-  expiredMode: boolean;
   message: string;
-  newPassword: string;
-  newPasswordConfirm: string;
   onEmailChange: (value: string) => void;
-  onExpiredPasswordSubmit: (event: FormEvent<HTMLFormElement>) => void;
-  onNewPasswordChange: (value: string) => void;
-  onNewPasswordConfirmChange: (value: string) => void;
   onPasswordChange: (value: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   password: string;
@@ -3270,11 +3269,11 @@ function LoginScreen({
 }) {
   return (
     <main className="auth-shell">
-      <form className="auth-panel login-panel" onSubmit={expiredMode ? onExpiredPasswordSubmit : onSubmit}>
+      <form className="auth-panel login-panel" onSubmit={onSubmit}>
         <LogoMark small />
         <div>
           <span className="auth-eyebrow">{targetPage}</span>
-          <h1>{expiredMode ? "비밀번호 변경" : "로그인"}</h1>
+          <h1>로그인</h1>
         </div>
         <label>
           이메일
@@ -3288,7 +3287,7 @@ function LoginScreen({
           />
         </label>
         <label>
-          {expiredMode ? "현재 비밀번호" : "비밀번호"}
+          비밀번호
           <input
             aria-label="로그인 비밀번호"
             autoComplete="current-password"
@@ -3297,35 +3296,11 @@ function LoginScreen({
             value={password}
           />
         </label>
-        {expiredMode && (
-          <>
-            <label>
-              새 비밀번호
-              <input
-                aria-label="새 비밀번호"
-                autoComplete="new-password"
-                onChange={(event) => onNewPasswordChange(event.currentTarget.value)}
-                type="password"
-                value={newPassword}
-              />
-            </label>
-            <label>
-              새 비밀번호 확인
-              <input
-                aria-label="새 비밀번호 확인"
-                autoComplete="new-password"
-                onChange={(event) => onNewPasswordConfirmChange(event.currentTarget.value)}
-                type="password"
-                value={newPasswordConfirm}
-              />
-            </label>
-          </>
-        )}
         {message && <p className="auth-message">{message}</p>}
         <button className="auth-submit" disabled={submitting} type="submit">
-          {submitting ? "확인 중" : expiredMode ? "비밀번호 변경" : "로그인"}
+          {submitting ? "확인 중" : "로그인"}
         </button>
-        <a className="auth-return" href="#landing">
+        <a className="auth-return" href="#">
           홈으로
         </a>
       </form>
@@ -3433,7 +3408,7 @@ function PageBody({
   page: PageDefinition;
   searchQuery: string;
 }) {
-  if (activePage === "dashboard") return <DashboardBody currentUser={currentUser} notifications={notifications} page={page} />;
+  if (activePage === "dashboard") return <DashboardBody notifications={notifications} page={page} />;
   if (activePage === "payment-request") return <PaymentRequestBody currentUser={currentUser} page={page} searchQuery={searchQuery} />;
   if (activePage === "approval") return <ApprovalBody currentUser={currentUser} page={page} searchQuery={searchQuery} />;
   if (activePage === "disbursement") return <DisbursementBody currentUser={currentUser} page={page} searchQuery={searchQuery} />;
@@ -3479,51 +3454,14 @@ function buildDashboardKpis(baseKpis: KpiItem[], rows: TableRow[]): KpiItem[] {
   });
 }
 
-function DashboardBody({ currentUser, notifications, page }: { currentUser: AuthUser; notifications: NotificationItem[]; page: PageDefinition }) {
+function DashboardBody({ notifications, page }: { notifications: NotificationItem[]; page: PageDefinition }) {
   const table = useManagedTable("dashboard", "");
   const [dashboardMessage, setDashboardMessage] = useState("KPI와 상세 보기 버튼은 관련 업무 화면으로 이동합니다.");
-  const [operationalAlerts, setOperationalAlerts] = useState<OperationalAlertSummary | null>(null);
-  const [businessFailures, setBusinessFailures] = useState<BusinessFailureAlertSummary | null>(null);
-  const [operationalLoading, setOperationalLoading] = useState(false);
-  const [operationalError, setOperationalError] = useState("");
-  const canViewOperationalMetrics = canUseAction(currentUser, "system:manage");
   const dashboardKpis = useMemo(() => buildDashboardKpis(page.kpis, table.rows), [page.kpis, table.rows]);
-  const refreshOperationalDashboard = async (showMessage = true) => {
-    if (!canViewOperationalMetrics) return;
-    setOperationalLoading(true);
-    setOperationalError("");
-    try {
-      const [alertResponse, failureResponse] = await Promise.all([
-        erpApi.getOperationalAlerts(),
-        erpApi.getBusinessFailureAlerts(),
-      ]);
-      setOperationalAlerts(alertResponse.data);
-      setBusinessFailures(failureResponse.data);
-      if (showMessage) {
-        setDashboardMessage(
-          alertResponse.data.ok && failureResponse.data.ok
-            ? "운영 대시보드 지표를 새로고침했습니다. 현재 임계치 초과 항목은 없습니다."
-            : `운영 대시보드 지표를 새로고침했습니다. 점검 대상 ${alertResponse.data.triggered.length + failureResponse.data.triggered.length}건이 있습니다.`,
-        );
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "운영 지표를 불러오지 못했습니다.";
-      setOperationalError(message);
-      if (showMessage) setDashboardMessage(`운영 지표 조회 실패: ${message}`);
-    } finally {
-      setOperationalLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    void refreshOperationalDashboard(false);
-  }, [canViewOperationalMetrics, currentUser.id]);
-
   const handleKpiClick = (label: string) => {
-    const target = dashboardKpiRouteState(label);
-    persistRouteState(target.pageKey, target.routeState);
-    setDashboardMessage(`${label}: ${target.message}`);
-    goToPage(target.pageKey);
+    const route: PageKey = label.includes("지급") ? "disbursement" : label.includes("예산") ? "budget" : "approval";
+    setDashboardMessage(`${label} 기준 목록으로 이동합니다.`);
+    goToPage(route);
   };
 
   return (
@@ -3536,19 +3474,9 @@ function DashboardBody({ currentUser, notifications, page }: { currentUser: Auth
           ))}
         </section>
 
-        {canViewOperationalMetrics && (
-          <DashboardOperationalMetrics
-            alerts={operationalAlerts}
-            businessFailures={businessFailures}
-            errorMessage={operationalError}
-            loading={operationalLoading}
-            onRefresh={() => void refreshOperationalDashboard()}
-          />
-        )}
-
         <section className="dashboard-chart-row">
-          <DashboardTrendCard rows={table.rows} onDrilldown={(label) => setDashboardMessage(`${label} 승인 추이 세부 데이터로 이동합니다.`)} />
-          <DepartmentSpendCard rows={table.rows} onDrilldown={(label) => setDashboardMessage(`${label} 지출 세부 데이터로 이동합니다.`)} />
+          <DashboardTrendCard onDrilldown={(label) => setDashboardMessage(`${label} 승인 추이 세부 데이터로 이동합니다.`)} />
+          <DepartmentSpendCard onDrilldown={(label) => setDashboardMessage(`${label} 지출 세부 데이터로 이동합니다.`)} />
         </section>
 
         <DashboardRecentPayments errorMessage={table.errorMessage} isLoading={table.isLoading} rows={table.rows} />
@@ -3556,166 +3484,16 @@ function DashboardBody({ currentUser, notifications, page }: { currentUser: Auth
 
       <aside className="dashboard-side-column">
         <DashboardUrgentPayments rows={table.rows} />
-        <DashboardRecentActivity notifications={notifications} rows={table.rows} />
+        <DashboardRecentActivity notifications={notifications} />
       </aside>
     </div>
   );
 }
 
-function dashboardBusinessFailureCount(summary: BusinessFailureAlertSummary | null, ruleId: string) {
-  return summary?.rules.find((rule) => rule.id === ruleId)?.count ?? 0;
-}
-
-function formatDashboardLatency(value: number | null | undefined) {
-  return typeof value === "number" && Number.isFinite(value) ? `${Math.round(value)} ms` : "-";
-}
-
-function DashboardOperationalMetrics({
-  alerts,
-  businessFailures,
-  errorMessage,
-  loading,
-  onRefresh,
-}: {
-  alerts: OperationalAlertSummary | null;
-  businessFailures: BusinessFailureAlertSummary | null;
-  errorMessage: string;
-  loading: boolean;
-  onRefresh: () => void;
-}) {
-  const triggeredCount = (alerts?.triggered.length ?? 0) + (businessFailures?.triggered.length ?? 0);
-  const metrics = [
-    {
-      label: "처리량",
-      value: `${(businessFailures?.eventsReviewed ?? alerts?.metrics.eventsReviewed ?? 0).toLocaleString("ko-KR")}건`,
-      detail: `${alerts?.windowMinutes ?? businessFailures?.windowMinutes ?? 15}분 기준`,
-    },
-    {
-      label: "오류율",
-      value: `${(alerts?.metrics.ruleFailureRatePercent ?? 0).toLocaleString("ko-KR", { maximumFractionDigits: 1 })}%`,
-      detail: `${triggeredCount}개 임계치 초과`,
-    },
-    {
-      label: "p95 latency",
-      value: formatDashboardLatency(alerts?.metrics.p95LatencyMs),
-      detail: (alerts?.metrics.latencySampleSize ?? 0) > 0 ? "slow query sample 기준" : "DB health 기준",
-    },
-    {
-      label: "지급 실패",
-      value: `${dashboardBusinessFailureCount(businessFailures, "disbursement_processing_failure")}건`,
-      detail: "지급 route 보안/업무 이벤트",
-    },
-    {
-      label: "보고서 실패",
-      value: `${dashboardBusinessFailureCount(businessFailures, "report_processing_failure")}건`,
-      detail: "보고서 route 보안/업무 이벤트",
-    },
-    {
-      label: "업로드 실패",
-      value: `${dashboardBusinessFailureCount(businessFailures, "file_processing_failure")}건`,
-      detail: "파일 route 보안/업무 이벤트",
-    },
-  ];
-  return (
-    <section className={triggeredCount > 0 ? "erp-card dashboard-operational-card attention" : "erp-card dashboard-operational-card"}>
-      <header>
-        <div>
-          <strong>운영 지표</strong>
-          <span>{alerts ? `${alerts.since.slice(11, 16)}-${alerts.until.slice(11, 16)} · DB ${formatDashboardLatency(alerts.database.latencyMs)}` : "운영 지표 조회 대기"}</span>
-        </div>
-        <button disabled={loading} onClick={onRefresh} type="button">
-          <RefreshCw size={15} />
-          {loading ? "조회 중" : "새로고침"}
-        </button>
-      </header>
-      {errorMessage && <p className="dashboard-operational-error">{errorMessage}</p>}
-      <div className="dashboard-operational-grid">
-        {metrics.map((item) => (
-          <article key={item.label}>
-            <span>{item.label}</span>
-            <strong>{item.value}</strong>
-            <small>{item.detail}</small>
-          </article>
-        ))}
-      </div>
-      {triggeredCount > 0 && (
-        <div className="dashboard-operational-triggered">
-          {[...(alerts?.triggered ?? []), ...(businessFailures?.triggered ?? [])].slice(0, 4).map((item) => (
-            <span key={item.id}>{item.label} {item.count}/{item.threshold}</span>
-          ))}
-        </div>
-      )}
-    </section>
-  );
-}
-
-function dashboardDateKey(value: string) {
-  const timestamp = new Date(value).getTime();
-  if (!Number.isFinite(timestamp)) return "";
-  const date = new Date(timestamp);
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${date.getFullYear()}-${month}-${day}`;
-}
-
-function dashboardDateLabel(key: string) {
-  const date = new Date(`${key}T00:00:00`);
-  const weekdays = ["일", "월", "화", "수", "목", "금", "토"];
-  return `${String(date.getMonth() + 1).padStart(2, "0")}.${String(date.getDate()).padStart(2, "0")} (${weekdays[date.getDay()]})`;
-}
-
-function dashboardNiceMax(value: number, minimum: number) {
-  const safe = Math.max(value, minimum);
-  if (safe <= 10) return Math.ceil(safe);
-  const magnitude = 10 ** Math.max(1, Math.floor(Math.log10(safe)) - 1);
-  return Math.ceil(safe / magnitude) * magnitude;
-}
-
-function dashboardCompactWon(value: number) {
-  if (value >= 100_000_000) return `${(Math.round(value / 10_000_000) / 10).toLocaleString("ko-KR")}억`;
-  if (value >= 10_000) return `${Math.round(value / 10_000).toLocaleString("ko-KR")}만`;
-  return value.toLocaleString("ko-KR");
-}
-
-function dashboardChartY(value: number, maxValue: number) {
-  return Math.round(192 - (value / Math.max(maxValue, 1)) * 160);
-}
-
-function dashboardAxisLabels(maxValue: number, formatter: (value: number) => string) {
-  return [1, 0.8, 0.6, 0.4, 0.2, 0].map((ratio) => formatter(Math.round(maxValue * ratio)));
-}
-
-function buildDashboardTrend(rows: TableRow[]) {
-  const timestamps = rows
-    .map((row) => new Date(row.요청일 || row.처리기한 || "").getTime())
-    .filter((timestamp) => Number.isFinite(timestamp));
-  const endDate = new Date(timestamps.length > 0 ? Math.max(...timestamps) : Date.now());
-  endDate.setHours(0, 0, 0, 0);
-  const buckets = Array.from({ length: 7 }, (_, index) => {
-    const date = new Date(endDate);
-    date.setDate(endDate.getDate() - (6 - index));
-    const key = dashboardDateKey(date.toISOString());
-    return { key, label: dashboardDateLabel(key), count: 0, amount: 0 };
-  });
-  const bucketMap = new Map(buckets.map((bucket) => [bucket.key, bucket]));
-  rows
-    .filter((row) => dashboardApprovalStatus(row) === "승인 완료")
-    .forEach((row) => {
-      const key = dashboardDateKey(row.요청일 || row.처리기한 || "");
-      const bucket = bucketMap.get(key);
-      if (!bucket) return;
-      bucket.count += 1;
-      bucket.amount += parseWon(row.금액 ?? "0");
-    });
-  const maxCount = dashboardNiceMax(Math.max(...buckets.map((bucket) => bucket.count), 0), 5);
-  const maxAmount = dashboardNiceMax(Math.max(...buckets.map((bucket) => bucket.amount), 0), 100_000_000);
-  return { buckets, maxCount, maxAmount };
-}
-
-function DashboardTrendCard({ rows, onDrilldown }: { rows: TableRow[]; onDrilldown: (label: string) => void }) {
-  const { buckets, maxCount, maxAmount } = buildDashboardTrend(rows);
-  const countLine = buckets.map((bucket, index) => `${index * 72},${dashboardChartY(bucket.count, maxCount)}`).join(" ");
-  const amountLine = buckets.map((bucket, index) => `${index * 72},${dashboardChartY(bucket.amount, maxAmount)}`).join(" ");
+function DashboardTrendCard({ onDrilldown }: { onDrilldown: (label: string) => void }) {
+  const points = ["06.24 (월)", "06.25 (화)", "06.26 (수)", "06.27 (목)", "06.28 (금)", "06.29 (토)", "06.30 (일)"];
+  const countLine = "0,150 72,118 144,70 216,112 288,132 360,172 432,192";
+  const amountLine = "0,164 72,132 144,100 216,138 288,158 360,184 432,196";
 
   return (
     <section className="erp-card dashboard-chart-card">
@@ -3733,26 +3511,28 @@ function DashboardTrendCard({ rows, onDrilldown }: { rows: TableRow[]; onDrilldo
           ))}
           <polyline className="line-teal" points={countLine} transform="translate(42 10)" />
           <polyline className="line-blue" points={amountLine} transform="translate(42 10)" />
-          {buckets.map((bucket, index) => (
-            <circle className="dot-teal" cx={(index * 72) + 42} cy={dashboardChartY(bucket.count, maxCount) + 10} onClick={() => onDrilldown(`승인 건수 ${bucket.label}`)} r="4" key={`count-${bucket.key}`} />
-          ))}
-          {buckets.map((bucket, index) => (
-            <circle className="dot-blue" cx={(index * 72) + 42} cy={dashboardChartY(bucket.amount, maxAmount) + 10} onClick={() => onDrilldown(`승인 금액 ${bucket.label}`)} r="4" key={`amount-${bucket.key}`} />
-          ))}
+          {countLine.split(" ").map((pair, index) => {
+            const [x, y] = pair.split(",");
+            return <circle className="dot-teal" cx={Number(x) + 42} cy={Number(y) + 10} onClick={() => onDrilldown(`승인 건수 ${points[index]}`)} r="4" key={`count-${pair}`} />;
+          })}
+          {amountLine.split(" ").map((pair, index) => {
+            const [x, y] = pair.split(",");
+            return <circle className="dot-blue" cx={Number(x) + 42} cy={Number(y) + 10} onClick={() => onDrilldown(`승인 금액 ${points[index]}`)} r="4" key={`amount-${pair}`} />;
+          })}
         </svg>
         <div className="trend-y left">
-          {dashboardAxisLabels(maxCount, (value) => value.toLocaleString("ko-KR")).map((label, index) => (
-            <span key={`${label}-${index}`}>{label}</span>
+          {["50", "40", "30", "20", "10", "0"].map((label) => (
+            <span key={label}>{label}</span>
           ))}
         </div>
         <div className="trend-y right">
-          {dashboardAxisLabels(maxAmount, dashboardCompactWon).map((label, index) => (
-            <span key={`${label}-${index}`}>{label}</span>
+          {["100M", "80M", "60M", "40M", "20M", "0"].map((label) => (
+            <span key={label}>{label}</span>
           ))}
         </div>
         <div className="trend-x">
-          {buckets.map((bucket) => (
-            <span key={bucket.key}>{bucket.label}</span>
+          {points.map((point) => (
+            <span key={point}>{point}</span>
           ))}
         </div>
       </div>
@@ -3760,35 +3540,22 @@ function DashboardTrendCard({ rows, onDrilldown }: { rows: TableRow[]; onDrilldo
   );
 }
 
-function buildDepartmentSpend(rows: TableRow[]) {
-  const approvedRows = rows.filter((row) => dashboardApprovalStatus(row) === "승인 완료");
-  const sourceRows = approvedRows.length > 0 ? approvedRows : rows;
-  const totals = sourceRows.reduce<Record<string, number>>((acc, row) => {
-    const department = row.부서 || "미지정";
-    acc[department] = (acc[department] ?? 0) + parseWon(row.금액 ?? "0");
-    return acc;
-  }, {});
-  const entries = Object.entries(totals)
-    .sort(([, amountA], [, amountB]) => amountB - amountA)
-    .slice(0, 7);
-  const maxAmount = Math.max(...entries.map(([, amount]) => amount), 1);
-  return entries.map(([name, amount]) => [name, formatCurrencyWon(amount), Math.max(6, Math.round((amount / maxAmount) * 100))] as [string, string, number]);
-}
-
-function DepartmentSpendCard({ rows, onDrilldown }: { rows: TableRow[]; onDrilldown: (label: string) => void }) {
-  const departments = buildDepartmentSpend(rows);
+function DepartmentSpendCard({ onDrilldown }: { onDrilldown: (label: string) => void }) {
+  const departments = [
+    ["마케팅팀", "78,450,000 원", 100],
+    ["IT운영팀", "56,180,000 원", 71],
+    ["영업팀", "45,320,000 원", 56],
+    ["경영지원팀", "28,470,000 원", 35],
+    ["개발팀", "21,360,000 원", 26],
+    ["인사팀", "10,000,000 원", 12],
+    ["기타", "6,000,000 원", 7],
+  ] as Array<[string, string, number]>;
 
   return (
     <section className="erp-card dashboard-chart-card">
       <CardHeader title="부서별 지출" action="이번 달" onAction={() => goToPage("budget")} />
       <div className="department-bars">
-        {departments.length === 0 ? (
-          <button className="department-bar-row" onClick={() => onDrilldown("부서별 지출 없음")} type="button">
-            <span>데이터 없음</span>
-            <i style={{ width: "6%" }} />
-            <b>0 원</b>
-          </button>
-        ) : departments.map(([name, amount, width]) => (
+        {departments.map(([name, amount, width]) => (
           <button className="department-bar-row" key={name} onClick={() => onDrilldown(name)} type="button">
             <span>{name}</span>
             <i style={{ width: `${width}%` }} />
@@ -3797,7 +3564,7 @@ function DepartmentSpendCard({ rows, onDrilldown }: { rows: TableRow[]; onDrilld
         ))}
       </div>
       <div className="department-axis">
-        {["0", "20%", "40%", "60%", "80%", "100%", "비중"].map((label) => (
+        {["0", "20M", "40M", "60M", "80M", "100M", "(원)"].map((label) => (
           <span key={label}>{label}</span>
         ))}
       </div>
@@ -3847,34 +3614,8 @@ function DashboardUrgentPayments({ rows }: { rows: TableRow[] }) {
   );
 }
 
-function dashboardActivityIcon(source: string, tone: string) {
-  if (source.includes("AuditLog")) return ClipboardCheck;
-  if (tone === "danger" || tone === "warning") return AlertTriangle;
-  if (tone === "payment") return WalletCards;
-  if (tone === "success") return CheckCircle2;
-  return Clock3;
-}
-
-function dashboardActivitiesFromRows(rows: TableRow[]) {
-  const sourceRow = rows.find((row) => row.최근활동JSON);
-  return readJsonRecords(sourceRow?.최근활동JSON).map((item) => {
-    const tone = jsonText(item.톤) || "info";
-    const source = jsonText(item.원천) || "Activity";
-    const createdAt = jsonText(item.생성일시);
-    return {
-      title: jsonText(item.제목) || "활동",
-      desc: jsonText(item.설명) || "-",
-      meta: jsonText(item.메타) || source,
-      time: createdAt ? formatNotificationTime(createdAt) : "-",
-      tone,
-      icon: dashboardActivityIcon(source, tone),
-    };
-  });
-}
-
-function DashboardRecentActivity({ notifications, rows }: { notifications: NotificationItem[]; rows: TableRow[] }) {
-  const backendActivities = dashboardActivitiesFromRows(rows);
-  const activities = backendActivities.length > 0 ? backendActivities : notifications.slice(0, 6).map((notification) => ({
+function DashboardRecentActivity({ notifications }: { notifications: NotificationItem[] }) {
+  const activities = notifications.slice(0, 6).map((notification) => ({
     title: notification.title,
     desc: notification.message,
     meta: notification.entityId ?? notification.entityType ?? "알림",
@@ -3894,8 +3635,8 @@ function DashboardRecentActivity({ notifications, rows }: { notifications: Notif
             </span>
             <div>
               <b>활동 없음</b>
-              <strong>최근 활동이 없습니다.</strong>
-              <small>AuditLog/Notification 기준</small>
+              <strong>최근 알림이 없습니다.</strong>
+              <small>notification API 기준</small>
             </div>
             <time>-</time>
           </article>
@@ -3984,33 +3725,78 @@ function DashboardRecentPayments({ errorMessage, isLoading, rows }: { errorMessa
   );
 }
 
+const paymentFilterColumns = [{ key: "요청일", kind: "month" as const }, { key: "부서" }];
+
 function PaymentRequestBody({ currentUser, page, searchQuery }: { currentUser: AuthUser; page: PageDefinition; searchQuery: string }) {
-  const table = useManagedTable("payment-request", searchQuery);
-  const [detailOpen, setDetailOpen] = useState(true);
+  const filters = useToolbarFilters([
+    { key: "요청일", clearValue: "전체 기간" },
+    { key: "부서", clearValue: "전체 부서" },
+  ]);
+  // 첫 행 자동 선택을 끄고, 요청을 선택했을 때만 우측 정보 패널을 표시한다.
+  const table = useManagedTable("payment-request", searchQuery, filters.extraFilters, { autoSelectFirstRow: false });
+  const universe = useFilterUniverse(table.rows, paymentFilterColumns);
+  const periodOptions = ["전체 기간", ...(universe.요청일 ?? [])];
+  const departmentOptions = ["전체 부서", ...(universe.부서 ?? [])];
+  const detailOpen = useDetailOpen(table.selectedCount > 0);
 
   return (
-    <div className="payment-request-page">
+    <div className={detailOpen ? "payment-request-page" : "payment-request-page detail-hidden"}>
       <section className="payment-main-column">
-        <PaymentRequestToolbar currentUser={currentUser} table={table} />
-        <PaymentRequestTable page={page} table={table} onOpenDetail={() => setDetailOpen(true)} />
+        <PaymentRequestToolbar currentUser={currentUser} table={table} filters={filters} periodOptions={periodOptions} departmentOptions={departmentOptions} />
+        <PaymentRequestTable page={page} table={table} onOpenDetail={() => undefined} />
       </section>
-      {detailOpen ? (
-        <PaymentRequestInfoPanel currentUser={currentUser} table={table} onClose={() => setDetailOpen(false)} />
-      ) : (
-        <ClosedDetailPanel title="요청 정보" onOpen={() => setDetailOpen(true)} />
+      {detailOpen && (
+        <PaymentRequestInfoPanel currentUser={currentUser} table={table} onClose={table.clearSelection} />
       )}
     </div>
   );
 }
 
-function PaymentRequestToolbar({ currentUser, table }: { currentUser: AuthUser; table: TableController }) {
+function PaymentRequestToolbar({ currentUser, table, filters, periodOptions, departmentOptions }: { currentUser: AuthUser; table: TableController; filters: ReturnType<typeof useToolbarFilters>; periodOptions: string[]; departmentOptions: string[] }) {
   const [filterOpen, setFilterOpen] = useState(false);
-  const [periodIndex, setPeriodIndex] = useState(0);
-  const [departmentIndex, setDepartmentIndex] = useState(0);
-  const periodOptions = ["2024-05-01 ~ 2024-05-31", "2024-06-01 ~ 2024-06-30", "최근 7일"];
-  const departmentOptions = ["전체 부서", ...paymentDepartmentOptions.slice(0, 5)];
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const statusOptions = filterOptionsByPage["payment-request"] ?? defaultStatusOptions;
   const selectedStatus = table.selectedRow?.상태 ?? "임시 저장";
   const canCreateRequest = canUseAction(currentUser, "payment_request:create");
+  // 관리자는 상태와 무관하게, 그 외 사용자는 임시 저장 건만 삭제할 수 있다. (최종 판정은 백엔드가 수행)
+  const isAdminUser = canUseAction(currentUser, "system:manage");
+  const isDeletableRow = (row: TableRow) => isAdminUser || row.상태 === "임시 저장";
+  const deletableSelectedRows = table.selectedRows.filter(isDeletableRow);
+  const canDeleteSelected = (isAdminUser || canUseAction(currentUser, "payment_request:update_own"))
+    && table.selectedCount > 0
+    && deletableSelectedRows.length > 0;
+  const deleteButtonRef = useRef<HTMLButtonElement | null>(null);
+  // 선택이 바뀌면 삭제 확인 상태를 되돌린다.
+  useEffect(() => {
+    setConfirmDelete(false);
+  }, [table.selectedCount]);
+  // 삭제 확인 대기 중에는 Esc 또는 버튼 바깥 클릭으로 취소한다. (별도 취소 버튼 없이 배치 유지)
+  useEffect(() => {
+    if (!confirmDelete) return;
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setConfirmDelete(false);
+    };
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!deleteButtonRef.current?.contains(event.target as Node)) setConfirmDelete(false);
+    };
+    document.addEventListener("keydown", handleKey);
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => {
+      document.removeEventListener("keydown", handleKey);
+      document.removeEventListener("mousedown", handlePointerDown);
+    };
+  }, [confirmDelete]);
+  const deleteSelectedRequests = () => {
+    const label = deletableSelectedRows.length === 1
+      ? String(deletableSelectedRows[0]?.요청번호 ?? "선택 요청")
+      : `${deletableSelectedRows.length}건`;
+    setConfirmDelete(false);
+    void table.deleteSelectedRows(`${label} 결제 요청을 삭제했습니다.`, {
+      reason: "결제 요청 삭제",
+      predicate: isDeletableRow,
+      blockedMessage: "임시 저장 건만 삭제할 수 있습니다. 진행 중인 건은 관리자만 삭제할 수 있습니다.",
+    });
+  };
   const createDraftRequest = () => {
     const id = `PR-2024-${String(9000 + table.total + 1)}`;
     table.createRow(
@@ -4033,12 +3819,12 @@ function PaymentRequestToolbar({ currentUser, table }: { currentUser: AuthUser; 
     table.setActionMessage("현재 결제 요청 목록 CSV 다운로드를 시작했습니다.");
   };
   const handleApplyFilter = () => {
-    table.setActionMessage(`${periodOptions[periodIndex]}, ${departmentOptions[departmentIndex]}, ${table.statusFilter} 조건을 적용했습니다.`);
+    const active = [filters.values.요청일, filters.values.부서, table.statusFilter].filter((value) => value && !value.startsWith("전체"));
+    table.setActionMessage(active.length > 0 ? `필터 적용: ${active.join(", ")}` : "필터를 모두 해제했습니다.");
     setFilterOpen(false);
   };
   const handleResetFilter = () => {
-    setPeriodIndex(0);
-    setDepartmentIndex(0);
+    filters.reset();
     table.setStatusFilter("전체 상태");
     table.setActionMessage("결제 요청 상세 필터를 초기화했습니다.");
   };
@@ -4046,18 +3832,9 @@ function PaymentRequestToolbar({ currentUser, table }: { currentUser: AuthUser; 
   return (
     <div className="payment-toolbar">
       <div className="payment-filter-group">
-        <button className="payment-filter date" onClick={() => setPeriodIndex((current) => (current + 1) % periodOptions.length)} type="button">
-          {periodOptions[periodIndex]}
-          <Calendar size={18} />
-        </button>
-        <button className="payment-filter" onClick={() => setDepartmentIndex((current) => (current + 1) % departmentOptions.length)} type="button">
-          {departmentOptions[departmentIndex]}
-          <ChevronDown size={16} />
-        </button>
-        <button className="payment-filter" onClick={table.cycleStatusFilter} type="button">
-          {table.statusFilter}
-          <ChevronDown size={16} />
-        </button>
+        <FilterDropdown ariaLabel="기간" triggerClassName="payment-filter date" value={filters.values.요청일} options={periodOptions} onChange={(value) => filters.setValue("요청일", value)} icon={<Calendar size={18} />} />
+        <FilterDropdown ariaLabel="부서" triggerClassName="payment-filter" value={filters.values.부서} options={departmentOptions} onChange={(value) => filters.setValue("부서", value)} />
+        <FilterDropdown ariaLabel="상태" triggerClassName="payment-filter" value={table.statusFilter} options={statusOptions} onChange={table.setStatusFilter} />
         <button className="payment-filter compact" onClick={() => setFilterOpen((current) => !current)} type="button">
           <Filter size={18} />
           필터
@@ -4087,6 +3864,24 @@ function PaymentRequestToolbar({ currentUser, table }: { currentUser: AuthUser; 
         >
           임시 저장
         </button>
+        {/* 버튼 개수가 바뀌면 툴바가 줄바꿈되므로, 한 버튼에서 삭제 → 삭제 확인으로 토글한다. */}
+        <button
+          className={confirmDelete ? "payment-plain-button danger is-armed" : "payment-plain-button danger"}
+          disabled={table.isMutating || !canDeleteSelected}
+          onClick={() => (confirmDelete ? deleteSelectedRequests() : setConfirmDelete(true))}
+          ref={deleteButtonRef}
+          title={
+            confirmDelete
+              ? "한 번 더 누르면 삭제됩니다. Esc 또는 바깥 클릭으로 취소"
+              : canDeleteSelected
+                ? "선택한 결제 요청 삭제"
+                : "임시 저장 건을 선택하면 삭제할 수 있습니다."
+          }
+          type="button"
+        >
+          <Trash2 size={16} />
+          {confirmDelete ? "삭제 확인" : "삭제"}
+        </button>
         <button className="payment-icon-action" aria-label="다운로드" onClick={handleDownload} type="button">
           <Download size={18} />
         </button>
@@ -4098,9 +3893,11 @@ function PaymentRequestToolbar({ currentUser, table }: { currentUser: AuthUser; 
         <DetailFilterPanel
           title="결제 요청 필터"
           fields={[
-            { label: "기간", value: periodOptions[periodIndex] },
-            { label: "부서", value: departmentOptions[departmentIndex] },
-            { label: "상태", value: table.statusFilter },
+            ...filters.panelFields([
+              { key: "요청일", label: "기간", options: periodOptions },
+              { key: "부서", label: "부서", options: departmentOptions },
+            ]),
+            { label: "상태", value: table.statusFilter, options: statusOptions, onChange: table.setStatusFilter },
           ]}
           onApply={handleApplyFilter}
           onClose={() => setFilterOpen(false)}
@@ -4175,10 +3972,7 @@ function PaymentRequestTable({ onOpenDetail, page, table }: { page: PageDefiniti
           </>
         )}
         <button aria-label="다음 페이지" onClick={table.nextPage} type="button">›</button>
-        <button className="rows-select" onClick={table.cyclePageSize} type="button">
-          {table.pageSize} 건씩
-          <ChevronDown size={15} />
-        </button>
+        <RowsPerPageSelect pageSize={table.pageSize} onChange={table.setPageSize} />
       </footer>
     </section>
   );
@@ -4216,13 +4010,16 @@ function PaymentRequestInfoPanel({ currentUser, onClose, table }: { currentUser:
     reason: row?.["요청 사유"] ?? (row?.거래처 ? `${row.거래처} 결제 요청 처리` : ""),
   }));
   const [validationMessage, setValidationMessage] = useState("");
-  const [fieldErrors, setFieldErrors] = useState<PaymentFieldErrors>({});
   const [attachmentsByRequest, setAttachmentsByRequest] = useState<Record<string, AttachmentDraft[]>>({});
   const [attachmentMessage, setAttachmentMessage] = useState("");
-  const [autosaveMessage, setAutosaveMessage] = useState("");
-  const pendingPaymentUploadFilesRef = useRef<Record<string, File>>({});
-  const autosaveRowVersionRef = useRef<Record<string, string>>({});
-  const lastAutosavePayloadRef = useRef<Record<string, string>>({});
+  // 첨부한 이미지의 로컬 미리보기 URL(첨부ID → objectURL)과 확대 팝업으로 볼 이미지
+  const [attachmentPreviews, setAttachmentPreviews] = useState<Record<string, string>>({});
+  const [lightboxId, setLightboxId] = useState<string | null>(null);
+  useEffect(() => () => {
+    // 컴포넌트가 사라질 때 생성한 objectURL을 정리한다.
+    Object.values(attachmentPreviews).forEach((url) => URL.revokeObjectURL(url));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [approvalLineMode, setApprovalLineMode] = useState("자동 결재선");
   const [paymentMasterData, setPaymentMasterData] = useState<PaymentRequestMasterData | null>(null);
   const [selectedBudgetItemId, setSelectedBudgetItemId] = useState(row?.예산항목ID ?? "");
@@ -4230,6 +4027,16 @@ function PaymentRequestInfoPanel({ currentUser, onClose, table }: { currentUser:
   const [masterDataMessage, setMasterDataMessage] = useState("");
   const attachments = attachmentsByRequest[requestId] ?? [];
   const readyAttachmentCount = attachments.filter((attachment) => attachment.status === "ready").length;
+  // 미리보기 가능한 첨부(이미지·PDF)만 모아 라이트박스 이동/썸네일에 사용한다.
+  const previewFiles = attachments
+    .map((attachment) => {
+      const kind = previewKindOf(attachment.fileName);
+      if (!kind) return null;
+      const src = attachmentPreviews[attachment.id] ?? attachment.downloadUrl;
+      return src ? { id: attachment.id, src, name: attachment.fileName, kind } : null;
+    })
+    .filter((item): item is PreviewItem => Boolean(item));
+  const lightboxIndex = previewFiles.findIndex((item) => item.id === lightboxId);
   const amountNumber = parseWon(draft.amount);
   const formattedAmount = formatCurrencyWon(amountNumber);
   const activeVendorNames = useMemo(() => {
@@ -4274,82 +4081,29 @@ function PaymentRequestInfoPanel({ currentUser, onClose, table }: { currentUser:
   const baseApprovalLine = getApprovalLine(amountNumber, currentUser, approvalCandidates);
   const approvalLine = getApprovalLineForMode(baseApprovalLine, approvalLineMode, draft.department, approvalCandidates);
   const approvalLineSummary = approvalLine.map(([name, role]) => `${role}:${name}`).join(" > ");
-  const feedbackMessage = validationMessage || autosaveMessage || masterDataMessage || table.actionMessage;
-  const readyAttachmentKey = attachments
-    .filter((attachment) => attachment.status === "ready" && attachment.remoteId)
-    .map((attachment) => attachment.remoteId)
-    .join(",");
-  const currentRequestRowVersion = () => autosaveRowVersionRef.current[requestId] ?? String(paymentRequestRowVersion(row));
-  const autosavePayloadSignature = (paymentDraft: PaymentRequestDraft, budgetItemId: string, lineMode: string, attachmentKey: string) => JSON.stringify({
-    draft: paymentDraft,
-    budgetItemId,
-    lineMode,
-    attachmentKey,
-  });
+  const feedbackMessage = validationMessage || masterDataMessage || table.actionMessage;
 
   useEffect(() => {
-    const nextDraft = {
+    setDraft({
       vendor: row?.거래처 ?? "",
       department: row?.부서 ?? currentUser.departmentName,
       amount: normalizeAmountText(row?.금액 ?? "0"),
       requestDate: row?.요청일 ?? "2024-06-03",
       reason: row?.["요청 사유"] ?? (row?.거래처 ? `${row.거래처} 결제 요청 처리` : ""),
-    };
-    setDraft({
-      ...nextDraft,
     });
     setValidationMessage("");
-    setFieldErrors({});
     setAttachmentMessage("");
-    setAutosaveMessage("");
     setSelectedBudgetItemId(row?.예산항목ID ?? "");
-    if (row?.요청번호) {
-      autosaveRowVersionRef.current[row.요청번호] = String(paymentRequestRowVersion(row));
-      lastAutosavePayloadRef.current[row.요청번호] = autosavePayloadSignature(nextDraft, row?.예산항목ID ?? "", approvalLineMode, readyAttachmentKey);
-    }
   }, [currentUser.departmentName, row?.거래처, row?.금액, row?.부서, row?.예산항목ID, row?.요청번호, row?.요청일, row]);
 
   useEffect(() => {
-    if (!row || !canEditRequest || table.isMutating) return;
-    const budgetItemId = selectedBudgetItem?.id ?? "";
-    const signature = autosavePayloadSignature(draft, budgetItemId, approvalLineMode, readyAttachmentKey);
-    if (lastAutosavePayloadRef.current[requestId] === signature) return;
-
-    const timeoutId = window.setTimeout(async () => {
-      const rowVersion = currentRequestRowVersion();
-      const rowForKey = { ...(row ?? {}), rowVersion, 요청RowVersion: rowVersion };
-      const patch = {
-        ...buildPaymentRequestPatch(draft, "임시 저장", budgetItemId),
-        ...(readyAttachmentKey ? { 첨부파일ID: readyAttachmentKey } : {}),
-        결재선모드: approvalLineMode,
-        예상결재선: approvalLineSummary,
-        rowVersion,
-        요청RowVersion: rowVersion,
-        idempotencyKey: paymentRequestMutationKey("autosave", requestId, rowForKey),
-      };
-      try {
-        const response = await erpApi.updatePageRow("payment-request", requestId, patch);
-        if (response.data) {
-          autosaveRowVersionRef.current[requestId] = String(paymentRequestRowVersion(response.data));
-        }
-        lastAutosavePayloadRef.current[requestId] = signature;
-        window.localStorage.removeItem(`erp-payment-draft:${requestId}`);
-        setAutosaveMessage(`${requestId} 서버 임시 저장 row에 자동 저장되었습니다.`);
-      } catch (error) {
-        try {
-          window.localStorage.setItem(
-            `erp-payment-draft:${requestId}`,
-            JSON.stringify({ draft, budgetItemId, approvalLineMode, readyAttachmentKey, failedAt: new Date().toISOString() }),
-          );
-        } catch {
-          // If browser storage is unavailable, the visible form state still remains in memory.
-        }
-        setAutosaveMessage(`서버 자동 저장 실패: ${error instanceof Error ? error.message : "local fallback에 임시 보관했습니다."}`);
-      }
-    }, 1200);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [approvalLineMode, approvalLineSummary, canEditRequest, draft, readyAttachmentKey, requestId, row, selectedBudgetItem?.id, table.isMutating]);
+    if (!row || !canEditRequest) return;
+    try {
+      window.localStorage.setItem(`erp-payment-draft:${requestId}`, JSON.stringify(draft));
+    } catch {
+      setValidationMessage("자동 저장소를 사용할 수 없어 화면 상태로만 유지합니다.");
+    }
+  }, [canEditRequest, draft, requestId, row]);
 
   useEffect(() => {
     let active = true;
@@ -4413,22 +4167,15 @@ function PaymentRequestInfoPanel({ currentUser, onClose, table }: { currentUser:
       .listFiles("PAYMENT_REQUEST", requestId)
       .then((response) => {
         if (!active) return;
-        const syncedAttachments = response.data.map((file) => toStoredAttachment(file));
-        const syncedIds = new Set(syncedAttachments.map((attachment) => attachment.remoteId ?? attachment.id));
-        const recoveredAttachments = readUploadRecovery("PAYMENT_REQUEST", requestId).filter((attachment) => !syncedIds.has(attachment.remoteId ?? attachment.id));
         setAttachmentsByRequest((current) => ({
           ...current,
-          [requestId]: [...syncedAttachments, ...recoveredAttachments],
+          [requestId]: response.data.map((file) => toStoredAttachment(file)),
         }));
-        if (recoveredAttachments.length > 0) {
-          setAttachmentMessage(`${recoveredAttachments.length}개 업로드 미완료 파일을 복구했습니다. 원본 파일을 다시 선택하거나 삭제할 수 있습니다.`);
-        }
       })
       .catch((error: unknown) => {
         if (!active) return;
-        const recoveredAttachments = readUploadRecovery("PAYMENT_REQUEST", requestId);
         setAttachmentMessage(`첨부 파일 목록 조회 실패: ${error instanceof Error ? error.message : "다시 시도해주세요."}`);
-        setAttachmentsByRequest((current) => ({ ...current, [requestId]: recoveredAttachments }));
+        setAttachmentsByRequest((current) => ({ ...current, [requestId]: [] }));
       });
 
     return () => {
@@ -4446,100 +4193,68 @@ function PaymentRequestInfoPanel({ currentUser, onClose, table }: { currentUser:
     }
   }, [departmentBudgetItems, selectedBudgetItemId]);
 
-  useEffect(() => {
-    if (!table.actionMessage.startsWith("작업 실패:")) return;
-    const message = table.actionMessage.replace(/^작업 실패:\s*/, "");
-    const mappedErrors = paymentFieldErrorsFromMessage(message);
-    if (Object.keys(mappedErrors).length > 0) {
-      setFieldErrors(mappedErrors);
-      setValidationMessage(message);
-    }
-  }, [table.actionMessage]);
-
   const updateDraft = (patch: Partial<PaymentRequestDraft>) => {
     setDraft((current) => ({ ...current, ...patch }));
     if (validationMessage) setValidationMessage("");
-    if (Object.keys(fieldErrors).length > 0) setFieldErrors({});
   };
 
   const validateDraft = (mode: "draft" | "submit") => {
     const errors: string[] = [];
-    const nextFieldErrors: PaymentFieldErrors = {};
-    const addError = (field: PaymentFieldErrorKey, message: string) => {
-      if (!nextFieldErrors[field]) nextFieldErrors[field] = message;
-      errors.push(message);
-    };
     const amountText = normalizeAmountText(draft.amount);
     const amountValue = parseWon(amountText);
 
-    if (!row) addError("row", "목록에서 결제 요청을 먼저 선택해야 합니다.");
-    if (!draft.requestDate) addError("requestDate", "요청일을 입력해야 합니다.");
-    if (mode === "submit" && !draft.vendor) addError("vendor", "거래처를 선택해야 합니다.");
-    if (mode === "submit" && !draft.department) addError("department", "부서를 선택해야 합니다.");
-    if (masterDataLoaded && draft.vendor && !activeVendorNames.includes(draft.vendor)) addError("vendor", "backend master data에 활성 거래처로 등록된 항목만 선택할 수 있습니다.");
-    if (masterDataLoaded && draft.department && !knownDepartmentNames.includes(draft.department)) addError("department", "backend budget master data에 등록된 부서만 선택할 수 있습니다.");
-    if (mode === "submit" && masterDataLoaded && paymentMasterData && departmentBudgetItems.length === 0) addError("budget", "backend budget master data에 선택 부서의 예산 항목이 없습니다.");
-    if (mode === "submit" && masterDataLoaded && paymentMasterData && departmentBudgetItems.length > 0 && !selectedBudgetItem) addError("budget", "예산 항목을 선택해야 합니다.");
-    if (mode === "submit" && amountValue <= 0) addError("amount", "금액은 1원 이상이어야 합니다.");
-    if (mode === "submit" && !draft.reason.trim()) addError("reason", "요청 사유를 입력해야 합니다.");
-    if (mode === "submit" && readyAttachmentCount === 0) addError("attachments", "증빙 파일이 1개 이상 필요합니다.");
-    if (mode === "submit" && isBudgetExceeded) addError("budget", "요청 금액이 예산 잔액을 초과합니다.");
+    if (!row) errors.push("목록에서 결제 요청을 먼저 선택해야 합니다.");
+    if (!draft.requestDate) errors.push("요청일을 입력해야 합니다.");
+    if (mode === "submit" && !draft.vendor) errors.push("거래처를 선택해야 합니다.");
+    if (mode === "submit" && !draft.department) errors.push("부서를 선택해야 합니다.");
+    if (masterDataLoaded && draft.vendor && !activeVendorNames.includes(draft.vendor)) errors.push("backend master data에 활성 거래처로 등록된 항목만 선택할 수 있습니다.");
+    if (masterDataLoaded && draft.department && !knownDepartmentNames.includes(draft.department)) errors.push("backend budget master data에 등록된 부서만 선택할 수 있습니다.");
+    if (mode === "submit" && masterDataLoaded && paymentMasterData && departmentBudgetItems.length === 0) errors.push("backend budget master data에 선택 부서의 예산 항목이 없습니다.");
+    if (mode === "submit" && masterDataLoaded && paymentMasterData && departmentBudgetItems.length > 0 && !selectedBudgetItem) errors.push("예산 항목을 선택해야 합니다.");
+    if (mode === "submit" && amountValue <= 0) errors.push("금액은 1원 이상이어야 합니다.");
+    if (mode === "submit" && !draft.reason.trim()) errors.push("요청 사유를 입력해야 합니다.");
+    if (mode === "submit" && readyAttachmentCount === 0) errors.push("증빙 파일이 1개 이상 필요합니다.");
+    if (mode === "submit" && isBudgetExceeded) errors.push("요청 금액이 예산 잔액을 초과합니다.");
 
-    return { errors, fieldErrors: nextFieldErrors };
+    return errors;
   };
 
   const saveDraft = () => {
-    const validation = validateDraft("draft");
-    if (validation.errors.length > 0) {
-      setFieldErrors(validation.fieldErrors);
-      setValidationMessage(validation.errors[0]);
+    const errors = validateDraft("draft");
+    if (errors.length > 0) {
+      setValidationMessage(errors[0]);
       return;
     }
-    const rowVersion = currentRequestRowVersion();
-    const rowForKey = { ...(row ?? {}), rowVersion, 요청RowVersion: rowVersion };
-    const idempotencyKey = paymentRequestMutationKey("draft", requestId, rowForKey);
-    lastAutosavePayloadRef.current[requestId] = autosavePayloadSignature(draft, selectedBudgetItem?.id ?? "", approvalLineMode, readyAttachmentKey);
-    setAutosaveMessage("");
+    const rowVersion = paymentRequestRowVersion(row);
+    const idempotencyKey = paymentRequestMutationKey("draft", requestId, row);
     table.updateSelectedRow(
-      withPaymentAttachmentIds(
-        {
-          ...buildPaymentRequestPatch(draft, "임시 저장", selectedBudgetItem?.id ?? ""),
-          결재선모드: approvalLineMode,
-          예상결재선: approvalLineSummary,
-          rowVersion,
-          요청RowVersion: rowVersion,
-          idempotencyKey,
-        },
-        attachments,
-      ),
-      `${requestId} 임시 저장 완료 · 서버 PaymentRequest DRAFT row 저장`,
+      withPaymentAttachmentIds({ ...buildPaymentRequestPatch(draft, "임시 저장", selectedBudgetItem?.id ?? ""),
+        결재선모드: approvalLineMode,
+        예상결재선: approvalLineSummary,
+        rowVersion,
+        요청RowVersion: rowVersion,
+        idempotencyKey,
+      }, attachments),
+      `${requestId} 임시 저장 완료 · autosave 복구 키 저장`,
     );
   };
 
   const submitRequest = () => {
-    const validation = validateDraft("submit");
-    if (validation.errors.length > 0) {
-      setFieldErrors(validation.fieldErrors);
-      setValidationMessage(validation.errors[0]);
+    const errors = validateDraft("submit");
+    if (errors.length > 0) {
+      setValidationMessage(errors[0]);
       return;
     }
-    const rowVersion = currentRequestRowVersion();
-    const rowForKey = { ...(row ?? {}), rowVersion, 요청RowVersion: rowVersion };
-    const idempotencyKey = paymentRequestMutationKey("submit", requestId, rowForKey);
-    lastAutosavePayloadRef.current[requestId] = autosavePayloadSignature(draft, selectedBudgetItem?.id ?? "", approvalLineMode, readyAttachmentKey);
-    setAutosaveMessage("");
+    const rowVersion = paymentRequestRowVersion(row);
+    const idempotencyKey = paymentRequestMutationKey("submit", requestId, row);
     table.updateSelectedRow(
-      withPaymentAttachmentIds(
-        {
-          ...buildPaymentRequestPatch(draft, "제출", selectedBudgetItem?.id ?? ""),
-          결재선모드: approvalLineMode,
-          예상결재선: approvalLineSummary,
-          rowVersion,
-          요청RowVersion: rowVersion,
-          idempotencyKey,
-        },
-        attachments,
-      ),
+      withPaymentAttachmentIds({ ...buildPaymentRequestPatch(draft, "제출", selectedBudgetItem?.id ?? ""),
+        결재선모드: approvalLineMode,
+        예상결재선: approvalLineSummary,
+        rowVersion,
+        요청RowVersion: rowVersion,
+        idempotencyKey,
+      }, attachments),
       `${requestId} 제출 완료 · 최종 확인 완료 · idempotencyKey ${idempotencyKey}`,
     );
   };
@@ -4556,16 +4271,18 @@ function PaymentRequestInfoPanel({ currentUser, onClose, table }: { currentUser:
 
     const { accepted, rejected } = prepareAttachmentDrafts(files);
     const uploadPairs = matchAcceptedFiles(files, accepted);
-    const uploadingAttachments = uploadPairs.map(({ attachment, file }) => {
-      pendingPaymentUploadFilesRef.current[attachment.id] = file;
-      return { ...attachment, status: "uploading" as const, message: "업로드 준비 중", progressPercent: 4, retryCount: 0 };
-    });
+    // 미리보기 가능한 파일(이미지·PDF)은 즉시 로컬 미리보기(objectURL)를 만들어 썸네일/팝업에 쓴다.
+    const newPreviews: Record<string, string> = {};
+    for (const { attachment, file } of uploadPairs) {
+      if (previewKindOf(attachment.fileName, file.type)) newPreviews[attachment.id] = URL.createObjectURL(file);
+    }
+    if (Object.keys(newPreviews).length > 0) setAttachmentPreviews((current) => ({ ...current, ...newPreviews }));
+    const uploadingAttachments = uploadPairs.map(({ attachment }) => ({ ...attachment, status: "uploading" as const, message: "업로드 중" }));
     if (uploadingAttachments.length > 0) {
       setAttachmentsByRequest((current) => ({
         ...current,
         [requestId]: [...(current[requestId] ?? []), ...uploadingAttachments],
       }));
-      replaceUploadRecoveryItems("PAYMENT_REQUEST", requestId, uploadingAttachments);
     }
     if (uploadPairs.length === 0) {
       setAttachmentMessage(rejected.length > 0 ? rejected.join(" ") : "업로드할 수 있는 파일이 없습니다.");
@@ -4576,23 +4293,12 @@ function PaymentRequestInfoPanel({ currentUser, onClose, table }: { currentUser:
     const uploadedAttachments = await Promise.all(
       uploadPairs.map(async ({ attachment, file }) => {
         try {
-          const stored = await uploadAttachmentToStorage("PAYMENT_REQUEST", requestId, file, attachment.id, {
-            onProgress: (percent, message) => {
-              setAttachmentsByRequest((current) => ({
-                ...current,
-                [requestId]: (current[requestId] ?? []).map((item) => (item.id === attachment.id ? { ...item, progressPercent: percent, message } : item)),
-              }));
-            },
-          });
-          delete pendingPaymentUploadFilesRef.current[attachment.id];
-          return stored;
+          return await uploadAttachmentToStorage("PAYMENT_REQUEST", requestId, file, attachment.id);
         } catch (error) {
           return {
             ...attachment,
             status: "error" as const,
-            progressPercent: 0,
-            retryCount: (attachment.retryCount ?? 0),
-            message: `${error instanceof Error ? error.message : "업로드 실패"} · 재시도 가능`,
+            message: error instanceof Error ? error.message : "업로드 실패",
           };
         }
       }),
@@ -4605,7 +4311,6 @@ function PaymentRequestInfoPanel({ currentUser, onClose, table }: { currentUser:
         [requestId]: [...existing.filter((attachment) => !uploadingIds.has(attachment.id)), ...uploadedAttachments],
       };
     });
-    replaceUploadRecoveryItems("PAYMENT_REQUEST", requestId, uploadedAttachments, uploadingAttachments.map((attachment) => attachment.id));
     const successCount = uploadedAttachments.filter((attachment) => attachment.status === "ready").length;
     const failedCount = uploadedAttachments.length - successCount;
     setAttachmentMessage(
@@ -4615,71 +4320,6 @@ function PaymentRequestInfoPanel({ currentUser, onClose, table }: { currentUser:
         rejected.join(" "),
       ].filter(Boolean).join(" "),
     );
-  };
-
-  const retryAttachmentUpload = async (attachmentId: string) => {
-    if (!canUploadAttachment) {
-      setAttachmentMessage("현재 상태에서는 증빙 파일을 변경할 수 없습니다.");
-      return;
-    }
-    const attachment = attachments.find((item) => item.id === attachmentId);
-    if (!attachment) return;
-    const file = pendingPaymentUploadFilesRef.current[attachmentId];
-    if (!file) {
-      setAttachmentMessage(`${attachment.fileName} 원본 파일이 브라우저 세션에 남아 있지 않습니다. 파일을 다시 선택해 업로드하세요.`);
-      setAttachmentsByRequest((current) => ({
-        ...current,
-        [requestId]: (current[requestId] ?? []).map((item) => (
-          item.id === attachmentId
-            ? { ...item, status: "error", progressPercent: 0, message: "원본 파일 재선택 필요" }
-            : item
-        )),
-      }));
-      return;
-    }
-    const retryingAttachment: AttachmentDraft = {
-      ...attachment,
-      status: "uploading",
-      progressPercent: 4,
-      retryCount: (attachment.retryCount ?? 0) + 1,
-      message: "재시도 준비 중",
-    };
-    setAttachmentsByRequest((current) => ({
-      ...current,
-      [requestId]: (current[requestId] ?? []).map((item) => (item.id === attachmentId ? retryingAttachment : item)),
-    }));
-    replaceUploadRecoveryItems("PAYMENT_REQUEST", requestId, [retryingAttachment], [attachmentId]);
-    try {
-      const stored = await uploadAttachmentToStorage("PAYMENT_REQUEST", requestId, file, attachmentId, {
-        onProgress: (percent, message) => {
-          setAttachmentsByRequest((current) => ({
-            ...current,
-            [requestId]: (current[requestId] ?? []).map((item) => (item.id === attachmentId ? { ...item, progressPercent: percent, message } : item)),
-          }));
-        },
-      });
-      delete pendingPaymentUploadFilesRef.current[attachmentId];
-      setAttachmentsByRequest((current) => ({
-        ...current,
-        [requestId]: (current[requestId] ?? []).map((item) => (item.id === attachmentId ? { ...stored, retryCount: retryingAttachment.retryCount } : item)),
-      }));
-      replaceUploadRecoveryItems("PAYMENT_REQUEST", requestId, [stored], [attachmentId]);
-      setAttachmentMessage(`${stored.fileName} 재업로드가 완료되었습니다.`);
-    } catch (error) {
-      const failedAttachment: AttachmentDraft = {
-        ...attachment,
-        status: "error",
-        progressPercent: 0,
-        retryCount: retryingAttachment.retryCount,
-        message: `${error instanceof Error ? error.message : "업로드 실패"} · 재시도 가능`,
-      };
-      setAttachmentsByRequest((current) => ({
-        ...current,
-        [requestId]: (current[requestId] ?? []).map((item) => (item.id === attachmentId ? failedAttachment : item)),
-      }));
-      replaceUploadRecoveryItems("PAYMENT_REQUEST", requestId, [failedAttachment], [attachmentId]);
-      setAttachmentMessage(`${attachment.fileName} 재업로드에 실패했습니다.`);
-    }
   };
 
   const removeAttachment = async (attachmentId: string) => {
@@ -4703,9 +4343,14 @@ function PaymentRequestInfoPanel({ currentUser, onClose, table }: { currentUser:
       ...current,
       [requestId]: attachments.filter((attachment) => attachment.id !== attachmentId),
     }));
-    delete pendingPaymentUploadFilesRef.current[attachmentId];
-    replaceUploadRecoveryItems("PAYMENT_REQUEST", requestId, [], [attachmentId]);
-    setAttachmentMessage("첨부 파일이 삭제되었습니다.");
+    setAttachmentPreviews((current) => {
+      if (!current[attachmentId]) return current;
+      URL.revokeObjectURL(current[attachmentId]);
+      const { [attachmentId]: _removed, ...rest } = current;
+      return rest;
+    });
+    // 삭제 확인 메시지는 표시하지 않고, 이전 메시지가 남지 않도록 비운다.
+    setAttachmentMessage("");
   };
 
   const downloadAttachment = async (attachment: AttachmentDraft) => {
@@ -4715,12 +4360,10 @@ function PaymentRequestInfoPanel({ currentUser, onClose, table }: { currentUser:
     }
     if (attachment.remoteId) {
       try {
-        const ticket = await erpApi.getFileDownload(attachment.remoteId, {
-          reason: `결제 요청 ${requestId} 증빙 원본 확인`,
-        });
+        const ticket = await erpApi.getFileDownload(attachment.remoteId);
         if (canDownloadDirectly(ticket.data.download.url)) {
           triggerUrlDownload(ticket.data.download.url, ticket.data.file.fileName);
-          setAttachmentMessage(`${ticket.data.file.fileName} 원본 다운로드를 시작했습니다. 다운로드 사유가 감사 로그에 기록되었습니다.`);
+          setAttachmentMessage(`${ticket.data.file.fileName} 원본 다운로드를 시작했습니다.`);
           return;
         }
       } catch (error) {
@@ -4737,37 +4380,6 @@ function PaymentRequestInfoPanel({ currentUser, onClose, table }: { currentUser:
     setAttachmentMessage(`${attachment.fileName} 다운로드를 시작했습니다.`);
   };
 
-
-  const previewAttachment = async (attachment: AttachmentDraft) => {
-    if (attachment.status === "uploading") {
-      setAttachmentMessage("업로드가 완료된 뒤 미리보기할 수 있습니다.");
-      return;
-    }
-    if (!canPreviewAttachment(attachment.fileName)) {
-      setAttachmentMessage("PDF, JPG, PNG 파일만 미리보기를 지원합니다.");
-      return;
-    }
-    if (!attachment.remoteId) {
-      setAttachmentMessage("저장소 업로드가 완료된 파일만 미리보기할 수 있습니다.");
-      return;
-    }
-    try {
-      const ticket = await erpApi.getFileDownload(attachment.remoteId, {
-        reason: `결제 요청 ${requestId} 증빙 미리보기`,
-        disposition: "inline",
-      });
-      if (canDownloadDirectly(ticket.data.download.url)) {
-        const opened = triggerUrlPreview(ticket.data.download.url);
-        setAttachmentMessage(opened
-          ? `${ticket.data.file.fileName} 미리보기를 열었습니다. signed URL 만료: ${ticket.data.download.expiresAt.slice(0, 16)}. 접근 로그가 감사 로그에 기록되었습니다.`
-          : "브라우저가 미리보기 창을 차단했습니다. 팝업 허용 후 다시 시도하세요.");
-        return;
-      }
-      setAttachmentMessage("remote mode signed URL을 받을 수 있을 때 미리보기를 열 수 있습니다.");
-    } catch (error) {
-      setAttachmentMessage(error instanceof Error ? error.message : "첨부 파일 미리보기에 실패했습니다.");
-    }
-  };
   const toggleApprovalLineMode = () => {
     const modes = ["자동 결재선", "수동 편집", "부서장 추가"];
     const nextMode = modes[(modes.indexOf(approvalLineMode) + 1) % modes.length];
@@ -4791,7 +4403,6 @@ function PaymentRequestInfoPanel({ currentUser, onClose, table }: { currentUser:
         <div className="field-inline">
           <select
             aria-label="거래처 선택"
-            aria-invalid={Boolean(fieldErrors.vendor)}
             className="field-control select-input"
             disabled={!canEditRequest}
             onChange={(event) => updateDraft({ vendor: event.currentTarget.value })}
@@ -4804,7 +4415,6 @@ function PaymentRequestInfoPanel({ currentUser, onClose, table }: { currentUser:
           </select>
           <button className="vendor-add-button" onClick={() => goToPage("vendors")} type="button">거래처 추가</button>
         </div>
-        {fieldErrors.vendor && <small className="field-error-text">{fieldErrors.vendor}</small>}
       </div>
 
       <div className="payment-field-grid">
@@ -4812,14 +4422,12 @@ function PaymentRequestInfoPanel({ currentUser, onClose, table }: { currentUser:
           <label>요청일 *</label>
           <input
             aria-label="요청일 입력"
-            aria-invalid={Boolean(fieldErrors.requestDate)}
             className="field-control with-icon"
             disabled={!canEditRequest}
             onChange={(event) => updateDraft({ requestDate: event.currentTarget.value })}
             type="date"
             value={draft.requestDate}
           />
-          {fieldErrors.requestDate && <small className="field-error-text">{fieldErrors.requestDate}</small>}
         </div>
         <div className="payment-field">
           <label>요청자</label>
@@ -4831,7 +4439,6 @@ function PaymentRequestInfoPanel({ currentUser, onClose, table }: { currentUser:
         <label>부서 *</label>
         <select
           aria-label="부서 선택"
-          aria-invalid={Boolean(fieldErrors.department)}
           className="field-control select-input"
           disabled={!canEditRequest}
           onChange={(event) => updateDraft({ department: event.currentTarget.value })}
@@ -4841,25 +4448,15 @@ function PaymentRequestInfoPanel({ currentUser, onClose, table }: { currentUser:
             <option key={departmentName} value={departmentName}>{departmentName}</option>
           ))}
         </select>
-        {fieldErrors.department && <small className="field-error-text">{fieldErrors.department}</small>}
       </div>
 
       <div className="payment-field full">
         <label>예산 항목 *</label>
         <select
           aria-label="예산 항목 선택"
-          aria-invalid={Boolean(fieldErrors.budget)}
           className="field-control select-input"
           disabled={!canEditRequest || departmentBudgetItems.length === 0}
-          onChange={(event) => {
-            setSelectedBudgetItemId(event.currentTarget.value);
-            if (fieldErrors.budget) {
-              setFieldErrors((current) => {
-                const { budget: _removed, ...rest } = current;
-                return rest;
-              });
-            }
-          }}
+          onChange={(event) => setSelectedBudgetItemId(event.currentTarget.value)}
           value={selectedBudgetItemId}
         >
           {departmentBudgetItems.length === 0 ? (
@@ -4872,7 +4469,6 @@ function PaymentRequestInfoPanel({ currentUser, onClose, table }: { currentUser:
             ))
           )}
         </select>
-        {fieldErrors.budget && <small className="field-error-text">{fieldErrors.budget}</small>}
       </div>
 
       <div className="payment-field full">
@@ -4880,7 +4476,6 @@ function PaymentRequestInfoPanel({ currentUser, onClose, table }: { currentUser:
         <div className="field-control with-unit editable">
           <input
             aria-label="금액 입력"
-            aria-invalid={Boolean(fieldErrors.amount)}
             disabled={!canEditRequest}
             inputMode="numeric"
             onChange={(event) => updateDraft({ amount: normalizeAmountText(event.currentTarget.value) })}
@@ -4889,7 +4484,6 @@ function PaymentRequestInfoPanel({ currentUser, onClose, table }: { currentUser:
           />
           <b>원</b>
         </div>
-        {fieldErrors.amount && <small className="field-error-text">{fieldErrors.amount}</small>}
       </div>
 
       <div className="payment-field full">
@@ -4898,59 +4492,53 @@ function PaymentRequestInfoPanel({ currentUser, onClose, table }: { currentUser:
           <Upload size={22} />
           <span>
             파일을 드래그하거나 클릭하여 업로드
-            <small>PDF, JPG, PNG (최대 10MB)</small>
+            <small>PDF, 이미지, 텍스트(txt·csv·md·json), XLSX · 최대 10MB</small>
           </span>
           <input
-            accept=".pdf,.jpg,.jpeg,.png,.xlsx"
+            accept=".pdf,.jpg,.jpeg,.png,.xlsx,.txt,.log,.md,.csv,.json"
             aria-label="증빙 파일 업로드"
-            aria-invalid={Boolean(fieldErrors.attachments)}
             disabled={!canUploadAttachment}
             multiple
             onChange={handleAttachmentChange}
             type="file"
           />
         </label>
-        {fieldErrors.attachments && <small className="field-error-text">{fieldErrors.attachments}</small>}
         {attachmentMessage && <small className="panel-action-message">{attachmentMessage}</small>}
-        {attachments.map((attachment) => (
-          <div className="uploaded-file-row" key={attachment.id}>
-            <span className="uploaded-file-info">
-              <b>{attachment.fileName}</b>
-              <small>{formatFileSize(attachment.byteSize)}{attachment.message ? ` · ${attachment.message}` : ""}</small>
-              {attachment.status === "uploading" && (
-                <span className="upload-progress-track" aria-label={`${attachment.fileName} 업로드 진행률 ${attachment.progressPercent ?? 0}%`}>
-                  <i style={{ width: `${attachment.progressPercent ?? 0}%` }} />
-                </span>
+        {attachments.map((attachment) => {
+          const kind = previewKindOf(attachment.fileName);
+          const previewSrc = attachmentPreviews[attachment.id] ?? attachment.downloadUrl;
+          const canPreview = Boolean(kind && previewSrc);
+          return (
+            <div className="uploaded-file-row" key={attachment.id}>
+              {canPreview ? (
+                <button
+                  aria-label={`${attachment.fileName} 미리보기`}
+                  className={`attachment-thumb${kind !== "image" ? " doc" : ""}`}
+                  onClick={() => setLightboxId(attachment.id)}
+                  type="button"
+                >
+                  {kind === "image" ? <img alt={`${attachment.fileName} 썸네일`} src={previewSrc} /> : <FileText size={20} />}
+                </button>
+              ) : (
+                <span className="attachment-thumb file"><FileText size={18} /></span>
               )}
-            </span>
-            {attachment.status === "error" && (
-              <button aria-label={`${attachment.fileName} 재업로드`} disabled={!canUploadAttachment} onClick={() => retryAttachmentUpload(attachment.id)} type="button">
-                <RefreshCw size={16} />
+              <b className="attachment-name">{attachment.fileName}</b>
+              <span>{formatFileSize(attachment.byteSize)}{attachment.message ? ` · ${attachment.message}` : ""}</span>
+              <button aria-label={`${attachment.fileName} 다운로드`} disabled={attachment.status === "uploading"} onClick={() => downloadAttachment(attachment)} type="button">
+                <Download size={16} />
               </button>
-            )}
-            {attachment.status !== "error" && <i className="upload-row-spacer" aria-hidden="true" />}
-            {canPreviewAttachment(attachment.fileName) ? (
-              <button aria-label={`${attachment.fileName} 미리보기`} disabled={attachment.status === "uploading" || attachment.status === "error"} onClick={() => previewAttachment(attachment)} type="button">
-                <Eye size={16} />
+              <button aria-label={`${attachment.fileName} 삭제`} disabled={!canUploadAttachment} onClick={() => removeAttachment(attachment.id)} type="button">
+                <X size={16} />
               </button>
-            ) : (
-              <i className="upload-row-spacer" aria-hidden="true" />
-            )}
-            <button aria-label={`${attachment.fileName} 다운로드`} disabled={attachment.status === "uploading"} onClick={() => downloadAttachment(attachment)} type="button">
-              <Download size={16} />
-            </button>
-            <button aria-label={`${attachment.fileName} 삭제`} disabled={!canUploadAttachment} onClick={() => removeAttachment(attachment.id)} type="button">
-              <X size={16} />
-            </button>
-          </div>
-        ))}
+            </div>
+          );
+        })}
       </div>
 
       <div className="payment-field full">
         <label>요청 사유 *</label>
         <textarea
           aria-label="요청 사유 입력"
-          aria-invalid={Boolean(fieldErrors.reason)}
           className="reason-box textarea-field"
           disabled={!canEditRequest}
           maxLength={500}
@@ -4959,7 +4547,6 @@ function PaymentRequestInfoPanel({ currentUser, onClose, table }: { currentUser:
           value={draft.reason}
         />
         <small className="field-count">{draft.reason.length} / 500</small>
-        {fieldErrors.reason && <small className="field-error-text">{fieldErrors.reason}</small>}
       </div>
 
       <section className="budget-check-card">
@@ -5003,30 +4590,41 @@ function PaymentRequestInfoPanel({ currentUser, onClose, table }: { currentUser:
             </div>
           ))}
         </div>
-        {fieldErrors.approvalLine && <small className="field-error-text">{fieldErrors.approvalLine}</small>}
       </section>
 
       <footer className="payment-info-actions">
         <button disabled={table.isMutating || !canEditRequest} onClick={saveDraft} type="button">임시 저장</button>
         <button className="submit" disabled={table.isMutating || !row || !canSubmitRequest || !canSubmitPayment(status)} onClick={submitRequest} type="button">제출</button>
       </footer>
+      {lightboxIndex >= 0 && (
+        <ImageLightbox
+          items={previewFiles}
+          index={lightboxIndex}
+          onIndexChange={(nextIndex) => setLightboxId(previewFiles[nextIndex]?.id ?? null)}
+          onClose={() => setLightboxId(null)}
+        />
+      )}
     </aside>
   );
 }
 
+const approvalFilterColumns = [{ key: "요청일", kind: "month" as const }, { key: "부서" }];
+
 function ApprovalBody({ currentUser, page, searchQuery }: { currentUser: AuthUser; page: PageDefinition; searchQuery: string }) {
   const [myRequestsOnly, setMyRequestsOnly] = useState(false);
-  const [detailOpen, setDetailOpen] = useState(true);
-  const routeState = readFavoriteRouteState("approval");
-  const routeFilterKey = JSON.stringify(routeState.filters);
-  const approvalFilters = useMemo(
-    () => ({
-      ...routeState.filters,
-      ...(myRequestsOnly ? { 결재선: currentUser.name } : {}),
-    }),
-    [currentUser.name, myRequestsOnly, routeFilterKey],
+  const filters = useToolbarFilters([
+    { key: "요청일", clearValue: "전체 기간" },
+    { key: "부서", clearValue: "전체 부서" },
+  ]);
+  const combinedFilters = useMemo(
+    () => ({ ...filters.extraFilters, ...(myRequestsOnly ? { 결재선: currentUser.name } : {}) }),
+    [filters.extraFilters, myRequestsOnly, currentUser.name],
   );
-  const table = useManagedTable("approval", searchQuery, approvalFilters);
+  const table = useManagedTable("approval", searchQuery, combinedFilters, { autoSelectFirstRow: false });
+  const universe = useFilterUniverse(table.rows, approvalFilterColumns);
+  const periodOptions = ["전체 기간", ...(universe.요청일 ?? [])];
+  const departmentOptions = ["전체 부서", ...(universe.부서 ?? [])];
+  const detailOpen = useDetailOpen(table.selectedCount > 0);
   const toggleMyRequests = () => {
     setMyRequestsOnly((current) => {
       const next = !current;
@@ -5036,25 +4634,26 @@ function ApprovalBody({ currentUser, page, searchQuery }: { currentUser: AuthUse
   };
 
   return (
-    <div className="approval-management-page">
+    <div className={detailOpen ? "approval-management-page" : "approval-management-page detail-hidden"}>
       <section className="approval-main-column">
         <ApprovalToolbar
           currentUser={currentUser}
           myRequestsOnly={myRequestsOnly}
           onToggleMyRequests={toggleMyRequests}
           table={table}
+          filters={filters}
+          periodOptions={periodOptions}
+          departmentOptions={departmentOptions}
         />
         <section className="kpi-row approval-kpis">
           {page.kpis.map((kpi) => (
             <KpiCard item={kpi} key={kpi.label} />
           ))}
         </section>
-        <ApprovalRequestTable page={page} table={table} onOpenDetail={() => setDetailOpen(true)} />
+        <ApprovalRequestTable page={page} table={table} onOpenDetail={() => undefined} />
       </section>
-      {detailOpen ? (
-        <ApprovalDetailPanel currentUser={currentUser} table={table} onClose={() => setDetailOpen(false)} />
-      ) : (
-        <ClosedDetailPanel title="승인 상세" onOpen={() => setDetailOpen(true)} />
+      {detailOpen && (
+        <ApprovalDetailPanel currentUser={currentUser} table={table} onClose={table.clearSelection} />
       )}
     </div>
   );
@@ -5065,24 +4664,27 @@ function ApprovalToolbar({
   myRequestsOnly,
   onToggleMyRequests,
   table,
+  filters,
+  periodOptions,
+  departmentOptions,
 }: {
   currentUser: AuthUser;
   myRequestsOnly: boolean;
   onToggleMyRequests: () => void;
   table: TableController;
+  filters: ReturnType<typeof useToolbarFilters>;
+  periodOptions: string[];
+  departmentOptions: string[];
 }) {
   const [filterOpen, setFilterOpen] = useState(false);
-  const [periodIndex, setPeriodIndex] = useState(0);
-  const [departmentIndex, setDepartmentIndex] = useState(0);
-  const periodOptions = ["2024-05-01 ~ 2024-05-31", "2024-06-01 ~ 2024-06-30", "오늘 마감"];
-  const departmentOptions = ["전체 부서", ...paymentDepartmentOptions.slice(0, 5)];
+  const statusOptions = filterOptionsByPage.approval ?? defaultStatusOptions;
   const canActApproval = canUseAction(currentUser, "approval:act");
   const approvableRows = table.selectedRows.filter((row) => canCurrentUserProcessApproval(row, currentUser));
   const approveSelectedRows = () => {
     const skippedCount = Math.max(0, table.selectedRows.length - approvableRows.length);
     table.updateSelectedRows(
       (row) => withApprovalMutationGuards(row, getApprovalApprovePatch(row, currentUser), "approve"),
-      `${approvableRows.length}건 일괄 승인 요청 완료 · 제외 ${skippedCount}건은 권한/순서/상태 미충족 · 성공 건 감사 로그 기록`,
+      `${approvableRows.length}건 일괄 승인 완료 · 대상 미리보기 ${table.selectedRows.length}건 · 부분 실패 ${skippedCount}건 · 감사 로그 기록`,
       (row) => canCurrentUserProcessApproval(row, currentUser),
     );
   };
@@ -5091,12 +4693,12 @@ function ApprovalToolbar({
     table.setActionMessage("현재 승인 목록과 결재 이력 CSV 다운로드를 시작했습니다.");
   };
   const handleApplyFilter = () => {
-    table.setActionMessage(`${periodOptions[periodIndex]}, ${departmentOptions[departmentIndex]}, ${table.statusFilter} 승인 필터를 적용했습니다.`);
+    const active = [filters.values.요청일, filters.values.부서, table.statusFilter].filter((value) => value && !value.startsWith("전체"));
+    table.setActionMessage(active.length > 0 ? `승인 필터 적용: ${active.join(", ")}` : "승인 필터를 모두 해제했습니다.");
     setFilterOpen(false);
   };
   const handleResetFilter = () => {
-    setPeriodIndex(0);
-    setDepartmentIndex(0);
+    filters.reset();
     table.setStatusFilter("전체 상태");
     table.setActionMessage("승인 상세 필터를 초기화했습니다.");
   };
@@ -5104,18 +4706,9 @@ function ApprovalToolbar({
   return (
     <div className="approval-toolbar">
       <div className="approval-filter-group">
-        <button className="approval-filter date" onClick={() => setPeriodIndex((current) => (current + 1) % periodOptions.length)} type="button">
-          {periodOptions[periodIndex]}
-          <Calendar size={18} />
-        </button>
-        <button className="approval-filter" onClick={table.cycleStatusFilter} type="button">
-          {table.statusFilter}
-          <ChevronDown size={16} />
-        </button>
-        <button className="approval-filter" onClick={() => setDepartmentIndex((current) => (current + 1) % departmentOptions.length)} type="button">
-          {departmentOptions[departmentIndex]}
-          <ChevronDown size={16} />
-        </button>
+        <FilterDropdown ariaLabel="기간" triggerClassName="approval-filter date" value={filters.values.요청일} options={periodOptions} onChange={(value) => filters.setValue("요청일", value)} icon={<Calendar size={18} />} />
+        <FilterDropdown ariaLabel="상태" triggerClassName="approval-filter" value={table.statusFilter} options={statusOptions} onChange={table.setStatusFilter} />
+        <FilterDropdown ariaLabel="부서" triggerClassName="approval-filter" value={filters.values.부서} options={departmentOptions} onChange={(value) => filters.setValue("부서", value)} />
         <button className="approval-filter compact" onClick={() => setFilterOpen((current) => !current)} type="button">
           <Filter size={18} />
           필터
@@ -5135,9 +4728,11 @@ function ApprovalToolbar({
         <DetailFilterPanel
           title="승인 목록 필터"
           fields={[
-            { label: "기간", value: periodOptions[periodIndex] },
-            { label: "부서", value: departmentOptions[departmentIndex] },
-            { label: "상태", value: table.statusFilter },
+            ...filters.panelFields([
+              { key: "요청일", label: "기간", options: periodOptions },
+              { key: "부서", label: "부서", options: departmentOptions },
+            ]),
+            { label: "상태", value: table.statusFilter, options: statusOptions, onChange: table.setStatusFilter },
             { label: "범위", value: myRequestsOnly ? "내 요청" : "전체 요청" },
           ]}
           onApply={handleApplyFilter}
@@ -5216,10 +4811,7 @@ function ApprovalRequestTable({ onOpenDetail, page, table }: { page: PageDefinit
           )}
           <button onClick={table.nextPage} type="button">›</button>
         </div>
-        <button className="rows-select" onClick={table.cyclePageSize} type="button">
-          {table.pageSize} 건씩
-          <ChevronDown size={15} />
-        </button>
+        <RowsPerPageSelect pageSize={table.pageSize} onChange={table.setPageSize} />
       </footer>
     </section>
   );
@@ -5311,7 +4903,7 @@ function ApprovalDetailPanel({ currentUser, onClose, table }: { currentUser: Aut
           <dt>처리기한</dt>
           <dd className="deadline-red">{row?.처리기한 ?? "2024-06-01"}</dd>
           <dt>요청 사유</dt>
-          <dd>{row?.["요청 사유"] ?? `${row?.거래처 ?? "이노베이션(주)"} 결제 승인 요청`}</dd>
+          <dd>{row?.거래처 ?? "이노베이션(주)"} 결제 승인 요청</dd>
           {row?.["처리 사유"] && (
             <>
               <dt>처리 사유</dt>
@@ -5380,67 +4972,65 @@ function ApprovalDetailPanel({ currentUser, onClose, table }: { currentUser: Aut
   );
 }
 
+const disbursementFilterColumns = [{ key: "지급예정일", kind: "month" as const }, { key: "은행" }];
+
 function DisbursementBody({ currentUser, page, searchQuery }: { currentUser: AuthUser; page: PageDefinition; searchQuery: string }) {
-  const routeState = readFavoriteRouteState("disbursement");
-  const routeFilterKey = JSON.stringify(routeState.filters);
-  const disbursementFilters = useMemo(() => ({ ...routeState.filters }), [routeFilterKey]);
-  const table = useManagedTable("disbursement", searchQuery, disbursementFilters);
-  const [detailOpen, setDetailOpen] = useState(true);
+  const filters = useToolbarFilters([
+    { key: "지급예정일", clearValue: "전체 기간" },
+    { key: "은행", clearValue: "전체 계좌" },
+  ]);
+  // 첫 행 자동 선택을 끄고, 지급 건을 실제로 선택했을 때만 상세 패널을 표시한다.
+  const table = useManagedTable("disbursement", searchQuery, filters.extraFilters, { autoSelectFirstRow: false });
+  const universe = useFilterUniverse(table.rows, disbursementFilterColumns);
+  const periodOptions = ["전체 기간", ...(universe.지급예정일 ?? [])];
+  const bankOptions = ["전체 계좌", ...(universe.은행 ?? [])];
+  const detailOpen = useDetailOpen(table.selectedCount > 0);
 
   return (
-    <div className="disbursement-management-page">
+    <div className={detailOpen ? "disbursement-management-page" : "disbursement-management-page detail-hidden"}>
       <section className="disbursement-main-column">
-        <DisbursementToolbar currentUser={currentUser} table={table} />
+        <DisbursementToolbar currentUser={currentUser} table={table} filters={filters} periodOptions={periodOptions} bankOptions={bankOptions} />
         <section className="kpi-row disbursement-kpis">
           {page.kpis.map((kpi) => (
             <KpiCard item={kpi} key={kpi.label} />
           ))}
         </section>
         <DisbursementTabs table={table} />
-        <DisbursementTable page={page} table={table} onOpenDetail={() => setDetailOpen(true)} />
+        <DisbursementTable page={page} table={table} onOpenDetail={() => undefined} />
       </section>
-      {detailOpen ? (
-        <DisbursementDetailPanel currentUser={currentUser} table={table} onClose={() => setDetailOpen(false)} />
-      ) : (
-        <ClosedDetailPanel title="지급 상세" onOpen={() => setDetailOpen(true)} />
+      {detailOpen && (
+        <DisbursementDetailPanel currentUser={currentUser} table={table} onClose={table.clearSelection} />
       )}
     </div>
   );
 }
 
-function DisbursementToolbar({ currentUser, table }: { currentUser: AuthUser; table: TableController }) {
+function DisbursementToolbar({ currentUser, table, filters, periodOptions, bankOptions }: { currentUser: AuthUser; table: TableController; filters: ReturnType<typeof useToolbarFilters>; periodOptions: string[]; bankOptions: string[] }) {
   const [filterOpen, setFilterOpen] = useState(false);
-  const [periodIndex, setPeriodIndex] = useState(0);
-  const [bankIndex, setBankIndex] = useState(0);
-  const [departmentIndex, setDepartmentIndex] = useState(0);
-  const periodOptions = ["2024-05-01 ~ 2024-05-31", "2024-06-01 ~ 2024-06-30", "오늘 지급"];
-  const bankOptions = ["전체 계좌", "신한은행", "우리은행", "국민은행", "하나은행"];
-  const departmentOptions = ["전체", ...paymentDepartmentOptions.slice(0, 5)];
+  const statusOptions = filterOptionsByPage.disbursement ?? defaultStatusOptions;
   const canExecutePayment = canUseAction(currentUser, "disbursement:execute");
-  const executableRows = table.selectedRows.filter((row) => canExecuteDisbursementByPolicy(row));
+  const executableRows = table.selectedRows.filter((row) => canExecuteDisbursement(row.지급상태, row.계좌확인));
   const executeSelectedRows = () => {
     const skippedCount = Math.max(0, table.selectedRows.length - executableRows.length);
     table.updateSelectedRows(
       (row) => buildDisbursementExecutePatch(currentUser, row),
       `${executableRows.length}건 일괄 지급 완료 · 지급 대상 확인 ${table.selectedRows.length}건 · 부분 실패 ${skippedCount}건 · 재시도 목록 갱신`,
-      (row) => canExecuteDisbursementByPolicy(row),
+      (row) => canExecuteDisbursement(row.지급상태, row.계좌확인),
     );
   };
   const handleDownload = async () => {
-    const filters: Record<string, string> = {};
-    const [scheduledFrom, scheduledTo] = periodOptions[periodIndex].includes("~")
-      ? periodOptions[periodIndex].split("~").map((value) => value.trim())
-      : ["", ""];
-    if (scheduledFrom) filters.scheduledFrom = scheduledFrom;
-    if (scheduledTo) filters.scheduledTo = scheduledTo;
-    if (!bankOptions[bankIndex].startsWith("전체")) filters.은행 = bankOptions[bankIndex];
-    if (!departmentOptions[departmentIndex].startsWith("전체")) filters.부서 = departmentOptions[departmentIndex];
-    const statusFilter = periodOptions[periodIndex] === "오늘 지급" && table.statusFilter.startsWith("전체") ? "오늘 지급" : table.statusFilter;
-    if (!statusFilter.startsWith("전체")) filters.지급상태 = statusFilter;
+    const exportFilters: Record<string, string> = {};
+    const month = filters.values.지급예정일;
+    if (!month.startsWith("전체") && /^\d{4}-\d{2}$/.test(month)) {
+      exportFilters.scheduledFrom = `${month}-01`;
+      exportFilters.scheduledTo = `${month}-31`;
+    }
+    if (!filters.values.은행.startsWith("전체")) exportFilters.은행 = filters.values.은행;
+    if (!table.statusFilter.startsWith("전체")) exportFilters.지급상태 = table.statusFilter;
 
     table.setActionMessage("DB 승인 상태와 계좌 검증 기준으로 은행 이체 파일을 생성하는 중입니다.");
     try {
-      const response = await erpApi.exportDisbursementBankTransfer({ filters });
+      const response = await erpApi.exportDisbursementBankTransfer({ filters: exportFilters });
       triggerTextDownload(response.data.fileName, `\uFEFF${response.data.csv}`, response.data.contentType);
       const summary = response.data.summary;
       const statusSummary = [
@@ -5455,13 +5045,12 @@ function DisbursementToolbar({ currentUser, table }: { currentUser: AuthUser; ta
     }
   };
   const handleApplyFilter = () => {
-    table.setActionMessage(`${periodOptions[periodIndex]}, ${bankOptions[bankIndex]}, ${departmentOptions[departmentIndex]}, ${table.statusFilter} 지급 필터를 적용했습니다.`);
+    const active = [filters.values.지급예정일, filters.values.은행, table.statusFilter].filter((value) => value && !value.startsWith("전체"));
+    table.setActionMessage(active.length > 0 ? `지급 필터 적용: ${active.join(", ")}` : "지급 필터를 모두 해제했습니다.");
     setFilterOpen(false);
   };
   const handleResetFilter = () => {
-    setPeriodIndex(0);
-    setBankIndex(0);
-    setDepartmentIndex(0);
+    filters.reset();
     table.setStatusFilter("전체");
     table.setActionMessage("지급 상세 필터를 초기화했습니다.");
   };
@@ -5469,25 +5058,9 @@ function DisbursementToolbar({ currentUser, table }: { currentUser: AuthUser; ta
   return (
     <div className="disbursement-toolbar">
       <div className="disbursement-filter-group">
-        <button className="disbursement-filter date" onClick={() => setPeriodIndex((current) => (current + 1) % periodOptions.length)} type="button">
-          {periodOptions[periodIndex]}
-          <Calendar size={18} />
-        </button>
-        <button className="disbursement-select-filter" onClick={() => setBankIndex((current) => (current + 1) % bankOptions.length)} type="button">
-          <span>은행 계좌</span>
-          <b>{bankOptions[bankIndex]}</b>
-          <ChevronDown size={16} />
-        </button>
-        <button className="disbursement-select-filter" onClick={table.cycleStatusFilter} type="button">
-          <span>지급 상태</span>
-          <b>{table.statusFilter}</b>
-          <ChevronDown size={16} />
-        </button>
-        <button className="disbursement-select-filter" onClick={() => setDepartmentIndex((current) => (current + 1) % departmentOptions.length)} type="button">
-          <span>부서</span>
-          <b>{departmentOptions[departmentIndex]}</b>
-          <ChevronDown size={16} />
-        </button>
+        <FilterDropdown ariaLabel="기간" triggerClassName="disbursement-filter date" value={filters.values.지급예정일} options={periodOptions} onChange={(value) => filters.setValue("지급예정일", value)} icon={<Calendar size={18} />} />
+        <FilterDropdown ariaLabel="은행 계좌" triggerClassName="disbursement-select-filter" label="은행 계좌" value={filters.values.은행} options={bankOptions} onChange={(value) => filters.setValue("은행", value)} />
+        <FilterDropdown ariaLabel="지급 상태" triggerClassName="disbursement-select-filter" label="지급 상태" value={table.statusFilter} options={statusOptions} onChange={table.setStatusFilter} />
         <button className="disbursement-filter compact" onClick={() => setFilterOpen((current) => !current)} type="button">
           <Filter size={18} />
           필터
@@ -5506,10 +5079,11 @@ function DisbursementToolbar({ currentUser, table }: { currentUser: AuthUser; ta
         <DetailFilterPanel
           title="지급 목록 필터"
           fields={[
-            { label: "기간", value: periodOptions[periodIndex] },
-            { label: "은행", value: bankOptions[bankIndex] },
-            { label: "부서", value: departmentOptions[departmentIndex] },
-            { label: "상태", value: table.statusFilter },
+            ...filters.panelFields([
+              { key: "지급예정일", label: "기간", options: periodOptions },
+              { key: "은행", label: "은행", options: bankOptions },
+            ]),
+            { label: "상태", value: table.statusFilter, options: statusOptions, onChange: table.setStatusFilter },
           ]}
           onApply={handleApplyFilter}
           onClose={() => setFilterOpen(false)}
@@ -5609,10 +5183,7 @@ function DisbursementTable({ onOpenDetail, page, table }: { page: PageDefinition
           )}
           <button onClick={table.nextPage} type="button">›</button>
         </div>
-        <button className="rows-select" onClick={table.cyclePageSize} type="button">
-          {table.pageSize} 건씩
-          <ChevronDown size={15} />
-        </button>
+        <RowsPerPageSelect pageSize={table.pageSize} onChange={table.setPageSize} />
       </footer>
     </section>
   );
@@ -5630,7 +5201,7 @@ function DisbursementStatusPill({ value }: { value: string }) {
 }
 
 function AccountStatusPill({ value }: { value: string }) {
-  const className = value.includes("불일치") || value.includes("비활성") ? "error" : value.includes("대기") ? "pending" : "complete";
+  const className = value.includes("불일치") ? "error" : value.includes("대기") ? "pending" : "complete";
   return <span className={`account-pill ${className}`}>{value}</span>;
 }
 
@@ -5640,15 +5211,8 @@ function DisbursementDetailPanel({ currentUser, onClose, table }: { currentUser:
   const paymentId = row?.지급번호 ?? "선택 지급";
   const paymentStatus = row?.지급상태 ?? "지급 예정";
   const accountStatus = row?.계좌확인 ?? "확인 완료";
-  const vendorAccountStatus = row?.거래처계좌확인 ?? accountStatus;
-  const canRetryPayment = canRetryDisbursementByPolicy(row);
-  const canExecuteSelectedPayment = canExecuteDisbursementByPolicy(row);
-  const isAccountFullyVerified = accountStatus === "확인 완료" && vendorAccountStatus === "확인 완료";
   const displayedAccount = maskAccountForDisplay(splitVendorBank(row?.은행 ?? "").bankAccount);
   const scheduledDate = row?.지급예정일 ?? "2024-06-03";
-  const schedulePolicy = row?.지급일정정책 ?? "은행 영업일 기준";
-  const nextAvailablePaymentDate = row?.다음지급가능일 ?? "-";
-  const scheduleWarning = row?.지급일정경고 ?? "";
   const scheduledDay = scheduledDate.slice(-2).replace(/^0/, "");
   const [calendarMonth, setCalendarMonth] = useState(6);
   const canExecutePayment = canUseAction(currentUser, "disbursement:execute");
@@ -5670,8 +5234,8 @@ function DisbursementDetailPanel({ currentUser, onClose, table }: { currentUser:
       setDisbursementFeedback("목록에서 지급 건을 먼저 선택해야 합니다.");
       return;
     }
-    if (!canExecuteSelectedPayment) {
-      setDisbursementFeedback(row?.계좌검증사유 ?? "계좌 확인 완료 상태의 지급 예정/오늘 지급/보류 건만 2인 확인할 수 있습니다.");
+    if (!canExecuteDisbursement(paymentStatus, accountStatus)) {
+      setDisbursementFeedback("계좌 확인 완료 상태의 지급 예정/오늘 지급/보류 건만 2인 확인할 수 있습니다.");
       return;
     }
     const idempotencyKey = `disbursement-execution-approval-${paymentId}-${Date.now()}`;
@@ -5694,8 +5258,8 @@ function DisbursementDetailPanel({ currentUser, onClose, table }: { currentUser:
       setDisbursementFeedback("목록에서 지급 건을 먼저 선택해야 합니다.");
       return;
     }
-    if (!canExecuteSelectedPayment) {
-      setDisbursementFeedback(row?.계좌검증사유 ?? "계좌 확인 완료 상태의 지급 예정/오늘 지급/보류 건만 실행할 수 있습니다.");
+    if (!canExecuteDisbursement(paymentStatus, accountStatus)) {
+      setDisbursementFeedback("계좌 확인 완료 상태의 지급 예정/오늘 지급/보류 건만 실행할 수 있습니다.");
       return;
     }
     table.updateSelectedRow(
@@ -5755,8 +5319,8 @@ function DisbursementDetailPanel({ currentUser, onClose, table }: { currentUser:
       setDisbursementFeedback("오류 상태의 지급 건만 재처리할 수 있습니다.");
       return;
     }
-    if (!canRetryPayment) {
-      setDisbursementFeedback(getDisbursementRetryGuide(row));
+    if (accountStatus !== "확인 완료") {
+      setDisbursementFeedback("계좌 재확인 후 재처리할 수 있습니다.");
       return;
     }
     table.updateSelectedRow(
@@ -5846,7 +5410,7 @@ function DisbursementDetailPanel({ currentUser, onClose, table }: { currentUser:
         <header>
           <strong>계좌 정보</strong>
           <AccountStatusPill value={accountStatus} />
-          <button disabled={table.isMutating || isAccountFullyVerified || paymentStatus === "지급 완료"} onClick={recheckAccount} type="button">계좌 재확인</button>
+          <button disabled={table.isMutating || accountStatus === "확인 완료" || paymentStatus === "지급 완료"} onClick={recheckAccount} type="button">계좌 재확인</button>
         </header>
         <dl>
           <dt>은행</dt>
@@ -5857,14 +5421,6 @@ function DisbursementDetailPanel({ currentUser, onClose, table }: { currentUser:
           <dd>{row?.거래처 ?? "이노베이션(주)"}</dd>
           <dt>계좌 일치 여부</dt>
           <dd className="match">{row?.계좌확인?.includes("불일치") ? "불일치" : "일치"}</dd>
-          <dt>거래처 계좌</dt>
-          <dd>{vendorAccountStatus}</dd>
-          <dt>검증 코드</dt>
-          <dd>{row?.계좌검증코드 ?? "-"}</dd>
-          <dt>검증 사유</dt>
-          <dd>{row?.계좌검증사유 ?? "-"}</dd>
-          <dt>검증 adapter</dt>
-          <dd>{row?.계좌검증Adapter ?? "-"}</dd>
         </dl>
       </section>
 
@@ -5908,12 +5464,6 @@ function DisbursementDetailPanel({ currentUser, onClose, table }: { currentUser:
           ))}
         </div>
         <dl>
-          <dt>정책</dt>
-          <dd>{schedulePolicy}</dd>
-          <dt>다음 가능일</dt>
-          <dd>{nextAvailablePaymentDate}</dd>
-          <dt>업무일 판정</dt>
-          <dd>{row?.지급예정일업무일 ?? "확인 전"}</dd>
           <dt>예정일</dt>
           <dd>
             <input
@@ -5925,7 +5475,7 @@ function DisbursementDetailPanel({ currentUser, onClose, table }: { currentUser:
             />
           </dd>
           <dt>지급 메모</dt>
-          <dd>{scheduleWarning || row?.["지급 보류 사유"] || (paymentStatus === "보류" ? "지급 보류 처리됨" : "-")}</dd>
+          <dd>{row?.["지급 보류 사유"] ?? (paymentStatus === "보류" ? "지급 보류 처리됨" : "-")}</dd>
         </dl>
       </section>
 
@@ -5951,10 +5501,10 @@ function DisbursementDetailPanel({ currentUser, onClose, table }: { currentUser:
       </div>
 
       <footer className="disbursement-detail-actions">
-        <button disabled={table.isMutating || !canExecutePayment || !canExecuteSelectedPayment} onClick={approveExecution} type="button">2인 확인</button>
-        <button className="execute" disabled={table.isMutating || !canExecutePayment || !canExecuteSelectedPayment} onClick={executeDisbursement} type="button">지급 실행</button>
+        <button disabled={table.isMutating || !canExecutePayment || !canExecuteDisbursement(paymentStatus, accountStatus)} onClick={approveExecution} type="button">2인 확인</button>
+        <button className="execute" disabled={table.isMutating || !canExecutePayment || !canExecuteDisbursement(paymentStatus, accountStatus)} onClick={executeDisbursement} type="button">지급 실행</button>
         <button disabled={table.isMutating || !canHoldPayment || !canHoldDisbursement(paymentStatus)} onClick={holdDisbursement} type="button">보류</button>
-        <button disabled={table.isMutating || paymentStatus !== "오류" || !canRetryPayment} onClick={retryDisbursement} type="button">재처리</button>
+        <button disabled={table.isMutating || paymentStatus !== "오류"} onClick={retryDisbursement} type="button">재처리</button>
         <button disabled={table.isMutating || !canExecutePayment || paymentStatus !== "지급 완료"} onClick={reconcileBankResult} type="button">결과 대사</button>
         <button onClick={onClose} type="button">닫기</button>
       </footer>
@@ -5973,14 +5523,15 @@ function BudgetBody({ page }: { page: PageDefinition }) {
   const [departmentFilter, setDepartmentFilter] = useState(favoriteState.filters.부서 ?? "전체 부서");
   const [categoryFilter, setCategoryFilter] = useState(favoriteState.filters.예산항목 ?? "전체 예산 항목");
   const [statusFilter, setStatusFilter] = useState(favoriteState.statusFilter && statusOptions.includes(favoriteState.statusFilter) ? favoriteState.statusFilter : "전체 상태");
-  const [selectedDepartment, setSelectedDepartment] = useState(favoriteState.filters.부서 && favoriteState.filters.부서 !== "전체 부서" ? favoriteState.filters.부서 : "마케팅팀");
+  // 부서를 선택할 때만 상세를 표시한다(기본값 없이 시작).
+  const [selectedDepartment, setSelectedDepartment] = useState(favoriteState.filters.부서 && favoriteState.filters.부서 !== "전체 부서" ? favoriteState.filters.부서 : "");
+  const detailOpen = useDetailOpen(Boolean(selectedDepartment));
   const [adjustmentHistory, setAdjustmentHistory] = useState<TableRow[]>([]);
   const [budgetMessage, setBudgetMessage] = useState("");
   const [adjustFormOpen, setAdjustFormOpen] = useState(false);
   const [isAdjusting, setIsAdjusting] = useState(false);
   const [adjustAmount, setAdjustAmount] = useState("50000000");
   const [adjustReason, setAdjustReason] = useState("연간 운영비 증액");
-  const [detailOpen, setDetailOpen] = useState(true);
   const [viewMode, setViewMode] = useState<"table" | "card">("table");
   const periodLabel = periodOptions[periodIndex];
   const fiscalYearFilter = periodLabel.match(/\d{4}/)?.[0] ?? "";
@@ -5994,11 +5545,18 @@ function BudgetBody({ page }: { page: PageDefinition }) {
     [categoryFilter, departmentFilter, fiscalYearFilter, statusFilter],
   );
   const table = useManagedTable("budget", "", budgetQueryFilters);
-  const budgetSourceRows = table.rows;
+  const budgetSourceRows = table.rows.length > 0 ? table.rows : page.tableRows;
   const optionSourceRows = useMemo(() => [...page.tableRows, ...budgetSourceRows], [budgetSourceRows, page.tableRows]);
   const departmentOptions = ["전체 부서", ...Array.from(new Set(optionSourceRows.map((row) => row.부서).filter(Boolean)))];
-  const filteredRows = budgetSourceRows;
+  const filteredRows = budgetSourceRows.filter((row) => {
+    const matchesDepartment = departmentFilter === "전체 부서" || row.부서 === departmentFilter;
+    const matchesCategory = categoryFilter === "전체 예산 항목" || (row.예산항목 ?? "").includes(categoryFilter);
+    const matchesPeriod = !fiscalYearFilter || !row.회계연도 || row.회계연도 === fiscalYearFilter;
+    const matchesStatus = statusFilter === "전체 상태" || row.상태 === statusFilter;
+    return matchesDepartment && matchesCategory && matchesPeriod && matchesStatus;
+  });
   const selectedRow = budgetSourceRows.find((row) => row.부서 === selectedDepartment) ?? budgetSourceRows[0];
+  const adjustmentHistoryItems = adjustmentHistory.map(formatBudgetAdjustmentHistory);
 
   useEffect(() => {
     let ignore = false;
@@ -6051,32 +5609,6 @@ function BudgetBody({ page }: { page: PageDefinition }) {
       setIsAdjusting(false);
     }
   };
-  const updateBudgetAdjustmentStatus = async (adjustment: TableRow, action: "cancel" | "reject") => {
-    const adjustmentId = adjustment.조정ID;
-    if (!adjustmentId) {
-      setBudgetMessage("예산 조정 ID를 확인할 수 없습니다.");
-      return;
-    }
-    if (adjustment[action === "cancel" ? "취소가능" : "반려가능"] !== "가능") {
-      setBudgetMessage(adjustment.원장반영방식 || "이미 종료되었거나 원장에 반영된 조정 요청입니다.");
-      return;
-    }
-    const actionLabel = action === "cancel" ? "취소" : "반려";
-    setIsAdjusting(true);
-    try {
-      const response = await erpApi.updateBudgetAdjustment(adjustment.부서 || selectedDepartment, adjustmentId, action, {
-        reason: `예산 조정 ${actionLabel}`,
-        idempotencyKey: `budget-adjustment-${action}-${adjustmentId}-${Date.now()}`,
-      });
-      setAdjustmentHistory((current) => [response.data.adjustment, ...current.filter((row) => row.조정ID !== adjustmentId)].slice(0, 50));
-      table.refresh();
-      setBudgetMessage(`${adjustment.부서 || selectedDepartment} 예산 조정 ${actionLabel} 완료 · ${response.data.rollbackPolicy}`);
-    } catch (error) {
-      setBudgetMessage(error instanceof Error ? error.message : `예산 조정 ${actionLabel}을 처리하지 못했습니다.`);
-    } finally {
-      setIsAdjusting(false);
-    }
-  };
   const resetBudgetFilters = () => {
     setPeriodIndex(0);
     setDepartmentFilter(departmentOptions[0]);
@@ -6086,7 +5618,7 @@ function BudgetBody({ page }: { page: PageDefinition }) {
   };
 
   return (
-    <div className="budget-management-page management-page">
+    <div className={detailOpen ? "budget-management-page management-page" : "budget-management-page management-page detail-hidden"}>
       <section className="management-main-column">
         <BudgetToolbar
           categoryFilter={categoryFilter}
@@ -6113,6 +5645,12 @@ function BudgetBody({ page }: { page: PageDefinition }) {
             setBudgetMessage(`예산 목록 보기를 ${viewMode === "table" ? "카드" : "표"} 보기로 전환했습니다.`);
           }}
           periodLabel={periodLabel}
+          periodOptions={periodOptions}
+          statusOptions={statusOptions}
+          onSetPeriod={(value) => { const index = periodOptions.indexOf(value); if (index >= 0) setPeriodIndex(index); }}
+          onSetDepartment={(value) => { setDepartmentFilter(value); if (value !== "전체 부서") setSelectedDepartment(value); }}
+          onSetCategory={setCategoryFilter}
+          onSetStatus={setStatusFilter}
           rows={filteredRows}
           statusFilter={statusFilter}
           viewMode={viewMode}
@@ -6143,26 +5681,14 @@ function BudgetBody({ page }: { page: PageDefinition }) {
             rows={filteredRows}
             selectedDepartment={selectedDepartment}
             viewMode={viewMode}
-            onSelectDepartment={(department) => {
-              setSelectedDepartment(department);
-              setDetailOpen(true);
-            }}
+            onSelectDepartment={(department) => setSelectedDepartment(department)}
           />
           <BudgetCategoryChart categoryFilter={categoryFilter} rows={filteredRows} />
         </div>
         <BudgetWarningItems rows={filteredRows} />
       </section>
-      {detailOpen ? (
-        <BudgetDetailPanel
-          adjustmentHistory={adjustmentHistory}
-          isAdjusting={isAdjusting}
-          onClose={() => setDetailOpen(false)}
-          onUpdateAdjustment={updateBudgetAdjustmentStatus}
-          periodLabel={periodLabel}
-          row={selectedRow}
-        />
-      ) : (
-        <ClosedDetailPanel title="예산 상세" onOpen={() => setDetailOpen(true)} />
+      {detailOpen && (
+        <BudgetDetailPanel adjustmentHistory={adjustmentHistoryItems} periodLabel={periodLabel} row={selectedRow} onClose={() => setSelectedDepartment("")} />
       )}
     </div>
   );
@@ -6170,7 +5696,9 @@ function BudgetBody({ page }: { page: PageDefinition }) {
 
 function BudgetToolbar({
   categoryFilter,
+  categoryOptions,
   departmentFilter,
+  departmentOptions,
   onAdjust,
   onCycleCategory,
   onCycleDepartment,
@@ -6181,6 +5709,12 @@ function BudgetToolbar({
   onResetFilters,
   onToggleView,
   periodLabel,
+  periodOptions,
+  statusOptions,
+  onSetPeriod,
+  onSetDepartment,
+  onSetCategory,
+  onSetStatus,
   rows,
   statusFilter,
   viewMode,
@@ -6199,6 +5733,12 @@ function BudgetToolbar({
   onResetFilters: () => void;
   onToggleView: () => void;
   periodLabel: string;
+  periodOptions: string[];
+  statusOptions: string[];
+  onSetPeriod: (value: string) => void;
+  onSetDepartment: (value: string) => void;
+  onSetCategory: (value: string) => void;
+  onSetStatus: (value: string) => void;
   rows: TableRow[];
   statusFilter: string;
   viewMode: string;
@@ -6211,22 +5751,10 @@ function BudgetToolbar({
   return (
     <div className="management-toolbar budget-toolbar">
       <div className="management-filter-group budget-filter-group">
-        <button className="management-filter date" onClick={onCyclePeriod} type="button">
-          {periodLabel}
-          <Calendar size={18} />
-        </button>
-        <button className="management-filter" onClick={onCycleDepartment} type="button">
-          {departmentFilter}
-          <ChevronDown size={16} />
-        </button>
-        <button className="management-filter" onClick={onCycleCategory} type="button">
-          {categoryFilter}
-          <ChevronDown size={16} />
-        </button>
-        <button className="management-filter" onClick={onCycleStatus} type="button">
-          {statusFilter}
-          <ChevronDown size={16} />
-        </button>
+        <FilterDropdown ariaLabel="기간" triggerClassName="management-filter date" value={periodLabel} options={periodOptions} onChange={onSetPeriod} icon={<Calendar size={18} />} />
+        <FilterDropdown ariaLabel="부서" triggerClassName="management-filter" value={departmentFilter} options={departmentOptions} onChange={onSetDepartment} />
+        <FilterDropdown ariaLabel="예산 항목" triggerClassName="management-filter" value={categoryFilter} options={categoryOptions} onChange={onSetCategory} />
+        <FilterDropdown ariaLabel="상태" triggerClassName="management-filter" value={statusFilter} options={statusOptions} onChange={onSetStatus} />
         <button className="management-filter compact" onClick={() => setFilterOpen((current) => !current)} type="button">
           <Filter size={18} />
           필터
@@ -6245,10 +5773,10 @@ function BudgetToolbar({
         <DetailFilterPanel
           title="예산 상세 필터"
           fields={[
-            { label: "기간", value: periodLabel },
-            { label: "부서", value: departmentFilter },
-            { label: "항목", value: categoryFilter },
-            { label: "상태", value: statusFilter },
+            { label: "기간", value: periodLabel, options: periodOptions, onChange: onSetPeriod },
+            { label: "부서", value: departmentFilter, options: departmentOptions, onChange: onSetDepartment },
+            { label: "항목", value: categoryFilter, options: categoryOptions, onChange: onSetCategory },
+            { label: "상태", value: statusFilter, options: statusOptions, onChange: onSetStatus },
             { label: "표시", value: `${rows.length}개 · ${viewMode}` },
           ]}
           onApply={applyFilters}
@@ -6335,7 +5863,7 @@ function BudgetUsageTable({
           ))}
           <button onClick={() => setPage((current) => Math.min(pageCount, current + 1))} type="button">›</button>
         </div>
-        <button className="rows-select" onClick={() => setPageSize((current) => (current === 10 ? 5 : 10))} type="button">{pageSize} 개씩</button>
+        <RowsPerPageSelect pageSize={pageSize} onChange={setPageSize} unit="개씩" />
       </footer>
     </section>
   );
@@ -6431,21 +5959,7 @@ function BudgetWarningItems({ rows }: { rows: TableRow[] }) {
   );
 }
 
-function BudgetDetailPanel({
-  adjustmentHistory,
-  isAdjusting,
-  onClose,
-  onUpdateAdjustment,
-  periodLabel,
-  row,
-}: {
-  adjustmentHistory: TableRow[];
-  isAdjusting: boolean;
-  onClose: () => void;
-  onUpdateAdjustment: (adjustment: TableRow, action: "cancel" | "reject") => void;
-  periodLabel: string;
-  row?: TableRow;
-}) {
+function BudgetDetailPanel({ adjustmentHistory, onClose, periodLabel, row }: { adjustmentHistory: string[]; onClose: () => void; periodLabel: string; row?: TableRow }) {
   const isEmpty = !row;
   const selected = row ?? emptyBudgetDetailRow;
   const relatedRequests = isEmpty ? [] : getBudgetRelatedRequests(selected.부서);
@@ -6453,7 +5967,7 @@ function BudgetDetailPanel({
   const [showAllRequests, setShowAllRequests] = useState(false);
   const [showAllHistory, setShowAllHistory] = useState(false);
   const visibleRequests = showAllRequests ? relatedRequests : relatedRequests.slice(0, 3);
-  const historyItems = adjustmentHistory.length > 0 ? adjustmentHistory : [];
+  const historyItems = adjustmentHistory.length > 0 ? adjustmentHistory : ["2024-01-01 연간 예산 최초 배정"];
   const visibleHistory = showAllHistory ? historyItems : historyItems.slice(0, 4);
   return (
     <aside className="management-detail-panel budget-detail-panel" aria-label="선택 부서 상세">
@@ -6503,18 +6017,8 @@ function BudgetDetailPanel({
       </section>
       <section className="panel-card budget-history-card">
         <strong>예산 조정 이력</strong>
-        {visibleHistory.length === 0 && <small>2024-01-01 연간 예산 최초 배정</small>}
         {visibleHistory.map((item) => (
-          <article className="budget-history-item" key={item.조정ID || formatBudgetAdjustmentHistory(item)}>
-            <small>{formatBudgetAdjustmentHistory(item)}</small>
-            {item.원장반영방식 && <small>{item.원장반영방식}</small>}
-            {item.상태 === "승인 대기" && (
-              <div className="budget-history-actions">
-                <button disabled={isAdjusting || item.취소가능 !== "가능"} onClick={() => onUpdateAdjustment(item, "cancel")} type="button">취소</button>
-                <button disabled={isAdjusting || item.반려가능 !== "가능"} onClick={() => onUpdateAdjustment(item, "reject")} type="button">반려</button>
-              </div>
-            )}
-          </article>
+          <small key={item}>{item}</small>
         ))}
       </section>
       <button className="wide-card-link panel-bottom-link" onClick={() => setShowAllHistory((current) => !current)} type="button">
@@ -6531,19 +6035,15 @@ function VendorBody({ page }: { page: PageDefinition }) {
   const typeOptions = ["전체 구분", "법인", "개인/소상공", "일반"];
   const favoriteState = readFavoriteRouteState("vendors");
   const [vendors, setVendors] = useState<TableRow[]>(() => vendorRows.map((row) => ({ ...row })));
-  const [selectedVendorName, setSelectedVendorName] = useState(vendorRows[0]?.거래처명 ?? "");
+  // 거래처를 선택할 때만 상세를 표시한다(기본 선택 없이 시작).
+  const [selectedVendorName, setSelectedVendorName] = useState("");
   const [statusFilter, setStatusFilter] = useState(favoriteState.statusFilter && statusOptions.includes(favoriteState.statusFilter) ? favoriteState.statusFilter : statusOptions[0]);
   const [accountFilter, setAccountFilter] = useState(favoriteState.filters.계좌확인 && accountOptions.includes(favoriteState.filters.계좌확인) ? favoriteState.filters.계좌확인 : accountOptions[0]);
   const [typeFilter, setTypeFilter] = useState(favoriteState.filters.구분 && typeOptions.includes(favoriteState.filters.구분) ? favoriteState.filters.구분 : typeOptions[0]);
   const [searchTerm, setSearchTerm] = useState(favoriteState.filters.검색어 ?? favoriteState.filters.거래처명 ?? "");
   const [vendorMessage, setVendorMessage] = useState("");
-  const [detailOpen, setDetailOpen] = useState(true);
   const [isVendorLoading, setIsVendorLoading] = useState(false);
   const [vendorRefreshVersion, setVendorRefreshVersion] = useState(0);
-  const [vendorPage, setVendorPage] = useState(1);
-  const [vendorPageSize, setVendorPageSize] = useState(10);
-  const [vendorTotal, setVendorTotal] = useState(vendorRows.length);
-  const [vendorSummary, setVendorSummary] = useState({ registered: 0, pending: 0, verified: 0, inactive: 0 });
   const [pendingVendorNames, setPendingVendorNames] = useState<Set<string>>(new Set());
   const [pendingVendorUploadFiles, setPendingVendorUploadFiles] = useState<Record<string, File[]>>({});
   const [vendorDocuments, setVendorDocuments] = useState<Record<string, VendorDocument[]>>({});
@@ -6552,70 +6052,25 @@ function VendorBody({ page }: { page: PageDefinition }) {
     requests: [],
   });
   const vendorMutationInFlightRef = useRef(false);
-  const pendingVendorUploadFilesRef = useRef<Record<string, File>>({});
 
   useEffect(() => {
     let active = true;
     setIsVendorLoading(true);
-    const filters: Record<string, string> = {};
-    if (statusFilter !== "전체 상태") filters.상태 = statusFilter;
-    if (accountFilter !== "전체 계좌") filters.계좌확인 = accountFilter;
-    if (typeFilter !== "전체 구분") filters.구분 = typeFilter;
-    erpApi.listPageRows("vendors", {
-      page: vendorPage,
-      pageSize: vendorPageSize,
-      search: searchTerm.trim(),
-      filters,
-      sort: encodeSort("거래처명", "asc"),
-    })
+    erpApi.listPageRows("vendors", { page: 1, pageSize: 100, sort: encodeSort("거래처명", "asc") })
       .then((response) => {
         if (!active) return;
-        const rows = response.data.rows;
+        const rows = response.data.rows.length > 0 ? response.data.rows : vendorRows.map((row) => ({ ...row }));
         setVendors(rows);
-        setVendorTotal(response.data.total);
-        setSelectedVendorName((current) => (rows.some((row) => row.거래처명 === current) ? current : rows[0]?.거래처명 ?? ""));
+        setSelectedVendorName((current) => (rows.some((row) => row.거래처명 === current) ? current : ""));
       })
       .catch((error: unknown) => {
         if (!active) return;
-        setVendors([]);
-        setVendorTotal(0);
-        setSelectedVendorName("");
-        setVendorMessage(`거래처 목록을 API에서 불러오지 못했습니다. ${error instanceof Error ? error.message : "요청을 처리하지 못했습니다."}`);
+        setVendorMessage(`거래처 목록을 API에서 불러오지 못했습니다. ${error instanceof Error ? error.message : "로컬 기본 데이터로 표시합니다."}`);
       })
       .finally(() => {
         if (active) setIsVendorLoading(false);
       });
 
-    return () => {
-      active = false;
-    };
-  }, [accountFilter, searchTerm, statusFilter, typeFilter, vendorPage, vendorPageSize, vendorRefreshVersion]);
-
-  useEffect(() => {
-    setVendorPage(1);
-  }, [accountFilter, searchTerm, statusFilter, typeFilter]);
-
-  useEffect(() => {
-    let active = true;
-    Promise.all([
-      erpApi.listPageRows("vendors", { page: 1, pageSize: 1 }),
-      erpApi.listPageRows("vendors", { page: 1, pageSize: 1, filters: { 계좌확인: "검증 대기" } }),
-      erpApi.listPageRows("vendors", { page: 1, pageSize: 1, filters: { 계좌확인: "확인 완료" } }),
-      erpApi.listPageRows("vendors", { page: 1, pageSize: 1, filters: { 상태: "비활성" } }),
-    ])
-      .then(([registered, pending, verified, inactive]) => {
-        if (!active) return;
-        setVendorSummary({
-          registered: registered.data.total,
-          pending: pending.data.total,
-          verified: verified.data.total,
-          inactive: inactive.data.total,
-        });
-      })
-      .catch((error: unknown) => {
-        if (!active) return;
-        setVendorMessage((current) => current || `거래처 요약 집계 실패: ${error instanceof Error ? error.message : "집계 데이터를 불러오지 못했습니다."}`);
-      });
     return () => {
       active = false;
     };
@@ -6635,14 +6090,24 @@ function VendorBody({ page }: { page: PageDefinition }) {
         });
         const failures = [disbursementResult, requestResult].filter((result) => result.status === "rejected");
         if (failures.length > 0) setVendorMessage("일부 거래처 지급/요청 이력은 권한 또는 API 오류로 표시하지 못했습니다.");
-      });
+      })
     return () => {
       active = false;
     };
   }, [vendorRefreshVersion]);
 
-  const filteredVendors = vendors;
+  const filteredVendors = vendors.filter((vendor) => {
+    const keyword = searchTerm.trim().toLowerCase();
+    const matchesSearch =
+      keyword.length === 0 ||
+      [vendor.거래처명, vendor.사업자번호, vendor.담당자, vendor.은행].some((value) => (value ?? "").toLowerCase().includes(keyword));
+    const matchesStatus = statusFilter === "전체 상태" || vendor.상태 === statusFilter;
+    const matchesAccount = accountFilter === "전체 계좌" || vendor.계좌확인 === accountFilter;
+    const matchesType = typeFilter === "전체 구분" || getVendorBusinessType(vendor.거래처명) === typeFilter;
+    return matchesSearch && matchesStatus && matchesAccount && matchesType;
+  });
   const selectedVendor = vendors.find((vendor) => vendor.거래처명 === selectedVendorName) ?? filteredVendors[0] ?? vendors[0];
+  const detailOpen = useDetailOpen(Boolean(selectedVendorName));
   const selectedVendorKey = selectedVendor?.거래처명 ?? "";
   const selectedVendorBusinessNumber = selectedVendor?.사업자번호 ?? "";
   const selectedVendorIsPending = selectedVendorKey ? pendingVendorNames.has(selectedVendorKey) : false;
@@ -6657,30 +6122,13 @@ function VendorBody({ page }: { page: PageDefinition }) {
       .then((response) => {
         if (!active) return;
         const syncedDocuments = response.data.map((file) => toStoredVendorDocument(file));
-        const recoveredDocuments = readUploadRecovery("VENDOR", selectedVendorKey).map((attachment) => ({
-          ...attachment,
-          category: getVendorDocumentCategory(attachment.fileName),
-          uploadedAt: getSettingsTimestamp(),
-        }) satisfies VendorDocument);
         setVendorDocuments((current) => ({
           ...current,
-          [selectedVendorKey]: mergeSyncedVendorDocuments(syncedDocuments, [...recoveredDocuments, ...(current[selectedVendorKey] ?? [])]),
+          [selectedVendorKey]: mergeSyncedVendorDocuments(syncedDocuments, current[selectedVendorKey] ?? []),
         }));
-        if (recoveredDocuments.length > 0) {
-          setVendorMessage(`${selectedVendorKey} 증빙 미완료 파일 ${recoveredDocuments.length}개를 복구했습니다. 원본 파일을 다시 선택하거나 삭제할 수 있습니다.`);
-        }
       })
       .catch((error: unknown) => {
         if (!active) return;
-        const recoveredDocuments = readUploadRecovery("VENDOR", selectedVendorKey).map((attachment) => ({
-          ...attachment,
-          category: getVendorDocumentCategory(attachment.fileName),
-          uploadedAt: getSettingsTimestamp(),
-        }) satisfies VendorDocument);
-        setVendorDocuments((current) => ({
-          ...current,
-          [selectedVendorKey]: recoveredDocuments.length > 0 ? recoveredDocuments : current[selectedVendorKey] ?? [],
-        }));
         setVendorMessage(`거래처 증빙 목록 조회 실패: ${error instanceof Error ? error.message : "파일 metadata를 불러오지 못했습니다."}`);
       });
     return () => {
@@ -6704,11 +6152,9 @@ function VendorBody({ page }: { page: PageDefinition }) {
       taxIssueType: "이메일 발행",
     });
     setVendors((current) => [newVendor, ...current]);
-    setVendorTotal((current) => current + 1);
     setVendorDocuments((current) => ({ ...current, [newVendor.거래처명]: [] }));
     setPendingVendorNames((current) => new Set(current).add(newVendor.거래처명));
     setSelectedVendorName(newVendor.거래처명);
-    setDetailOpen(true);
     setVendorMessage(`${newVendor.거래처명} 거래처 등록 폼이 열렸습니다. 필수 정보와 증빙 파일을 입력하세요.`);
   };
 
@@ -6824,18 +6270,13 @@ function VendorBody({ page }: { page: PageDefinition }) {
     if (!files.length) return;
     const { accepted, rejected } = prepareAttachmentDrafts(files);
     const uploadPairs = matchAcceptedFiles(files, accepted);
-    const uploadingDocuments: VendorDocument[] = uploadPairs.map(({ attachment, file }) => {
-      pendingVendorUploadFilesRef.current[attachment.id] = file;
-      return {
-        ...attachment,
-        status: "uploading",
-        message: "업로드 준비 중",
-        progressPercent: 4,
-        retryCount: 0,
-        category: getVendorDocumentCategory(attachment.fileName),
-        uploadedAt: getSettingsTimestamp(),
-      };
-    });
+    const uploadingDocuments: VendorDocument[] = uploadPairs.map(({ attachment }) => ({
+      ...attachment,
+      status: "uploading",
+      message: "업로드 중",
+      category: getVendorDocumentCategory(attachment.fileName),
+      uploadedAt: getSettingsTimestamp(),
+    }));
     const shouldDefer = (options.deferIfPending ?? true) && pendingVendorNames.has(vendorName);
     if (shouldDefer) {
       if (uploadingDocuments.length > 0) {
@@ -6868,7 +6309,6 @@ function VendorBody({ page }: { page: PageDefinition }) {
           ...(current[vendorName] ?? []).filter((document) => document.message !== deferredVendorUploadMessage || !uploadKeys.has(`${document.fileName}:${document.byteSize}`)),
         ],
       }));
-      replaceUploadRecoveryItems("VENDOR", vendorName, uploadingDocuments);
     }
     if (uploadPairs.length === 0) {
       setVendorMessage(rejected.length > 0 ? rejected.join(" ") : "업로드할 수 있는 증빙 파일이 없습니다.");
@@ -6878,15 +6318,7 @@ function VendorBody({ page }: { page: PageDefinition }) {
     const uploadedDocuments = await Promise.all(
       uploadPairs.map(async ({ attachment, file }) => {
         try {
-          const stored = await uploadAttachmentToStorage("VENDOR", vendorName, file, attachment.id, {
-            onProgress: (percent, message) => {
-              setVendorDocuments((current) => ({
-                ...current,
-                [vendorName]: (current[vendorName] ?? []).map((document) => (document.id === attachment.id ? { ...document, progressPercent: percent, message } : document)),
-              }));
-            },
-          });
-          delete pendingVendorUploadFilesRef.current[attachment.id];
+          const stored = await uploadAttachmentToStorage("VENDOR", vendorName, file, attachment.id);
           return {
             ...stored,
             category: getVendorDocumentCategory(stored.fileName),
@@ -6896,9 +6328,7 @@ function VendorBody({ page }: { page: PageDefinition }) {
           return {
             ...attachment,
             status: "error" as const,
-            progressPercent: 0,
-            retryCount: attachment.retryCount ?? 0,
-            message: `${error instanceof Error ? error.message : "업로드 실패"} · 재시도 가능`,
+            message: error instanceof Error ? error.message : "업로드 실패",
             category: getVendorDocumentCategory(attachment.fileName),
             uploadedAt: getSettingsTimestamp(),
           } satisfies VendorDocument;
@@ -6908,9 +6338,8 @@ function VendorBody({ page }: { page: PageDefinition }) {
     const uploadingIds = new Set(uploadingDocuments.map((document) => document.id));
     setVendorDocuments((current) => ({
       ...current,
-      [vendorName]: mergeCompletedVendorUploads(uploadedDocuments, current[vendorName] ?? [], uploadingIds),
+      [vendorName]: [...uploadedDocuments, ...(current[vendorName] ?? []).filter((document) => !uploadingIds.has(document.id))],
     }));
-    replaceUploadRecoveryItems("VENDOR", vendorName, uploadedDocuments, uploadingDocuments.map((document) => document.id));
     const successCount = uploadedDocuments.filter((document) => document.status === "ready").length;
     const failedCount = uploadedDocuments.length - successCount;
     if (options.finalMessage !== false) {
@@ -6921,79 +6350,6 @@ function VendorBody({ page }: { page: PageDefinition }) {
           rejected.join(" "),
         ].filter(Boolean).join(" "),
       );
-    }
-  };
-
-  const retryVendorDocumentUpload = async (vendorName: string, documentId: string) => {
-    if (pendingVendorNames.has(vendorName)) {
-      setVendorMessage("거래처 저장 후 증빙 파일을 업로드할 수 있습니다.");
-      return;
-    }
-    const document = (vendorDocuments[vendorName] ?? []).find((item) => item.id === documentId);
-    if (!document) return;
-    const file = pendingVendorUploadFilesRef.current[documentId];
-    if (!file) {
-      setVendorMessage(`${document.fileName} 원본 파일이 브라우저 세션에 남아 있지 않습니다. 파일을 다시 선택해 업로드하세요.`);
-      setVendorDocuments((current) => ({
-        ...current,
-        [vendorName]: (current[vendorName] ?? []).map((item) => (
-          item.id === documentId
-            ? { ...item, status: "error", progressPercent: 0, message: "원본 파일 재선택 필요" }
-            : item
-        )),
-      }));
-      return;
-    }
-    const retryingDocument: VendorDocument = {
-      ...document,
-      status: "uploading",
-      progressPercent: 4,
-      retryCount: (document.retryCount ?? 0) + 1,
-      message: "재시도 준비 중",
-      uploadedAt: getSettingsTimestamp(),
-    };
-    setVendorDocuments((current) => ({
-      ...current,
-      [vendorName]: (current[vendorName] ?? []).map((item) => (item.id === documentId ? retryingDocument : item)),
-    }));
-    replaceUploadRecoveryItems("VENDOR", vendorName, [retryingDocument], [documentId]);
-    try {
-      const stored = await uploadAttachmentToStorage("VENDOR", vendorName, file, documentId, {
-        onProgress: (percent, message) => {
-          setVendorDocuments((current) => ({
-            ...current,
-            [vendorName]: (current[vendorName] ?? []).map((item) => (item.id === documentId ? { ...item, progressPercent: percent, message } : item)),
-          }));
-        },
-      });
-      delete pendingVendorUploadFilesRef.current[documentId];
-      const storedDocument: VendorDocument = {
-        ...stored,
-        retryCount: retryingDocument.retryCount,
-        category: getVendorDocumentCategory(stored.fileName),
-        uploadedAt: getSettingsTimestamp(),
-      };
-      setVendorDocuments((current) => ({
-        ...current,
-        [vendorName]: (current[vendorName] ?? []).map((item) => (item.id === documentId ? storedDocument : item)),
-      }));
-      replaceUploadRecoveryItems("VENDOR", vendorName, [storedDocument], [documentId]);
-      setVendorMessage(`${vendorName} ${storedDocument.fileName} 재업로드가 완료되었습니다.`);
-    } catch (error) {
-      const failedDocument: VendorDocument = {
-        ...document,
-        status: "error",
-        progressPercent: 0,
-        retryCount: retryingDocument.retryCount,
-        message: `${error instanceof Error ? error.message : "업로드 실패"} · 재시도 가능`,
-        uploadedAt: getSettingsTimestamp(),
-      };
-      setVendorDocuments((current) => ({
-        ...current,
-        [vendorName]: (current[vendorName] ?? []).map((item) => (item.id === documentId ? failedDocument : item)),
-      }));
-      replaceUploadRecoveryItems("VENDOR", vendorName, [failedDocument], [documentId]);
-      setVendorMessage(`${vendorName} ${document.fileName} 재업로드에 실패했습니다.`);
     }
   };
 
@@ -7013,8 +6369,6 @@ function VendorBody({ page }: { page: PageDefinition }) {
       ...current,
       [vendorName]: (current[vendorName] ?? []).filter((document) => document.id !== documentId),
     }));
-    delete pendingVendorUploadFilesRef.current[documentId];
-    replaceUploadRecoveryItems("VENDOR", vendorName, [], [documentId]);
     setVendorMessage(`${vendorName} 증빙 파일이 삭제되었습니다.`);
   };
 
@@ -7025,12 +6379,10 @@ function VendorBody({ page }: { page: PageDefinition }) {
     }
     if (vendorDocument.remoteId) {
       try {
-        const ticket = await erpApi.getFileDownload(vendorDocument.remoteId, {
-          reason: `거래처 ${selectedVendorKey || "선택 거래처"} ${vendorDocument.category} 증빙 확인`,
-        });
+        const ticket = await erpApi.getFileDownload(vendorDocument.remoteId);
         if (canDownloadDirectly(ticket.data.download.url)) {
           triggerUrlDownload(ticket.data.download.url, ticket.data.file.fileName);
-          setVendorMessage(`${ticket.data.file.fileName} 원본 다운로드를 시작했습니다. 다운로드 사유가 감사 로그에 기록되었습니다.`);
+          setVendorMessage(`${ticket.data.file.fileName} 원본 다운로드를 시작했습니다.`);
           return;
         }
       } catch (error) {
@@ -7048,37 +6400,6 @@ function VendorBody({ page }: { page: PageDefinition }) {
     setVendorMessage(`${vendorDocument.fileName} 다운로드를 준비했습니다.`);
   };
 
-
-  const previewVendorDocument = async (vendorDocument: VendorDocument) => {
-    if (vendorDocument.status === "uploading") {
-      setVendorMessage("업로드가 완료된 뒤 미리보기할 수 있습니다.");
-      return;
-    }
-    if (!canPreviewAttachment(vendorDocument.fileName)) {
-      setVendorMessage("PDF, JPG, PNG 파일만 미리보기를 지원합니다.");
-      return;
-    }
-    if (!vendorDocument.remoteId) {
-      setVendorMessage("저장소 업로드가 완료된 파일만 미리보기할 수 있습니다.");
-      return;
-    }
-    try {
-      const ticket = await erpApi.getFileDownload(vendorDocument.remoteId, {
-        reason: `거래처 ${selectedVendorKey || "선택 거래처"} ${vendorDocument.category} 증빙 미리보기`,
-        disposition: "inline",
-      });
-      if (canDownloadDirectly(ticket.data.download.url)) {
-        const opened = triggerUrlPreview(ticket.data.download.url);
-        setVendorMessage(opened
-          ? `${ticket.data.file.fileName} 미리보기를 열었습니다. signed URL 만료: ${ticket.data.download.expiresAt.slice(0, 16)}. 접근 로그가 감사 로그에 기록되었습니다.`
-          : "브라우저가 미리보기 창을 차단했습니다. 팝업 허용 후 다시 시도하세요.");
-        return;
-      }
-      setVendorMessage("remote mode signed URL을 받을 수 있을 때 미리보기를 열 수 있습니다.");
-    } catch (error) {
-      setVendorMessage(error instanceof Error ? error.message : "거래처 증빙 파일 미리보기에 실패했습니다.");
-    }
-  };
   const deactivateVendor = async (reason = "운영자 수동 비활성화") => {
     if (vendorMutationInFlightRef.current) {
       setVendorMessage("거래처 변경 요청을 처리 중입니다. 잠시 후 다시 시도하세요.");
@@ -7147,23 +6468,11 @@ function VendorBody({ page }: { page: PageDefinition }) {
     }
   };
 
-  const vendorKpiValues: Record<string, number> = {
-    "등록 거래처": vendorSummary.registered,
-    "검증 대기": vendorSummary.pending,
-    "계좌 확인": vendorSummary.verified,
-    "비활성": vendorSummary.inactive,
-  };
-  const vendorKpis = page.kpis.map((kpi) => ({
-    ...kpi,
-    value: String(vendorKpiValues[kpi.label] ?? 0),
-    suffix: "건",
-    detail: "전체 DB 기준",
-  }));
   const vendorFeedback = isVendorLoading ? "거래처 목록을 API에서 불러오는 중입니다." : vendorMessage;
   const isVendorErrorMessage = ["이미", "필수", "실패", "불러오지"].some((keyword) => vendorFeedback.includes(keyword));
 
   return (
-    <div className="vendor-management-page">
+    <div className={detailOpen ? "vendor-management-page" : "vendor-management-page detail-hidden"}>
       <section className="management-main-column">
         <VendorToolbar
           accountFilter={accountFilter}
@@ -7187,48 +6496,38 @@ function VendorBody({ page }: { page: PageDefinition }) {
           searchTerm={searchTerm}
           statusFilter={statusFilter}
           typeFilter={typeFilter}
+          statusOptions={statusOptions}
+          accountOptions={accountOptions}
+          typeOptions={typeOptions}
+          onSetStatus={setStatusFilter}
+          onSetAccount={setAccountFilter}
+          onSetType={setTypeFilter}
         />
         {vendorFeedback && <small className={isVendorErrorMessage ? "panel-action-message error vendor-message" : "panel-action-message vendor-message"}>{vendorFeedback}</small>}
         <section className="kpi-row management-kpis vendor-kpis">
-          {vendorKpis.map((kpi) => (
+          {page.kpis.map((kpi) => (
             <KpiCard item={kpi} key={kpi.label} />
           ))}
         </section>
         <VendorTable
-          page={vendorPage}
-          pageSize={vendorPageSize}
           rows={filteredVendors}
           selectedVendorName={selectedVendor?.거래처명 ?? ""}
-          total={vendorTotal}
-          onPageChange={setVendorPage}
-          onPageSizeToggle={() => {
-            setVendorPage(1);
-            setVendorPageSize((current) => (current === 10 ? 5 : 10));
-          }}
-          onSelectVendor={(vendorName) => {
-            setSelectedVendorName(vendorName);
-            setDetailOpen(true);
-          }}
+          onSelectVendor={(vendorName) => setSelectedVendorName(vendorName)}
         />
       </section>
-      {detailOpen ? (
+      {detailOpen && (
         <VendorDetailPanel
           documents={vendorDocuments[selectedVendor?.거래처명 ?? ""] ?? []}
-          isPending={selectedVendorIsPending}
           paymentHistory={selectedVendorPaymentHistory}
           row={selectedVendor}
-          onClose={() => setDetailOpen(false)}
+          onClose={() => setSelectedVendorName("")}
           onDeactivate={deactivateVendor}
           onDownloadDocument={downloadVendorDocument}
-          onPreviewDocument={previewVendorDocument}
           onRecheckAccount={recheckVendorAccount}
           onRemoveDocument={removeVendorDocument}
-          onRetryDocumentUpload={retryVendorDocumentUpload}
           onSave={saveVendor}
           onUploadDocuments={uploadVendorDocuments}
         />
-      ) : (
-        <ClosedDetailPanel title="거래처 상세" onOpen={() => setDetailOpen(true)} />
       )}
     </div>
   );
@@ -7247,6 +6546,12 @@ function VendorToolbar({
   searchTerm,
   statusFilter,
   typeFilter,
+  statusOptions,
+  accountOptions,
+  typeOptions,
+  onSetStatus,
+  onSetAccount,
+  onSetType,
 }: {
   accountFilter: string;
   onAddVendor: () => void;
@@ -7260,26 +6565,20 @@ function VendorToolbar({
   searchTerm: string;
   statusFilter: string;
   typeFilter: string;
+  statusOptions: string[];
+  accountOptions: string[];
+  typeOptions: string[];
+  onSetStatus: (value: string) => void;
+  onSetAccount: (value: string) => void;
+  onSetType: (value: string) => void;
 }) {
   const [filterOpen, setFilterOpen] = useState(false);
   return (
     <div className="management-toolbar vendor-toolbar">
       <div className="management-filter-group vendor-filter-group">
-        <button className="management-select-filter" onClick={onCycleStatus} type="button">
-          <span>거래처 상태</span>
-          <b>{statusFilter}</b>
-          <ChevronDown size={16} />
-        </button>
-        <button className="management-select-filter" onClick={onCycleAccount} type="button">
-          <span>계좌 확인</span>
-          <b>{accountFilter}</b>
-          <ChevronDown size={16} />
-        </button>
-        <button className="management-select-filter" onClick={onCycleType} type="button">
-          <span>거래처 구분</span>
-          <b>{typeFilter}</b>
-          <ChevronDown size={16} />
-        </button>
+        <FilterDropdown ariaLabel="거래처 상태" triggerClassName="management-select-filter" label="거래처 상태" value={statusFilter} options={statusOptions} onChange={onSetStatus} />
+        <FilterDropdown ariaLabel="계좌 확인" triggerClassName="management-select-filter" label="계좌 확인" value={accountFilter} options={accountOptions} onChange={onSetAccount} />
+        <FilterDropdown ariaLabel="거래처 구분" triggerClassName="management-select-filter" label="거래처 구분" value={typeFilter} options={typeOptions} onChange={onSetType} />
         <label className="management-search-filter vendor-search-filter">
           <input
             aria-label="거래처 검색"
@@ -7307,9 +6606,9 @@ function VendorToolbar({
         <DetailFilterPanel
           title="거래처 상세 필터"
           fields={[
-            { label: "상태", value: statusFilter },
-            { label: "계좌", value: accountFilter },
-            { label: "구분", value: typeFilter },
+            { label: "상태", value: statusFilter, options: statusOptions, onChange: onSetStatus },
+            { label: "계좌", value: accountFilter, options: accountOptions, onChange: onSetAccount },
+            { label: "구분", value: typeFilter, options: typeOptions, onChange: onSetType },
             { label: "검색어", value: searchTerm || "없음" },
           ]}
           onApply={() => {
@@ -7324,27 +6623,14 @@ function VendorToolbar({
   );
 }
 
-function VendorTable({
-  onPageChange,
-  onPageSizeToggle,
-  onSelectVendor,
-  page,
-  pageSize,
-  rows,
-  selectedVendorName,
-  total,
-}: {
-  onPageChange: (page: number) => void;
-  onPageSizeToggle: () => void;
-  onSelectVendor: (vendorName: string) => void;
-  page: number;
-  pageSize: number;
-  rows: TableRow[];
-  selectedVendorName: string;
-  total: number;
-}) {
-  const pageCount = Math.max(1, Math.ceil(total / pageSize));
-  const pageRows = rows;
+function VendorTable({ onSelectVendor, rows, selectedVendorName }: { onSelectVendor: (vendorName: string) => void; rows: TableRow[]; selectedVendorName: string }) {
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
+  const pageRows = rows.slice((page - 1) * pageSize, page * pageSize);
+  useEffect(() => {
+    setPage(1);
+  }, [rows.length, pageSize]);
   return (
     <section className="erp-card vendor-table-card">
       <table className="vendor-table">
@@ -7381,15 +6667,15 @@ function VendorTable({
         </tbody>
       </table>
       <footer className="management-table-footer">
-        <span>전체 {total} 건</span>
+        <span>전체 {rows.length} 건</span>
         <div>
-          <button onClick={() => onPageChange(Math.max(1, page - 1))} type="button">‹</button>
+          <button onClick={() => setPage((current) => Math.max(1, current - 1))} type="button">‹</button>
           {Array.from({ length: pageCount }, (_, index) => index + 1).slice(0, 5).map((pageNumber) => (
-            <button className={pageNumber === page ? "active" : undefined} key={pageNumber} onClick={() => onPageChange(pageNumber)} type="button">{pageNumber}</button>
+            <button className={pageNumber === page ? "active" : undefined} key={pageNumber} onClick={() => setPage(pageNumber)} type="button">{pageNumber}</button>
           ))}
-          <button onClick={() => onPageChange(Math.min(pageCount, page + 1))} type="button">›</button>
+          <button onClick={() => setPage((current) => Math.min(pageCount, current + 1))} type="button">›</button>
         </div>
-        <button className="rows-select" onClick={onPageSizeToggle} type="button">{pageSize} 건씩</button>
+        <RowsPerPageSelect pageSize={pageSize} onChange={setPageSize} />
       </footer>
     </section>
   );
@@ -7397,28 +6683,22 @@ function VendorTable({
 
 function VendorDetailPanel({
   documents,
-  isPending,
   onClose,
   onDeactivate,
   onDownloadDocument,
-  onPreviewDocument,
   onRecheckAccount,
   onRemoveDocument,
-  onRetryDocumentUpload,
   onSave,
   onUploadDocuments,
   paymentHistory,
   row,
 }: {
   documents: VendorDocument[];
-  isPending: boolean;
   onClose: () => void;
   onDeactivate: (reason?: string) => void | Promise<void>;
   onDownloadDocument: (document: VendorDocument) => void | Promise<void>;
-  onPreviewDocument: (document: VendorDocument) => void | Promise<void>;
   onRecheckAccount: () => void | Promise<void>;
   onRemoveDocument: (vendorName: string, documentId: string) => void | Promise<void>;
-  onRetryDocumentUpload: (vendorName: string, documentId: string) => void | Promise<void>;
   onSave: (draft: VendorDraft) => void;
   onUploadDocuments: (vendorName: string, files: File[]) => void | Promise<void>;
   paymentHistory: VendorPaymentHistoryItem[];
@@ -7538,10 +6818,10 @@ function VendorDetailPanel({
         <label className="vendor-upload-box">
           <Upload size={18} />
           <span>사업자등록증/통장사본/세금계산서 업로드</span>
-          <small>PDF, JPG, PNG, XLSX · 최대 10MB</small>
+          <small>PDF, 이미지, 텍스트(txt·csv·md·json), XLSX · 최대 10MB</small>
           <input
             aria-label="거래처 증빙 파일 업로드"
-            accept=".pdf,.jpg,.jpeg,.png,.xlsx"
+            accept=".pdf,.jpg,.jpeg,.png,.xlsx,.txt,.log,.md,.csv,.json"
             multiple
             onChange={handleDocumentUpload}
             type="file"
@@ -7557,25 +6837,7 @@ function VendorDetailPanel({
                   <b>{documentItem.category}</b>
                   {documentItem.fileName}
                   <small>{formatFileSize(documentItem.byteSize)} · {documentItem.uploadedAt}{documentItem.message ? ` · ${documentItem.message}` : ""}</small>
-                  {documentItem.status === "uploading" && (
-                    <span className="upload-progress-track" aria-label={`${documentItem.fileName} 업로드 진행률 ${documentItem.progressPercent ?? 0}%`}>
-                      <i style={{ width: `${documentItem.progressPercent ?? 0}%` }} />
-                    </span>
-                  )}
                 </span>
-                {documentItem.status === "error" && (
-                  <button aria-label={`${documentItem.fileName} 재업로드`} onClick={() => onRetryDocumentUpload(selected.거래처명, documentItem.id)} type="button">
-                    <RefreshCw size={14} />
-                  </button>
-                )}
-                {documentItem.status !== "error" && <i className="upload-row-spacer" aria-hidden="true" />}
-                {canPreviewAttachment(documentItem.fileName) ? (
-                  <button aria-label={`${documentItem.fileName} 미리보기`} disabled={documentItem.status === "uploading" || documentItem.status === "error"} onClick={() => onPreviewDocument(documentItem)} type="button">
-                    <Eye size={14} />
-                  </button>
-                ) : (
-                  <i className="upload-row-spacer" aria-hidden="true" />
-                )}
                 <button aria-label={`${documentItem.fileName} 다운로드`} disabled={documentItem.status === "uploading"} onClick={() => onDownloadDocument(documentItem)} type="button">
                   <Download size={14} />
                 </button>
@@ -7637,8 +6899,8 @@ function VendorDetailPanel({
           비활성 사유
           <input aria-label="거래처 비활성 사유 입력" onChange={(event) => setDeactivateReason(event.currentTarget.value)} value={deactivateReason} />
         </label>
-        <button className="save" disabled={isEmpty} onClick={() => onSave(draft)} type="button">{isPending ? "등록" : "수정"}</button>
-        <button className="danger" disabled={isEmpty || isPending || selected.상태 === "비활성"} onClick={() => onDeactivate(deactivateReason.trim() || "운영자 수동 비활성화")} type="button">비활성화</button>
+        <button className="save" disabled={isEmpty} onClick={() => onSave(draft)} type="button">수정</button>
+        <button className="danger" disabled={isEmpty || selected.상태 === "비활성"} onClick={() => onDeactivate(deactivateReason.trim() || "운영자 수동 비활성화")} type="button">비활성화</button>
       </footer>
     </aside>
   );
@@ -7654,59 +6916,34 @@ function ReportsBody({ currentUser, page }: { currentUser: AuthUser; page: PageD
   const [reportMessage, setReportMessage] = useState("");
   const [reportSearch, setReportSearch] = useState("");
   const [reportSort, setReportSort] = useState<"latest" | "name">("latest");
-  const [reportPage, setReportPage] = useState(1);
-  const [reportPageSize, setReportPageSize] = useState(20);
-  const [reportTotal, setReportTotal] = useState(reportRows.length);
-  const [reportRefreshVersion, setReportRefreshVersion] = useState(0);
   const [selectedReportName, setSelectedReportName] = useState(reportRows[0]?.보고서명 ?? "");
   const [reportDrilldown, setReportDrilldown] = useState<ReportDrilldownState | null>(null);
   const [reportsLoading, setReportsLoading] = useState(false);
   const [reportsMutating, setReportsMutating] = useState(false);
-  const [auditLogSearch, setAuditLogSearch] = useState("");
-  const [auditLogResult, setAuditLogResult] = useState<AuditLogSearchResult | null>(null);
-  const [auditLogsLoading, setAuditLogsLoading] = useState(false);
-  const canReadAuditLogs = canUseAction(currentUser, "audit:read") || canUseAction(currentUser, "system:manage");
   const departmentOptions = getReportFilterOptions(reports, "부서", [...budgetRows, ...approvalRows, ...paymentRows], "부서", "전체 부서");
   const vendorOptions = getReportFilterOptions(reports, "거래처", [...vendorRows, ...paymentRows, ...disbursementRows], "거래처", "전체 거래처");
-  const reportQueryFilters = useMemo(() => ({
-    ...(reportType !== "종합" ? { 유형: reportType } : {}),
-    ...(departmentFilter !== "전체 부서" ? { 부서: departmentFilter } : {}),
-    ...(vendorFilter !== "전체 거래처" ? { 거래처: vendorFilter } : {}),
-  }), [departmentFilter, reportType, vendorFilter]);
-  const reportQueryFilterKey = JSON.stringify(reportQueryFilters);
-  const filteredReports = reports;
+  const filteredReports = getReportRowsByType(reports, reportType)
+    .filter((report) => departmentFilter === "전체 부서" || report.부서 === departmentFilter || rowSearchText(report).includes(departmentFilter.toLowerCase()))
+    .filter((report) => vendorFilter === "전체 거래처" || report.거래처 === vendorFilter || rowSearchText(report).includes(vendorFilter.toLowerCase()))
+    .filter((report) => !reportSearch.trim() || report.보고서명.toLowerCase().includes(reportSearch.trim().toLowerCase()))
+    .sort((a, b) => (reportSort === "latest" ? b.생성일시.localeCompare(a.생성일시) : a.보고서명.localeCompare(b.보고서명)));
   const selectedReport = filteredReports.find((report) => report.보고서명 === selectedReportName) ?? filteredReports[0] ?? null;
-
-  useEffect(() => {
-    setReportPage(1);
-  }, [reportPageSize, reportQueryFilterKey, reportSearch, reportSort]);
 
   useEffect(() => {
     let active = true;
     setReportsLoading(true);
-    erpApi.listPageRows("reports", {
-      page: reportPage,
-      pageSize: reportPageSize,
-      search: reportSearch.trim(),
-      filters: Object.keys(reportQueryFilters).length > 0 ? reportQueryFilters : undefined,
-      sort: reportSort === "latest" ? encodeSort("생성일시", "desc") : encodeSort("보고서명", "asc"),
-    })
+    erpApi.listPageRows("reports", { pageSize: 100 })
       .then((response) => {
         if (!active) return;
         setReports(response.data.rows);
-        setReportTotal(response.data.total);
         if (response.data.rows.length > 0) {
           setSelectedReportName((current) => (response.data.rows.some((report) => report.보고서명 === current) ? current : response.data.rows[0].보고서명));
-        } else {
-          setSelectedReportName("");
         }
-        setReportMessage(`보고서 ${response.data.total}건 중 ${response.data.rows.length}건을 backend 조건으로 조회했습니다.`);
+        setReportMessage("저장된 보고서 목록을 backend에서 불러왔습니다.");
       })
       .catch((error: unknown) => {
         if (!active) return;
-        setReports([]);
-        setReportTotal(0);
-        setReportMessage(`보고서 목록 조회 실패: ${error instanceof Error ? error.message : "요청을 처리하지 못했습니다."}`);
+        setReportMessage(`보고서 목록 조회 실패: ${error instanceof Error ? error.message : "mock 보고서로 표시합니다."}`);
       })
       .finally(() => {
         if (active) setReportsLoading(false);
@@ -7714,49 +6951,13 @@ function ReportsBody({ currentUser, page }: { currentUser: AuthUser; page: PageD
     return () => {
       active = false;
     };
-  }, [reportPage, reportPageSize, reportQueryFilterKey, reportRefreshVersion, reportSearch, reportSort]);
-
-  useEffect(() => {
-    if (!canReadAuditLogs) return;
-    let active = true;
-    setAuditLogsLoading(true);
-    erpApi.listAuditLogs({ pageSize: 8 })
-      .then((response) => {
-        if (!active) return;
-        setAuditLogResult(response.data);
-      })
-      .catch((error: unknown) => {
-        if (!active) return;
-        setReportMessage(`감사 로그 조회 실패: ${error instanceof Error ? error.message : "요청을 처리하지 못했습니다."}`);
-      })
-      .finally(() => {
-        if (active) setAuditLogsLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, [canReadAuditLogs]);
-
-  const refreshAuditLogs = async () => {
-    if (!canReadAuditLogs) return;
-    setAuditLogsLoading(true);
-    try {
-      const response = await erpApi.listAuditLogs({ search: auditLogSearch.trim(), pageSize: 8 });
-      setAuditLogResult(response.data);
-      setReportMessage(`감사 로그 ${response.data.total}건 중 ${response.data.rows.length}건을 조회했습니다.`);
-    } catch (error) {
-      setReportMessage(`감사 로그 조회 실패: ${error instanceof Error ? error.message : "요청을 처리하지 못했습니다."}`);
-    } finally {
-      setAuditLogsLoading(false);
-    }
-  };
+  }, []);
 
   const generateReport = async () => {
     const generatedAt = new Date().toISOString().slice(0, 16).replace("T", " ");
     const filterSuffix = [departmentFilter, vendorFilter].filter((value) => !value.startsWith("전체")).join(" ");
-    const reportName = `${period.slice(0, 7)} ${reportType} 보고서${filterSuffix ? ` (${filterSuffix})` : ""}`;
     const newReport = {
-      보고서명: reportName,
+      보고서명: `${period.slice(0, 7)} ${reportType} 보고서${filterSuffix ? ` (${filterSuffix})` : ""}`,
       유형: reportType,
       기간: period,
       생성일시: generatedAt,
@@ -7764,7 +6965,6 @@ function ReportsBody({ currentUser, page }: { currentUser: AuthUser; page: PageD
       부서: departmentFilter,
       거래처: vendorFilter,
       요약: `${reportType === "지급" ? "지급 실행 및 예정 건 자동 집계" : reportType === "승인" ? "승인 상태와 처리율 자동 집계" : reportType === "예산" ? "예산 사용률과 초과 위험 자동 집계" : "결제, 승인, 지급, 예산 종합 집계"} · ${departmentFilter} · ${vendorFilter}`,
-      드릴다운JSON: JSON.stringify(buildLocalReportDrilldownSnapshot(reportName)),
       idempotencyKey: reportMutationKey("create", `${period.slice(0, 7)} ${reportType} 보고서 ${departmentFilter} ${vendorFilter}`),
     };
     setReportsMutating(true);
@@ -7882,6 +7082,10 @@ function ReportsBody({ currentUser, page }: { currentUser: AuthUser; page: PageD
           }}
           onMessage={setReportMessage}
           onPeriodCycle={() => setPeriod((current) => (current.startsWith("2024-05") ? "2024-06-01 ~ 2024-06-30" : "2024-05-01 ~ 2024-05-31"))}
+          periodOptions={["2024-05-01 ~ 2024-05-31", "2024-06-01 ~ 2024-06-30"]}
+          onSetPeriod={setPeriod}
+          onSetDepartment={setDepartmentFilter}
+          onSetVendor={setVendorFilter}
           onResetFilters={() => {
             setDepartmentFilter("전체 부서");
             setVendorFilter("전체 거래처");
@@ -7909,37 +7113,31 @@ function ReportsBody({ currentUser, page }: { currentUser: AuthUser; page: PageD
           <ReportsLineChart
             values={getMonthlyDisbursementValues()}
             onDrilldown={(label) => {
-              setReportDrilldown(getReportDrilldown(label, "monthly", selectedReport));
-              setReportMessage(`${selectedReport?.보고서명 ?? "선택 보고서"} 기준 ${label} 지급 추이 원천 데이터 테이블을 열었습니다.`);
+              setReportDrilldown(getReportDrilldown(label, "monthly"));
+              setReportMessage(`${label} 지급 추이 원천 데이터 테이블을 열었습니다.`);
             }}
           />
           <ReportsDepartmentBars
             items={getDepartmentSpendItems()}
             onDrilldown={(label) => {
-              setReportDrilldown(getReportDrilldown(label, "department", selectedReport));
-              setReportMessage(`${selectedReport?.보고서명 ?? "선택 보고서"} 기준 ${label} 부서 지출 원천 데이터를 열었습니다.`);
+              setReportDrilldown(getReportDrilldown(label, "department"));
+              setReportMessage(`${label} 부서 지출 원천 데이터를 열었습니다.`);
             }}
           />
           <ReportsDonutCard
             items={getApprovalStatusItems()}
             onDrilldown={(label) => {
-              setReportDrilldown(getReportDrilldown(label, "approval", selectedReport));
-              setReportMessage(`${selectedReport?.보고서명 ?? "선택 보고서"} 기준 ${label} 승인 상태 원천 데이터를 열었습니다.`);
+              setReportDrilldown(getReportDrilldown(label, "approval"));
+              setReportMessage(`${label} 승인 상태 원천 데이터를 열었습니다.`);
             }}
           />
         </div>
         {reportDrilldown && <ReportDrilldownPanel drilldown={reportDrilldown} onClose={() => setReportDrilldown(null)} />}
         <ReportsTable
-          isLoading={reportsLoading}
-          page={reportPage}
-          pageSize={reportPageSize}
           rows={filteredReports}
           searchTerm={reportSearch}
           selectedReportName={selectedReport?.보고서명 ?? ""}
           sortMode={reportSort}
-          total={reportTotal}
-          onPageChange={setReportPage}
-          onPageSizeChange={setReportPageSize}
           onSearchChange={setReportSearch}
           onSelectReport={(report) => {
             setSelectedReportName(report.보고서명);
@@ -7950,15 +7148,6 @@ function ReportsBody({ currentUser, page }: { currentUser: AuthUser; page: PageD
             setReportMessage(`보고서 목록을 ${reportSort === "latest" ? "보고서명순" : "최신순"}으로 정렬했습니다.`);
           }}
         />
-        {canReadAuditLogs && (
-          <AuditLogSearchCard
-            isLoading={auditLogsLoading}
-            onRefresh={refreshAuditLogs}
-            onSearchChange={setAuditLogSearch}
-            result={auditLogResult}
-            search={auditLogSearch}
-          />
-        )}
       </section>
       <ReportsSideColumn
         activeType={reportType}
@@ -7984,6 +7173,10 @@ function ReportsToolbar({
   onGenerate,
   onMessage,
   onPeriodCycle,
+  periodOptions,
+  onSetPeriod,
+  onSetDepartment,
+  onSetVendor,
   onResetFilters,
   onTypeChange,
   onVendorCycle,
@@ -8002,6 +7195,10 @@ function ReportsToolbar({
   onGenerate: () => Promise<void>;
   onMessage: (message: string) => void;
   onPeriodCycle: () => void;
+  periodOptions: string[];
+  onSetPeriod: (value: string) => void;
+  onSetDepartment: (value: string) => void;
+  onSetVendor: (value: string) => void;
   onResetFilters: () => void;
   onTypeChange: (type: string) => void;
   onVendorCycle: () => void;
@@ -8023,18 +7220,9 @@ function ReportsToolbar({
   return (
     <div className="management-toolbar reports-toolbar">
       <div className="management-filter-group reports-filter-group">
-        <button className="management-filter date" onClick={onPeriodCycle} type="button">
-          {period}
-          <Calendar size={18} />
-        </button>
-        <button className="management-filter" onClick={onDepartmentCycle} title={`${departmentOptions.length}개 부서 필터`} type="button">
-          {departmentFilter}
-          <ChevronDown size={16} />
-        </button>
-        <button className="management-filter" onClick={onVendorCycle} title={`${vendorOptions.length}개 거래처 필터`} type="button">
-          {vendorFilter}
-          <ChevronDown size={16} />
-        </button>
+        <FilterDropdown ariaLabel="기간" triggerClassName="management-filter date" value={period} options={periodOptions} onChange={onSetPeriod} icon={<Calendar size={18} />} />
+        <FilterDropdown ariaLabel="부서" triggerClassName="management-filter" value={departmentFilter} options={departmentOptions} onChange={onSetDepartment} />
+        <FilterDropdown ariaLabel="거래처" triggerClassName="management-filter" value={vendorFilter} options={vendorOptions} onChange={onSetVendor} />
         <div className="report-type-tabs">
           {reportTypes.map((item) => (
             <button className={activeType === item ? "active" : undefined} key={item} onClick={() => onTypeChange(item)} type="button">
@@ -8057,10 +7245,10 @@ function ReportsToolbar({
         <DetailFilterPanel
           title="보고서 상세 필터"
           fields={[
-            { label: "기간", value: period },
-            { label: "부서", value: departmentFilter },
-            { label: "거래처", value: vendorFilter },
-            { label: "유형", value: activeType },
+            { label: "기간", value: period, options: periodOptions, onChange: onSetPeriod },
+            { label: "부서", value: departmentFilter, options: departmentOptions, onChange: onSetDepartment },
+            { label: "거래처", value: vendorFilter, options: vendorOptions, onChange: onSetVendor },
+            { label: "유형", value: activeType, options: reportTypes, onChange: onTypeChange },
             { label: "건수", value: `${rows.length}개` },
           ]}
           onApply={() => {
@@ -8088,7 +7276,7 @@ function ReportsLineChart({ onDrilldown, values }: { values: number[]; onDrilldo
   const points = values.map((value, index) => `${54 + index * 74},${220 - (value / max) * 160}`);
   return (
     <section className="erp-card reports-chart-card">
-      <CardHeader title="월별 지급 추이 (단위: 원)" action="월별" onAction={() => onDrilldown("전체 월별 지급 추이")} />
+      <CardHeader title="월별 지급 추이 (단위: 원)" action="월별" />
       <svg className="reports-line-svg" viewBox="0 0 470 250" role="img" aria-label="월별 지급 추이">
         {[0, 1, 2, 3, 4, 5].map((line) => (
           <line className="grid-line" key={line} x1="42" x2="450" y1={38 + line * 38} y2={38 + line * 38} />
@@ -8111,7 +7299,7 @@ function ReportsLineChart({ onDrilldown, values }: { values: number[]; onDrilldo
 function ReportsDepartmentBars({ items, onDrilldown }: { items: Array<[string, string, number]>; onDrilldown: (label: string) => void }) {
   return (
     <section className="erp-card reports-chart-card">
-      <CardHeader title="부서별 지출 (단위: 원)" action="상위 6개" onAction={() => onDrilldown("상위 6개 부서")} />
+      <CardHeader title="부서별 지출 (단위: 원)" action="상위 6개" />
       <div className="reports-bar-list">
         {items.map(([name, value, width]) => (
           <button key={name} onClick={() => onDrilldown(name)} type="button">
@@ -8189,36 +7377,29 @@ function ReportDrilldownPanel({ drilldown, onClose }: { drilldown: ReportDrilldo
 }
 
 function ReportsTable({
-  isLoading,
-  onPageChange,
-  onPageSizeChange,
-  onSearchChange,
-  onSelectReport,
-  onSortChange,
-  page,
-  pageSize,
   rows,
   searchTerm,
   selectedReportName,
   sortMode,
-  total,
+  onSearchChange,
+  onSelectReport,
+  onSortChange,
 }: {
-  isLoading: boolean;
-  onPageChange: (page: number) => void;
-  onPageSizeChange: (pageSize: number) => void;
-  onSearchChange: (value: string) => void;
-  onSelectReport: (report: TableRow) => void;
-  onSortChange: () => void;
-  page: number;
-  pageSize: number;
   rows: TableRow[];
   searchTerm: string;
   selectedReportName: string;
   sortMode: "latest" | "name";
-  total: number;
+  onSearchChange: (value: string) => void;
+  onSelectReport: (report: TableRow) => void;
+  onSortChange: () => void;
 }) {
-  const pageCount = Math.max(1, Math.ceil(total / pageSize));
-  const pageRows = rows;
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
+  const pageRows = rows.slice((page - 1) * pageSize, page * pageSize);
+  useEffect(() => {
+    setPage(1);
+  }, [rows.length, pageSize]);
   return (
     <section className="erp-card reports-table-card">
       <header className="reports-table-head">
@@ -8240,11 +7421,7 @@ function ReportsTable({
           </tr>
         </thead>
         <tbody>
-          {pageRows.length === 0 ? (
-            <tr>
-              <td colSpan={7}>{isLoading ? "보고서를 조회 중입니다." : "조건에 맞는 보고서가 없습니다."}</td>
-            </tr>
-          ) : pageRows.map((row) => (
+          {pageRows.map((row) => (
             <tr className={row.보고서명 === selectedReportName ? "selected" : undefined} key={row.보고서명}>
               <td>
                 <FileText size={15} />
@@ -8263,87 +7440,16 @@ function ReportsTable({
         </tbody>
       </table>
       <footer className="management-table-footer">
-        <span>{isLoading ? "조회 중" : `전체 ${total}개`}</span>
+        <span>전체 {rows.length}개</span>
         <div>
-          <button disabled={page <= 1 || isLoading} onClick={() => onPageChange(1)} type="button">≪</button>
+          <button onClick={() => setPage(1)} type="button">≪</button>
           {Array.from({ length: pageCount }, (_, index) => index + 1).slice(0, 4).map((pageNumber) => (
-            <button className={pageNumber === page ? "active" : undefined} disabled={isLoading} key={pageNumber} onClick={() => onPageChange(pageNumber)} type="button">{pageNumber}</button>
+            <button className={pageNumber === page ? "active" : undefined} key={pageNumber} onClick={() => setPage(pageNumber)} type="button">{pageNumber}</button>
           ))}
-          <button disabled={page >= pageCount || isLoading} onClick={() => onPageChange(pageCount)} type="button">≫</button>
+          <button onClick={() => setPage(pageCount)} type="button">≫</button>
         </div>
-        <button className="rows-select" disabled={isLoading} onClick={() => onPageSizeChange(pageSize === 10 ? 20 : 10)} type="button">{pageSize}개씩</button>
+        <RowsPerPageSelect pageSize={pageSize} onChange={setPageSize} unit="개씩" />
       </footer>
-    </section>
-  );
-}
-
-function AuditLogSearchCard({
-  isLoading,
-  onRefresh,
-  onSearchChange,
-  result,
-  search,
-}: {
-  isLoading: boolean;
-  onRefresh: () => Promise<void>;
-  onSearchChange: (value: string) => void;
-  result: AuditLogSearchResult | null;
-  search: string;
-}) {
-  const rows = result?.rows ?? [];
-  return (
-    <section className="erp-card audit-log-search-card">
-      <header>
-        <div>
-          <strong>감사 로그 조회</strong>
-          <span>{result?.accessScope === "external_auditor_read_only" ? "외부 감사 읽기 전용" : "관리자 감사 조회"}</span>
-        </div>
-        <button aria-label="감사 로그 새로고침" disabled={isLoading} onClick={() => void onRefresh()} type="button">
-          <RefreshCw size={16} />
-        </button>
-      </header>
-      <div className="audit-log-search-controls">
-        <label>
-          검색
-          <input aria-label="감사 로그 검색어" onChange={(event) => onSearchChange(event.currentTarget.value)} value={search} />
-        </label>
-        <button aria-label="감사 로그 검색" disabled={isLoading} onClick={() => void onRefresh()} type="button">
-          <Search size={16} />
-        </button>
-      </div>
-      <div className="audit-log-retention">
-        <span>{result?.retention.disposition ?? "감사 로그 보관 정책"}</span>
-        <span>{result?.rawValuePolicy ?? "원문 변경 값은 응답에서 제외됩니다."}</span>
-      </div>
-      <table>
-        <thead>
-          <tr>
-            <th>일시</th>
-            <th>액션</th>
-            <th>대상</th>
-            <th>작업자</th>
-            <th>requestId</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.length === 0 ? (
-            <tr>
-              <td colSpan={5}>{isLoading ? "조회 중입니다." : "감사 로그가 없습니다."}</td>
-            </tr>
-          ) : rows.map((row) => (
-            <tr key={row.id}>
-              <td>{row.time.slice(0, 16).replace("T", " ")}</td>
-              <td>
-                <b>{row.action}</b>
-                <small>{row.summary}</small>
-              </td>
-              <td>{row.entityType}</td>
-              <td>{row.actor}<small>{row.actorDepartment}</small></td>
-              <td>{row.requestId}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
     </section>
   );
 }
@@ -8744,48 +7850,6 @@ function SettingsBody({ currentUser, page }: { currentUser: AuthUser; page: Page
   const [settingsMessage, setSettingsMessage] = useState("결재 정책, 권한, 알림, 연동 설정은 저장 즉시 신규 작업에 반영됩니다.");
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
   const [settingsLoading, setSettingsLoading] = useState(false);
-  const [dataQualityRuns, setDataQualityRuns] = useState<DataQualityRunList | null>(null);
-  const [dataQualityLoading, setDataQualityLoading] = useState(false);
-  const [retentionSummary, setRetentionSummary] = useState<RetentionPolicySummary | null>(null);
-  const [retentionLoading, setRetentionLoading] = useState(false);
-  const [accountLifecycleSummary, setAccountLifecycleSummary] = useState<AccountLifecycleSummary | null>(null);
-  const [accountLifecycleLoading, setAccountLifecycleLoading] = useState(false);
-  const [accountLifecycleReason, setAccountLifecycleReason] = useState("휴면/퇴사자 계정 운영 비활성화");
-  const [financialReconciliationSummary, setFinancialReconciliationSummary] = useState<FinancialReconciliationSummary | null>(null);
-  const [financialReconciliationLoading, setFinancialReconciliationLoading] = useState(false);
-  const [manualRecoverySummary, setManualRecoverySummary] = useState<ManualRecoverySummary | null>(null);
-  const [manualRecoveryLoading, setManualRecoveryLoading] = useState(false);
-  const [financialControlReport, setFinancialControlReport] = useState<FinancialControlReport | null>(null);
-  const [financialControlLoading, setFinancialControlLoading] = useState(false);
-  const [permissionReviewReport, setPermissionReviewReport] = useState<PermissionReviewReport | null>(null);
-  const [permissionReviewLoading, setPermissionReviewLoading] = useState(false);
-  const [privacyAccessReport, setPrivacyAccessReport] = useState<PrivacyAccessReport | null>(null);
-  const [privacyAccessLoading, setPrivacyAccessLoading] = useState(false);
-  const [auditIntegrityReport, setAuditIntegrityReport] = useState<AuditIntegrityReport | null>(null);
-  const [auditIntegrityLoading, setAuditIntegrityLoading] = useState(false);
-  const [operationModeStatus, setOperationModeStatus] = useState<OperationModeStatus | null>(null);
-  const [operationModeLoading, setOperationModeLoading] = useState(false);
-  const [reportJobStatus, setReportJobStatus] = useState<ReportJobRunResult | null>(null);
-  const [reportJobLoading, setReportJobLoading] = useState(false);
-  const [performancePolicy, setPerformancePolicy] = useState<PerformancePolicyStatus | null>(null);
-  const [performancePolicyLoading, setPerformancePolicyLoading] = useState(false);
-  const [capacityPlanningReport, setCapacityPlanningReport] = useState<CapacityPlanningReport | null>(null);
-  const [capacityPlanningLoading, setCapacityPlanningLoading] = useState(false);
-  const [manualRecoveryDraft, setManualRecoveryDraft] = useState({
-    targetCode: "",
-    nextStatus: "오류",
-    accountStatus: "확인 완료",
-    scheduledDate: "",
-    reason: "지급 상태 수동 복구",
-    reviewReason: "수동 복구 2차 검토 승인",
-  });
-  const [passwordPolicy, setPasswordPolicy] = useState<PasswordPolicySummary | null>(null);
-  const [passwordChanging, setPasswordChanging] = useState(false);
-  const [passwordDraft, setPasswordDraft] = useState({
-    currentPassword: "",
-    newPassword: "",
-    confirmPassword: "",
-  });
   const [systemSettingVersions, setSystemSettingVersions] = useState<Partial<Record<SystemSettingKey, SystemSettingSnapshotMeta>>>({});
   const [settingsServerSnapshot, setSettingsServerSnapshot] = useState<SettingsServerSnapshot | null>(null);
 
@@ -8827,439 +7891,6 @@ function SettingsBody({ currentUser, page }: { currentUser: AuthUser; page: Page
       // Fall back to an in-session history row so the operator still gets immediate feedback.
     }
     if (fallbackDesc && fallbackTag) recordChange(fallbackDesc, fallbackTag);
-  };
-
-  const refreshDataQualityRuns = async (showMessage = true) => {
-    setDataQualityLoading(true);
-    try {
-      const response = await erpApi.listDataQualityRuns();
-      setDataQualityRuns(response.data);
-      if (showMessage) {
-        const latest = response.data.runs[0];
-        setSettingsMessage(
-          latest
-            ? "데이터 품질 이력 조회 완료: 최근 실행 critical " + latest.criticalCount + "건, warning " + latest.warningCount + "건."
-            : "데이터 품질 실행 이력이 없습니다. 지금 실행으로 첫 리포트를 생성하세요.",
-        );
-      }
-    } catch (error) {
-      if (showMessage) setSettingsMessage("데이터 품질 이력 조회 실패: " + (error instanceof Error ? error.message : "실행 이력을 불러오지 못했습니다."));
-    } finally {
-      setDataQualityLoading(false);
-    }
-  };
-
-  const runDataQualityBatch = async () => {
-    setDataQualityLoading(true);
-    try {
-      const response = await erpApi.runDataQualityJob();
-      const refreshed = await erpApi.listDataQualityRuns();
-      setDataQualityRuns(refreshed.data);
-      setSettingsMessage(
-        "데이터 품질 배치 완료: critical " + response.data.run.criticalCount + "건, warning " + response.data.run.warningCount + "건, 관리자 알림 " + response.data.notificationsCreated + "건.",
-      );
-      await refreshSettingsHistory("데이터 품질 정합성 배치 실행", "운영 변경");
-    } catch (error) {
-      setSettingsMessage("데이터 품질 배치 실패: " + (error instanceof Error ? error.message : "배치를 실행하지 못했습니다."));
-    } finally {
-      setDataQualityLoading(false);
-    }
-  };
-
-  const downloadDataQualityReport = async (runId: string) => {
-    setDataQualityLoading(true);
-    try {
-      const response = await erpApi.downloadDataQualityRun(runId);
-      triggerBase64Download(response.data.fileName, response.data.contentType, response.data.contentBase64);
-      setSettingsMessage("데이터 품질 리포트 다운로드 완료: " + response.data.fileName);
-    } catch (error) {
-      setSettingsMessage("데이터 품질 리포트 다운로드 실패: " + (error instanceof Error ? error.message : "리포트를 내려받지 못했습니다."));
-    } finally {
-      setDataQualityLoading(false);
-    }
-  };
-
-  const refreshRetentionPolicy = async (showMessage = true) => {
-    setRetentionLoading(true);
-    try {
-      const response = await erpApi.getRetentionPolicySummary();
-      setRetentionSummary(response.data);
-      if (showMessage) {
-        setSettingsMessage(
-          response.data.actionRequired
-            ? `보관 정책 점검 완료: ${response.data.summary.triggeredChecks}개 정리/전환 대상이 있습니다.`
-            : "보관 정책 점검 완료: 즉시 조치 대상이 없습니다.",
-        );
-      }
-    } catch (error) {
-      if (showMessage) setSettingsMessage(`보관 정책 조회 실패: ${error instanceof Error ? error.message : "운영 정책을 불러오지 못했습니다."}`);
-    } finally {
-      setRetentionLoading(false);
-    }
-  };
-
-  const refreshAccountLifecycle = async (showMessage = true) => {
-    setAccountLifecycleLoading(true);
-    try {
-      const response = await erpApi.getAccountLifecycleSummary();
-      setAccountLifecycleSummary(response.data);
-      if (showMessage) {
-        setSettingsMessage(
-          response.data.actionRequired
-            ? `계정 수명주기 점검 완료: ${response.data.summary.totalCandidates}개 비활성화 후보가 있습니다.`
-            : "계정 수명주기 점검 완료: 비활성화 후보가 없습니다.",
-        );
-      }
-    } catch (error) {
-      if (showMessage) setSettingsMessage(`계정 수명주기 조회 실패: ${error instanceof Error ? error.message : "운영 계정 후보를 불러오지 못했습니다."}`);
-    } finally {
-      setAccountLifecycleLoading(false);
-    }
-  };
-
-  const runAccountLifecycleDeactivation = async () => {
-    const reason = accountLifecycleReason.trim();
-    if (!reason) {
-      setSettingsMessage("계정 비활성화 배치 사유를 입력하세요.");
-      return;
-    }
-    setAccountLifecycleLoading(true);
-    try {
-      const response = await erpApi.deactivateAccountLifecycle({
-        scope: "all",
-        reason,
-        idempotencyKey: `account-lifecycle-deactivate-${Date.now()}-${stableJsonHash(reason)}`,
-      });
-      setSettingsMessage(`계정 비활성화 배치 완료: ${response.data.deactivatedCount}명 비활성화, ${response.data.sessionsRevoked}개 세션 종료.`);
-      await refreshAccountLifecycle(false);
-      await refreshSettingsHistory("계정 수명주기 비활성화 배치 실행", "사용자 변경");
-    } catch (error) {
-      setSettingsMessage(`계정 비활성화 배치 실패: ${error instanceof Error ? error.message : "요청을 처리하지 못했습니다."}`);
-    } finally {
-      setAccountLifecycleLoading(false);
-    }
-  };
-
-  const refreshFinancialReconciliation = async (showMessage = true) => {
-    setFinancialReconciliationLoading(true);
-    try {
-      const response = await erpApi.getFinancialReconciliationSummary();
-      setFinancialReconciliationSummary(response.data);
-      if (showMessage) {
-        setSettingsMessage(
-          response.data.actionRequired
-            ? `재무 대사 완료: ${response.data.summary.mismatchCount}개 불일치가 있습니다.`
-            : "재무 대사 완료: 예산/지급/보고서 원장 불일치가 없습니다.",
-        );
-      }
-    } catch (error) {
-      if (showMessage) setSettingsMessage(`재무 대사 조회 실패: ${error instanceof Error ? error.message : "재무 원장 대사 결과를 불러오지 못했습니다."}`);
-    } finally {
-      setFinancialReconciliationLoading(false);
-    }
-  };
-
-  const runFinancialReconciliationNotify = async () => {
-    setFinancialReconciliationLoading(true);
-    try {
-      const response = await erpApi.notifyFinancialReconciliation();
-      setFinancialReconciliationSummary(response.data.summary);
-      setSettingsMessage(`재무 대사 알림 발송 완료: 담당자 ${response.data.recipientCount}명, 신규 알림 ${response.data.notificationsCreated}건.`);
-      await refreshSettingsHistory("재무 대사 불일치 알림 발송", "알림 변경");
-    } catch (error) {
-      setSettingsMessage(`재무 대사 알림 발송 실패: ${error instanceof Error ? error.message : "요청을 처리하지 못했습니다."}`);
-    } finally {
-      setFinancialReconciliationLoading(false);
-    }
-  };
-
-  const refreshManualRecoveries = async (showMessage = true) => {
-    setManualRecoveryLoading(true);
-    try {
-      const response = await erpApi.listManualRecoveries();
-      setManualRecoverySummary(response.data);
-      if (showMessage) {
-        setSettingsMessage(`수동 복구 조회 완료: 대기 ${response.data.summary.pending}건, 승인 ${response.data.summary.approved}건, 반려 ${response.data.summary.rejected}건.`);
-      }
-    } catch (error) {
-      if (showMessage) setSettingsMessage(`수동 복구 조회 실패: ${error instanceof Error ? error.message : "복구 요청을 불러오지 못했습니다."}`);
-    } finally {
-      setManualRecoveryLoading(false);
-    }
-  };
-
-  const requestManualRecovery = async () => {
-    const targetCode = manualRecoveryDraft.targetCode.trim();
-    const reason = manualRecoveryDraft.reason.trim();
-    if (!targetCode || !reason) {
-      setSettingsMessage("수동 복구 지급번호와 요청 사유를 입력하세요.");
-      return;
-    }
-    setManualRecoveryLoading(true);
-    try {
-      const response = await erpApi.requestManualRecovery({
-        targetType: "disbursement",
-        targetCode,
-        nextStatus: manualRecoveryDraft.nextStatus,
-        accountStatus: manualRecoveryDraft.accountStatus,
-        scheduledDate: manualRecoveryDraft.scheduledDate || undefined,
-        reason,
-        idempotencyKey: `manual-recovery-request-${Date.now()}-${stableJsonHash({ targetCode, reason, nextStatus: manualRecoveryDraft.nextStatus })}`,
-      });
-      setManualRecoverySummary(response.data.summary);
-      await refreshFinancialControlReport(false);
-      setSettingsMessage(`수동 복구 요청 생성 완료: ${targetCode}. 다른 관리자의 2차 승인이 필요합니다.`);
-      await refreshSettingsHistory(`수동 복구 요청 (${targetCode})`, "운영 변경");
-    } catch (error) {
-      setSettingsMessage(`수동 복구 요청 실패: ${error instanceof Error ? error.message : "요청을 처리하지 못했습니다."}`);
-    } finally {
-      setManualRecoveryLoading(false);
-    }
-  };
-
-  const reviewManualRecovery = async (recoveryId: string, decision: "approve" | "reject") => {
-    const reason = manualRecoveryDraft.reviewReason.trim();
-    if (!reason) {
-      setSettingsMessage("수동 복구 검토 사유를 입력하세요.");
-      return;
-    }
-    setManualRecoveryLoading(true);
-    try {
-      const input = {
-        reason,
-        idempotencyKey: `manual-recovery-${decision}-${recoveryId}-${Date.now()}-${stableJsonHash(reason)}`,
-      };
-      const response = decision === "approve"
-        ? await erpApi.approveManualRecovery(recoveryId, input)
-        : await erpApi.rejectManualRecovery(recoveryId, input);
-      setManualRecoverySummary(response.data.summary);
-      await refreshFinancialControlReport(false);
-      setSettingsMessage(`수동 복구 ${decision === "approve" ? "승인" : "반려"} 완료: ${recoveryId}`);
-      await refreshSettingsHistory(`수동 복구 ${decision === "approve" ? "승인" : "반려"}`, "운영 변경");
-    } catch (error) {
-      setSettingsMessage(`수동 복구 검토 실패: ${error instanceof Error ? error.message : "요청을 처리하지 못했습니다."}`);
-    } finally {
-      setManualRecoveryLoading(false);
-    }
-  };
-
-  const refreshFinancialControlReport = async (showMessage = true) => {
-    setFinancialControlLoading(true);
-    try {
-      const response = await erpApi.getFinancialControlReport();
-      setFinancialControlReport(response.data);
-      if (showMessage) {
-        setSettingsMessage(
-          response.data.ok
-            ? `재무 통제 리포트 조회 완료: ${response.data.summary.checklistPassed}/${response.data.summary.checklistTotal}개 점검 통과.`
-            : `재무 통제 리포트 조회 완료: 예외 ${response.data.summary.exceptions}건, 미통과 점검 ${response.data.summary.checklistTotal - response.data.summary.checklistPassed}건.`,
-        );
-      }
-    } catch (error) {
-      if (showMessage) setSettingsMessage(`재무 통제 리포트 조회 실패: ${error instanceof Error ? error.message : "리포트를 불러오지 못했습니다."}`);
-    } finally {
-      setFinancialControlLoading(false);
-    }
-  };
-
-  const refreshPermissionReviewReport = async (showMessage = true) => {
-    setPermissionReviewLoading(true);
-    try {
-      const response = await erpApi.getPermissionReviewReport();
-      setPermissionReviewReport(response.data);
-      if (showMessage) {
-        setSettingsMessage(
-          response.data.ok
-            ? `권한 검토 리포트 조회 완료: ${response.data.summary.checklistPassed}/${response.data.summary.checklistTotal}개 점검 통과.`
-            : `권한 검토 리포트 조회 완료: 예외 ${response.data.summary.exceptions}건, 특권 사용자 ${response.data.summary.privilegedUsers}명.`,
-        );
-      }
-    } catch (error) {
-      if (showMessage) setSettingsMessage(`권한 검토 리포트 조회 실패: ${error instanceof Error ? error.message : "리포트를 불러오지 못했습니다."}`);
-    } finally {
-      setPermissionReviewLoading(false);
-    }
-  };
-  const refreshPrivacyAccessReport = async (showMessage = true) => {
-    setPrivacyAccessLoading(true);
-    try {
-      const response = await erpApi.getPrivacyAccessReport();
-      setPrivacyAccessReport(response.data);
-      if (showMessage) {
-        setSettingsMessage(
-          response.data.ok
-            ? `개인정보 접근 리포트 조회 완료: 점검 ${response.data.summary.checklistPassed}/${response.data.summary.checklistTotal}개 통과.`
-            : `개인정보 접근 리포트 조회 완료: 다운로드 사유 누락 ${response.data.summary.missingDownloadReasons}건.`,
-        );
-      }
-    } catch (error) {
-      if (showMessage) setSettingsMessage(`개인정보 접근 리포트 조회 실패: ${error instanceof Error ? error.message : "리포트를 불러오지 못했습니다."}`);
-    } finally {
-      setPrivacyAccessLoading(false);
-    }
-  };
-  const refreshAuditIntegrityReport = async (showMessage = true) => {
-    setAuditIntegrityLoading(true);
-    try {
-      const response = await erpApi.getAuditIntegrityReport();
-      setAuditIntegrityReport(response.data);
-      if (showMessage) {
-        setSettingsMessage(
-          response.data.ok
-            ? `감사 로그 무결성 리포트 조회 완료: 체인 ${response.data.summary.chainLength}건, tail ${response.data.summary.tailHash.slice(0, 12)}...`
-            : `감사 로그 무결성 리포트 조회 완료: 점검 ${response.data.summary.checkpointsPassed}/${response.data.summary.checkpointsTotal}개 통과.`,
-        );
-      }
-    } catch (error) {
-      if (showMessage) setSettingsMessage(`감사 로그 무결성 리포트 조회 실패: ${error instanceof Error ? error.message : "리포트를 불러오지 못했습니다."}`);
-    } finally {
-      setAuditIntegrityLoading(false);
-    }
-  };
-  const refreshOperationMode = async (showMessage = true) => {
-    setOperationModeLoading(true);
-    try {
-      const response = await erpApi.getOperationMode();
-      setOperationModeStatus(response.data);
-      if (showMessage) {
-        setSettingsMessage(
-          response.data.active
-            ? `운영 모드 조회 완료: ${response.data.label} 상태로 ${response.data.restrictions.length}개 제한이 적용 중입니다.`
-            : "운영 모드 조회 완료: 정상 운영 상태입니다.",
-        );
-      }
-    } catch (error) {
-      if (showMessage) setSettingsMessage(`운영 모드 조회 실패: ${error instanceof Error ? error.message : "상태를 불러오지 못했습니다."}`);
-    } finally {
-      setOperationModeLoading(false);
-    }
-  };
-
-  const refreshReportJobs = async (showMessage = true) => {
-    setReportJobLoading(true);
-    try {
-      const response = await erpApi.getReportJobStatus();
-      setReportJobStatus(response.data);
-      if (showMessage) {
-        setSettingsMessage(
-          response.data.circuitBreaker.open
-            ? `보고서 예약 job 회로 차단: 최근 실패 ${response.data.circuitBreaker.recentFailures}건으로 실행이 보류됩니다.`
-            : `보고서 예약 job 조회 완료: 대기 ${response.data.summary.due}건, 최근 dead-letter ${response.data.summary.deadLetter}건.`,
-        );
-      }
-    } catch (error) {
-      if (showMessage) setSettingsMessage(`보고서 예약 job 조회 실패: ${error instanceof Error ? error.message : "job 상태를 불러오지 못했습니다."}`);
-    } finally {
-      setReportJobLoading(false);
-    }
-  };
-
-  const runReportJobs = async () => {
-    setReportJobLoading(true);
-    try {
-      const response = await erpApi.runReportJobs({ dryRun: false });
-      setReportJobStatus(response.data);
-      setSettingsMessage(
-        `보고서 예약 job 실행 완료: 처리 ${response.data.summary.processed}건, 발송 ${response.data.summary.delivered}건, 재시도 ${response.data.summary.retryScheduled}건, dead-letter ${response.data.summary.deadLetter}건.`,
-      );
-      await refreshSettingsHistory("보고서 예약 job 실행", "운영 변경");
-    } catch (error) {
-      setSettingsMessage(`보고서 예약 job 실행 실패: ${error instanceof Error ? error.message : "요청을 처리하지 못했습니다."}`);
-    } finally {
-      setReportJobLoading(false);
-    }
-  };
-
-  const refreshPerformancePolicy = async (showMessage = true) => {
-    setPerformancePolicyLoading(true);
-    try {
-      const response = await erpApi.getPerformancePolicy();
-      setPerformancePolicy(response.data);
-      if (showMessage) {
-        setSettingsMessage(
-          response.data.ok
-            ? `성능/용량 기준 조회 완료: p95 ${response.data.latency.p95TargetMs}ms, p99 ${response.data.latency.p99TargetMs}ms 목표입니다.`
-            : "성능/용량 기준 조회 완료: 현재 latency가 목표를 초과했습니다.",
-        );
-      }
-    } catch (error) {
-      if (showMessage) setSettingsMessage(`성능/용량 기준 조회 실패: ${error instanceof Error ? error.message : "정책을 불러오지 못했습니다."}`);
-    } finally {
-      setPerformancePolicyLoading(false);
-    }
-  };
-
-  const refreshCapacityPlanning = async (showMessage = true) => {
-    setCapacityPlanningLoading(true);
-    try {
-      const response = await erpApi.getCapacityPlanningReport();
-      setCapacityPlanningReport(response.data);
-      if (showMessage) {
-        setSettingsMessage(
-          response.data.actionRequired
-            ? `용량 계획 조회 완료: 첫 경고 ${response.data.summary.firstWarningMonth ?? "-"}, 첫 위험 ${response.data.summary.firstCriticalMonth ?? "-"}입니다.`
-            : `용량 계획 조회 완료: ${response.data.assumptions.forecastMonths}개월 예측 범위에서 임계치 미만입니다.`,
-        );
-      }
-    } catch (error) {
-      if (showMessage) setSettingsMessage(`용량 계획 조회 실패: ${error instanceof Error ? error.message : "리포트를 불러오지 못했습니다."}`);
-    } finally {
-      setCapacityPlanningLoading(false);
-    }
-  };
-  const refreshOperationPolicies = async () => {
-    await Promise.allSettled([
-      refreshOperationMode(false),
-      refreshReportJobs(false),
-      refreshPerformancePolicy(false),
-      refreshCapacityPlanning(false),
-      refreshDataQualityRuns(false),
-      refreshRetentionPolicy(false),
-      refreshAccountLifecycle(false),
-      refreshFinancialReconciliation(false),
-      refreshManualRecoveries(false),
-      refreshFinancialControlReport(false),
-      refreshPermissionReviewReport(false),
-      refreshPrivacyAccessReport(false),
-      refreshAuditIntegrityReport(false),
-    ]);
-    setSettingsMessage("운영 모드, 보고서 예약 job, 성능/용량 기준, 12개월 용량 계획, 데이터 품질 배치, 보관 정책, 계정 수명주기, 재무 대사, 수동 복구, 권한 검토, 개인정보 접근, 감사 로그 무결성 리포트를 새로고침했습니다.");
-  };
-
-  const refreshPasswordPolicy = async (showMessage = true) => {
-    try {
-      const response = await erpApi.getPasswordPolicy();
-      setPasswordPolicy(response.data);
-      if (showMessage) setSettingsMessage(`비밀번호 정책 조회 완료: 최소 ${response.data.minLength}자, ${response.data.maxAgeDays}일 만료.`);
-    } catch (error) {
-      if (showMessage) setSettingsMessage(`비밀번호 정책 조회 실패: ${error instanceof Error ? error.message : "정책을 불러오지 못했습니다."}`);
-    }
-  };
-
-  const runPasswordChange = async () => {
-    if (!passwordDraft.currentPassword || !passwordDraft.newPassword || !passwordDraft.confirmPassword) {
-      setSettingsMessage("현재 비밀번호와 새 비밀번호를 모두 입력하세요.");
-      return;
-    }
-    if (passwordDraft.newPassword !== passwordDraft.confirmPassword) {
-      setSettingsMessage("새 비밀번호 확인이 일치하지 않습니다.");
-      return;
-    }
-    setPasswordChanging(true);
-    try {
-      const response = await erpApi.changePassword({
-        currentPassword: passwordDraft.currentPassword,
-        newPassword: passwordDraft.newPassword,
-      });
-      setPasswordDraft({ currentPassword: "", newPassword: "", confirmPassword: "" });
-      setPasswordPolicy(response.data.policy);
-      setSettingsMessage(`비밀번호가 변경되었습니다. 다른 활성 세션 ${response.data.sessionsRevoked}개를 종료했고, ${response.data.expiresAt.slice(0, 10)}까지 사용할 수 있습니다.`);
-      await refreshSettingsHistory("비밀번호 변경", "사용자 변경");
-    } catch (error) {
-      setSettingsMessage(`비밀번호 변경 실패: ${error instanceof Error ? error.message : "요청을 처리하지 못했습니다."}`);
-    } finally {
-      setPasswordChanging(false);
-    }
   };
 
   useEffect(() => {
@@ -9348,114 +7979,6 @@ function SettingsBody({ currentUser, page }: { currentUser: AuthUser; page: Page
       })
       .catch(() => {
         if (active) setSettingsMessage("설정 변경 이력 조회 실패: 로컬 기본 이력을 표시합니다.");
-      });
-
-    erpApi.listDataQualityRuns()
-      .then((response) => {
-        if (active) setDataQualityRuns(response.data);
-      })
-      .catch(() => {
-        if (active) setDataQualityRuns(null);
-      });
-
-    erpApi.getRetentionPolicySummary()
-      .then((response) => {
-        if (active) setRetentionSummary(response.data);
-      })
-      .catch(() => {
-        if (active) setRetentionSummary(null);
-      });
-
-    erpApi.getAccountLifecycleSummary()
-      .then((response) => {
-        if (active) setAccountLifecycleSummary(response.data);
-      })
-      .catch(() => {
-        if (active) setAccountLifecycleSummary(null);
-      });
-
-    erpApi.getFinancialReconciliationSummary()
-      .then((response) => {
-        if (active) setFinancialReconciliationSummary(response.data);
-      })
-      .catch(() => {
-        if (active) setFinancialReconciliationSummary(null);
-      });
-
-    erpApi.listManualRecoveries()
-      .then((response) => {
-        if (active) setManualRecoverySummary(response.data);
-      })
-      .catch(() => {
-        if (active) setManualRecoverySummary(null);
-      });
-
-    erpApi.getFinancialControlReport()
-      .then((response) => {
-        if (active) setFinancialControlReport(response.data);
-      })
-      .catch(() => {
-        if (active) setFinancialControlReport(null);
-      });
-    erpApi.getPermissionReviewReport()
-      .then((response) => {
-        if (active) setPermissionReviewReport(response.data);
-      })
-      .catch(() => {
-        if (active) setPermissionReviewReport(null);
-      });
-    erpApi.getPrivacyAccessReport()
-      .then((response) => {
-        if (active) setPrivacyAccessReport(response.data);
-      })
-      .catch(() => {
-        if (active) setPrivacyAccessReport(null);
-      });
-
-    erpApi.getAuditIntegrityReport()
-      .then((response) => {
-        if (active) setAuditIntegrityReport(response.data);
-      })
-      .catch(() => {
-        if (active) setAuditIntegrityReport(null);
-      });
-    erpApi.getOperationMode()
-      .then((response) => {
-        if (active) setOperationModeStatus(response.data);
-      })
-      .catch(() => {
-        if (active) setOperationModeStatus(null);
-      });
-
-    erpApi.getReportJobStatus()
-      .then((response) => {
-        if (active) setReportJobStatus(response.data);
-      })
-      .catch(() => {
-        if (active) setReportJobStatus(null);
-      });
-
-    erpApi.getPerformancePolicy()
-      .then((response) => {
-        if (active) setPerformancePolicy(response.data);
-      })
-      .catch(() => {
-        if (active) setPerformancePolicy(null);
-      });
-
-    erpApi.getCapacityPlanningReport()
-      .then((response) => {
-        if (active) setCapacityPlanningReport(response.data);
-      })
-      .catch(() => {
-        if (active) setCapacityPlanningReport(null);
-      });
-    erpApi.getPasswordPolicy()
-      .then((response) => {
-        if (active) setPasswordPolicy(response.data);
-      })
-      .catch(() => {
-        if (active) setPasswordPolicy(null);
       });
 
     return () => {
@@ -9668,14 +8191,12 @@ function SettingsBody({ currentUser, page }: { currentUser: AuthUser; page: Page
       setSettingsMessage(`${roleName} 권한 그룹이 이미 있습니다.`);
       return;
     }
-    const templatePermissionCodes = getRoleTemplatePermissionCodes(roleDraft.template);
     const nextGroup: RolePermissionGroup = {
       id: `role-${Date.now()}`,
       name: roleName,
       tag: roleDraft.tag.trim() || "그룹",
       userCount: 0,
-      permissions: rolePermissionsToColumns(templatePermissionCodes),
-      permissionCodes: templatePermissionCodes,
+      permissions: getRoleTemplatePermissions(roleDraft.template),
       status: "활성",
       rowVersion: 1,
     };
@@ -9696,18 +8217,9 @@ function SettingsBody({ currentUser, page }: { currentUser: AuthUser; page: Page
   const handleTogglePermission = async (groupId: string, permission: PermissionColumn) => {
     const currentGroup = roleGroups.find((group) => group.id === groupId);
     if (!currentGroup) return;
-    const currentCodes = expandedPermissionCodes(currentGroup.permissionCodes);
-    const columnCodes = permissionCodesByColumn[permission];
-    const nextColumnEnabled = !currentGroup.permissions[permission];
-    const nextPermissionCodes = normalizePermissionCodes(
-      nextColumnEnabled
-        ? [...currentCodes, ...columnCodes]
-        : currentCodes.filter((permissionCode) => !columnCodes.includes(permissionCode)),
-    );
     const nextGroup: RolePermissionGroup = {
       ...currentGroup,
-      permissions: rolePermissionsToColumns(nextPermissionCodes),
-      permissionCodes: nextPermissionCodes,
+      permissions: { ...currentGroup.permissions, [permission]: !currentGroup.permissions[permission] },
     };
     setRoleGroups((current) => current.map((group) => (group.id === groupId ? nextGroup : group)));
     try {
@@ -9718,42 +8230,11 @@ function SettingsBody({ currentUser, page }: { currentUser: AuthUser; page: Page
         setRoleGroups(nextRoleGroups);
         updateSettingsServerSnapshot({ roleGroups: nextRoleGroups });
       }
-      setSettingsMessage(`${nextGroup.name}의 ${permission} 권한이 backend 권한 코드로 저장되었습니다.${sessionRevocationNotice(response.meta)}`);
+      setSettingsMessage(`${nextGroup.name}의 ${permission} 권한이 backend 권한 코드로 저장되었습니다.`);
       await refreshSettingsHistory(`사용자 권한 수정 (${nextGroup.name} - ${permission})`, "권한 변경");
     } catch (error) {
       setRoleGroups((current) => current.map((group) => (group.id === groupId ? currentGroup : group)));
       setSettingsMessage(`권한 변경 실패: ${error instanceof Error ? error.message : "요청을 처리하지 못했습니다."}`);
-    }
-  };
-
-  const handleTogglePermissionCode = async (groupId: string, permissionCode: string) => {
-    const currentGroup = roleGroups.find((group) => group.id === groupId);
-    if (!currentGroup) return;
-    const currentCodes = expandedPermissionCodes(currentGroup.permissionCodes);
-    const nextPermissionCodes = normalizePermissionCodes(
-      roleHasPermissionCode(currentGroup, permissionCode)
-        ? currentCodes.filter((code) => code !== permissionCode)
-        : [...currentCodes, permissionCode],
-    );
-    const nextGroup: RolePermissionGroup = {
-      ...currentGroup,
-      permissions: rolePermissionsToColumns(nextPermissionCodes),
-      permissionCodes: nextPermissionCodes,
-    };
-    setRoleGroups((current) => current.map((group) => (group.id === groupId ? nextGroup : group)));
-    try {
-      const response = await erpApi.updateRoleSettings(groupId, { ...roleGroupToInput(nextGroup), rowVersion: currentGroup.rowVersion, idempotencyKey: roleMutationKey("permission-code", currentGroup) });
-      if (response.data) {
-        const savedGroup = roleDtoToGroup(response.data);
-        const nextRoleGroups = roleGroups.map((group) => (group.id === groupId ? savedGroup : group));
-        setRoleGroups(nextRoleGroups);
-        updateSettingsServerSnapshot({ roleGroups: nextRoleGroups });
-      }
-      setSettingsMessage(`${nextGroup.name}의 ${permissionCode} 세부 권한이 backend 권한 코드로 저장되었습니다.${sessionRevocationNotice(response.meta)}`);
-      await refreshSettingsHistory(`권한 코드 수정 (${nextGroup.name} - ${permissionCode})`, "권한 변경");
-    } catch (error) {
-      setRoleGroups((current) => current.map((group) => (group.id === groupId ? currentGroup : group)));
-      setSettingsMessage(`세부 권한 변경 실패: ${error instanceof Error ? error.message : "요청을 처리하지 못했습니다."}`);
     }
   };
 
@@ -9770,7 +8251,7 @@ function SettingsBody({ currentUser, page }: { currentUser: AuthUser; page: Page
         setRoleGroups(nextRoleGroups);
         updateSettingsServerSnapshot({ roleGroups: nextRoleGroups });
       }
-      setSettingsMessage(`${nextGroup.name} 상태가 backend 역할 상태로 저장되었습니다.${sessionRevocationNotice(response.meta)}`);
+      setSettingsMessage(`${nextGroup.name} 상태가 backend 역할 상태로 저장되었습니다.`);
       await refreshSettingsHistory(`권한 그룹 상태 변경 (${nextGroup.name})`, "권한 변경");
     } catch (error) {
       setRoleGroups((current) => current.map((group) => (group.id === groupId ? currentGroup : group)));
@@ -9818,7 +8299,7 @@ function SettingsBody({ currentUser, page }: { currentUser: AuthUser; page: Page
     };
     try {
       const response = existingAssignment
-        ? await erpApi.updatePageRow("settings", existingAssignment.id, userRow)
+        ? await erpApi.updatePageRow("settings", normalizedUserName, userRow)
         : await erpApi.createPageRow("settings", userRow);
       const savedUser = settingRowToAssignedUser(response.data ?? userRow, Date.now());
       const nextAssignedUsers = [savedUser, ...assignedUsers.filter((assigned) => assignedUserName(assigned.user) !== normalizedUserName)];
@@ -9826,7 +8307,7 @@ function SettingsBody({ currentUser, page }: { currentUser: AuthUser; page: Page
       setAssignedUsers(nextAssignedUsers);
       setRoleGroups(nextRoleGroups);
       updateSettingsServerSnapshot({ assignedUsers: nextAssignedUsers, roleGroups: nextRoleGroups });
-      setSettingsMessage(`${normalizedUserName} 사용자 권한이 ${existingAssignment ? "수정" : "추가"}되어 backend 사용자 역할에 저장되었습니다.${sessionRevocationNotice(response.meta)}`);
+      setSettingsMessage(`${normalizedUserName} 사용자 권한이 ${existingAssignment ? "수정" : "추가"}되어 backend 사용자 역할에 저장되었습니다.`);
       await refreshSettingsHistory(`사용자 권한 ${existingAssignment ? "수정" : "추가"} (${normalizedUserName} - ${targetGroup.name})`, "사용자 변경");
     } catch (error) {
       setSettingsMessage(`사용자 권한 저장 실패: ${error instanceof Error ? error.message : "요청을 처리하지 못했습니다."}`);
@@ -9858,14 +8339,14 @@ function SettingsBody({ currentUser, page }: { currentUser: AuthUser; page: Page
       ...(nextAssignment.rowVersion ? { rowVersion: nextAssignment.rowVersion, 사용자RowVersion: nextAssignment.rowVersion } : {}),
     };
     try {
-      const response = await erpApi.updatePageRow("settings", assignment.id, userRow);
+      const response = await erpApi.updatePageRow("settings", userName, userRow);
       const savedUser = settingRowToAssignedUser(response.data ?? userRow, assignment.id);
       const nextAssignedUsers = assignedUsers.map((assigned) => (assigned.id === assignment.id ? savedUser : assigned));
       const nextRoleGroups = withRoleUserCounts(roleGroups, nextAssignedUsers);
       setAssignedUsers(nextAssignedUsers);
       setRoleGroups(nextRoleGroups);
       updateSettingsServerSnapshot({ assignedUsers: nextAssignedUsers, roleGroups: nextRoleGroups });
-      setSettingsMessage(`${savedUser.user} 사용자 권한이 backend 사용자 역할에 저장되었습니다.${sessionRevocationNotice(response.meta)}`);
+      setSettingsMessage(`${savedUser.user} 사용자 권한이 backend 사용자 역할에 저장되었습니다.`);
       await refreshSettingsHistory(`사용자 권한 수정 (${savedUser.user} - ${savedUser.groupName})`, "사용자 변경");
     } catch (error) {
       setSettingsMessage(`사용자 권한 저장 실패: ${error instanceof Error ? error.message : "요청을 처리하지 못했습니다."}`);
@@ -9998,28 +8479,6 @@ function SettingsBody({ currentUser, page }: { currentUser: AuthUser; page: Page
     setCancelConfirmOpen(false);
   };
 
-  const settingsTabTitles: Record<string, string> = {
-    "결재 정책": "결재 정책 설정",
-    "사용자 권한": "사용자 권한 설정",
-    "부서 관리": "부서 관리 설정",
-    "알림": "알림 설정",
-    "연동": "외부 연동 설정",
-    "보안": "계정 보안 설정",
-    "보관 정책": "보관 정책 설정",
-  };
-  const settingsFooterAction: { label: string; Icon: typeof CheckCircle2; onClick: () => void } | null =
-    activeTab === "결재 정책"
-      ? { label: "결재 정책 저장", Icon: CheckCircle2, onClick: handleSavePolicy }
-      : activeTab === "부서 관리"
-        ? { label: "부서 설정 저장", Icon: CheckCircle2, onClick: handleSaveDepartmentSettings }
-        : activeTab === "알림"
-          ? { label: "알림 설정 저장", Icon: CheckCircle2, onClick: handleSaveNotifications }
-          : activeTab === "연동"
-            ? { label: "연동 설정 저장", Icon: CheckCircle2, onClick: handleSaveIntegrations }
-            : activeTab === "보관 정책"
-              ? { label: "운영 점검 새로고침", Icon: RefreshCw, onClick: () => void refreshOperationPolicies() }
-              : null;
-  const FooterActionIcon = settingsFooterAction?.Icon;
   const settingsFeedback = settingsLoading ? "권한 그룹을 backend 역할 설정에서 불러오는 중입니다." : settingsMessage;
 
   return (
@@ -10028,7 +8487,7 @@ function SettingsBody({ currentUser, page }: { currentUser: AuthUser; page: Page
         <SettingsTabs activeTab={activeTab} onTabChange={setActiveTab} />
         <div className="settings-section-head">
           <div>
-            <h2>{settingsTabTitles[activeTab] ?? "시스템 설정"}</h2>
+            <h2>결재 정책 설정</h2>
             <p>{page.subtitle}</p>
           </div>
           <StatusPill value={activeTab} />
@@ -10065,7 +8524,6 @@ function SettingsBody({ currentUser, page }: { currentUser: AuthUser; page: Page
                 onDeleteGroup={handleDeleteRoleGroup}
                 onDraftChange={setRoleDraft}
                 onTogglePermission={handleTogglePermission}
-                onTogglePermissionCode={handleTogglePermissionCode}
                 onToggleStatus={handleToggleRoleStatus}
               />
               <UserAddCard
@@ -10113,104 +8571,11 @@ function SettingsBody({ currentUser, page }: { currentUser: AuthUser; page: Page
             <SettingsScopeCard rules={approvalRules} />
           </div>
         )}
-        {activeTab === "보안" && (
-          <PasswordSecurityCard
-            currentUser={currentUser}
-            draft={passwordDraft}
-            loading={passwordChanging}
-            policy={passwordPolicy}
-            onChangeDraft={setPasswordDraft}
-            onRefreshPolicy={() => void refreshPasswordPolicy()}
-            onSubmit={() => void runPasswordChange()}
-          />
-        )}
-        {activeTab === "보관 정책" && (
-          <>
-            <OperationModeCard
-              loading={operationModeLoading}
-              status={operationModeStatus}
-              onRefresh={() => void refreshOperationMode()}
-            />
-            <ReportJobWorkerCard
-              loading={reportJobLoading}
-              status={reportJobStatus}
-              onRefresh={() => void refreshReportJobs()}
-              onRun={() => void runReportJobs()}
-            />
-            <PerformancePolicyCard
-              loading={performancePolicyLoading}
-              status={performancePolicy}
-              onRefresh={() => void refreshPerformancePolicy()}
-            />
-            <CapacityPlanningCard
-              loading={capacityPlanningLoading}
-              report={capacityPlanningReport}
-              onRefresh={() => void refreshCapacityPlanning()}
-            />
-            <DataQualityRunCard
-              data={dataQualityRuns}
-              loading={dataQualityLoading}
-              onDownload={(runId) => void downloadDataQualityReport(runId)}
-              onRefresh={() => void refreshDataQualityRuns()}
-              onRun={() => void runDataQualityBatch()}
-            />
-            <RetentionPolicyCard
-              loading={retentionLoading}
-              summary={retentionSummary}
-              onRefresh={() => void refreshRetentionPolicy()}
-            />
-            <AccountLifecycleCard
-              loading={accountLifecycleLoading}
-              reason={accountLifecycleReason}
-              summary={accountLifecycleSummary}
-              onDeactivate={() => void runAccountLifecycleDeactivation()}
-              onReasonChange={setAccountLifecycleReason}
-              onRefresh={() => void refreshAccountLifecycle()}
-            />
-            <PermissionReviewReportCard
-              loading={permissionReviewLoading}
-              report={permissionReviewReport}
-              onRefresh={() => void refreshPermissionReviewReport()}
-            />
-            <PrivacyAccessReportCard
-              loading={privacyAccessLoading}
-              report={privacyAccessReport}
-              onRefresh={() => void refreshPrivacyAccessReport()}
-            />
-            <AuditIntegrityReportCard
-              loading={auditIntegrityLoading}
-              report={auditIntegrityReport}
-              onRefresh={() => void refreshAuditIntegrityReport()}
-            />
-            <FinancialReconciliationCard
-              loading={financialReconciliationLoading}
-              summary={financialReconciliationSummary}
-              onNotify={() => void runFinancialReconciliationNotify()}
-              onRefresh={() => void refreshFinancialReconciliation()}
-            />
-            <ManualRecoveryCard
-              draft={manualRecoveryDraft}
-              loading={manualRecoveryLoading}
-              summary={manualRecoverySummary}
-              onDraftChange={setManualRecoveryDraft}
-              onRefresh={() => void refreshManualRecoveries()}
-              onRequest={() => void requestManualRecovery()}
-              onReview={(recoveryId, decision) => void reviewManualRecovery(recoveryId, decision)}
-            />
-            <FinancialControlReportCard
-              loading={financialControlLoading}
-              report={financialControlReport}
-              onRefresh={() => void refreshFinancialControlReport()}
-            />
-          </>
-        )}
         <footer className="settings-actions">
-          {settingsFooterAction && FooterActionIcon && (
-            <button className="save" onClick={settingsFooterAction.onClick} type="button">
-              <FooterActionIcon size={17} />
-              {settingsFooterAction.label}
-            </button>
-          )}
+          <button className="save" onClick={handleSavePolicy} type="button">
+            <CheckCircle2 size={17} />
+            저장
+          </button>
           <button onClick={() => setCancelConfirmOpen(true)} type="button">취소</button>
         </footer>
         {cancelConfirmOpen && (
@@ -10234,8 +8599,6 @@ function SettingsTabs({ activeTab, onTabChange }: { activeTab: string; onTabChan
     ["부서 관리", Building2],
     ["알림", Bell],
     ["연동", Database],
-    ["보안", ShieldCheck],
-    ["보관 정책", FileText],
   ] as Array<[string, typeof ShieldCheck]>;
   return (
     <nav className="settings-top-tabs" aria-label="설정 탭">
@@ -10276,6 +8639,7 @@ function ApprovalLimitCard({
           기본 정책 복사
         </button>
       </header>
+      <div className="settings-table-scroll">
       <table>
         <thead>
           <tr>
@@ -10347,6 +8711,7 @@ function ApprovalLimitCard({
           })}
         </tbody>
       </table>
+      </div>
       <button className="add-row-button" onClick={onAdd} type="button">
         <Plus size={15} />
         구간 추가
@@ -10405,7 +8770,6 @@ function RolePermissionCard({
   onDeleteGroup,
   onDraftChange,
   onTogglePermission,
-  onTogglePermissionCode,
   onToggleStatus,
 }: {
   draft: RoleGroupDraft;
@@ -10414,7 +8778,6 @@ function RolePermissionCard({
   onDeleteGroup: (groupId: string) => void;
   onDraftChange: (draft: RoleGroupDraft) => void;
   onTogglePermission: (groupId: string, permission: PermissionColumn) => void;
-  onTogglePermissionCode: (groupId: string, permissionCode: string) => void;
   onToggleStatus: (groupId: string) => void;
 }) {
   return (
@@ -10422,7 +8785,7 @@ function RolePermissionCard({
       <header>
         <div>
           <strong>권한 그룹 및 역할 설정</strong>
-          <span>권한 그룹별 시스템 접근 권한과 세부 권한 코드를 설정합니다.</span>
+          <span>권한 그룹별 시스템 접근 권한을 설정합니다.</span>
         </div>
         <button onClick={onAddGroup} type="button">
           <Plus size={15} />
@@ -10474,12 +8837,7 @@ function RolePermissionCard({
         <tbody>
           {roles.map((role) => (
             <tr key={role.id}>
-              <td>
-                {role.name} <span>{role.tag}</span>
-                <small className="role-permission-code-count">
-                  {role.permissionCodes.includes("*") ? "전체 권한" : `${rolePermissionCodeCount(role)}개 코드`}
-                </small>
-              </td>
+              <td>{role.name} <span>{role.tag}</span></td>
               <td>{role.userCount}명</td>
               {permissionColumns.map((permission) => (
                 <td key={`${role.id}-${permission}`}>
@@ -10500,35 +8858,6 @@ function RolePermissionCard({
           ))}
         </tbody>
       </table>
-      <div className="role-permission-detail-list" aria-label="세부 권한 코드 설정">
-        {roles.map((role) => (
-          <article key={`${role.id}-detail`}>
-            <header>
-              <strong>{role.name}</strong>
-              <span>{role.permissionCodes.includes("*") ? "전체 권한" : `${rolePermissionCodeCount(role)}개 권한 코드`}</span>
-            </header>
-            <div className="role-permission-code-grid">
-              {permissionCatalog.map((permission) => {
-                const checked = roleHasPermissionCode(role, permission.code);
-                return (
-                  <button
-                    aria-pressed={checked}
-                    className={checked ? "permission-code-toggle checked" : "permission-code-toggle"}
-                    key={`${role.id}-${permission.code}`}
-                    onClick={() => onTogglePermissionCode(role.id, permission.code)}
-                    title={permission.description}
-                    type="button"
-                  >
-                    <b>{permission.label}</b>
-                    <small>{permission.code}</small>
-                    <span>{permission.group}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </article>
-        ))}
-      </div>
       <p><i className="checked" /> 권한 있음 <i /> 권한 없음</p>
     </section>
   );
@@ -11033,1488 +9362,64 @@ function SettingsScopeCard({ rules }: { rules: ApprovalRuleSettings }) {
   );
 }
 
-function PasswordSecurityCard({
-  currentUser,
-  draft,
-  loading,
-  policy,
-  onChangeDraft,
-  onRefreshPolicy,
-  onSubmit,
-}: {
-  currentUser: AuthUser;
-  draft: { currentPassword: string; newPassword: string; confirmPassword: string };
-  loading: boolean;
-  policy: PasswordPolicySummary | null;
-  onChangeDraft: (draft: { currentPassword: string; newPassword: string; confirmPassword: string }) => void;
-  onRefreshPolicy: () => void;
-  onSubmit: () => void;
-}) {
-  const canSubmit = Boolean(draft.currentPassword && draft.newPassword && draft.confirmPassword && draft.newPassword === draft.confirmPassword);
-  return (
-    <section className="erp-card password-security-card">
-      <header>
-        <div>
-          <strong>비밀번호 정책</strong>
-          <span>{policy ? `최소 ${policy.minLength}자 · ${policy.maxAgeDays}일 만료` : "정책 조회 대기"}</span>
-        </div>
-        <button onClick={onRefreshPolicy} type="button">
-          <RefreshCw size={15} />
-          정책 조회
-        </button>
-      </header>
-      <div className="password-policy-summary">
-        <article>
-          <span>사용자</span>
-          <strong>{currentUser.name}</strong>
-          <small>{currentUser.email}</small>
-        </article>
-        <article>
-          <span>만료 주기</span>
-          <strong>{policy ? `${policy.maxAgeDays}일` : "-"}</strong>
-          <small>{policy?.requirements.join(" · ") ?? "정책 정보를 불러오세요."}</small>
-        </article>
-      </div>
-      <div className="password-change-grid">
-        <label>
-          현재 비밀번호
-          <input
-            autoComplete="current-password"
-            onChange={(event) => onChangeDraft({ ...draft, currentPassword: event.currentTarget.value })}
-            type="password"
-            value={draft.currentPassword}
-          />
-        </label>
-        <label>
-          새 비밀번호
-          <input
-            autoComplete="new-password"
-            onChange={(event) => onChangeDraft({ ...draft, newPassword: event.currentTarget.value })}
-            type="password"
-            value={draft.newPassword}
-          />
-        </label>
-        <label>
-          새 비밀번호 확인
-          <input
-            autoComplete="new-password"
-            onChange={(event) => onChangeDraft({ ...draft, confirmPassword: event.currentTarget.value })}
-            type="password"
-            value={draft.confirmPassword}
-          />
-        </label>
-      </div>
-      <button className="settings-card-save" disabled={loading || !canSubmit} onClick={onSubmit} type="button">
-        <ShieldCheck size={16} />
-        {loading ? "변경 중" : "비밀번호 변경"}
-      </button>
-    </section>
-  );
-}
-
-function OperationModeCard({
-  loading,
-  status,
-  onRefresh,
-}: {
-  loading: boolean;
-  status: OperationModeStatus | null;
-  onRefresh: () => void;
-}) {
-  const activeRestrictionCount = status?.restrictions.length ?? 0;
-  return (
-    <section className={status?.active ? "erp-card operation-mode-card attention" : "erp-card operation-mode-card"}>
-      <header>
-        <div>
-          <strong>장애 기능 제한 모드</strong>
-          <span>{status ? `${status.label} · ${status.generatedAt.slice(0, 16).replace("T", " ")}` : "운영 모드 조회 대기"}</span>
-        </div>
-        <button onClick={onRefresh} type="button">
-          <RefreshCw size={15} />
-          새로고침
-        </button>
-      </header>
-      {loading && <p>운영 제한 모드를 조회하는 중입니다.</p>}
-      {!loading && !status && <p>운영 제한 모드 정보를 불러오지 못했습니다.</p>}
-      {status && (
-        <>
-          <div className="operation-mode-summary">
-            <article>
-              <span>현재 모드</span>
-              <strong>{status.label}</strong>
-            </article>
-            <article>
-              <span>제한 수</span>
-              <strong>{activeRestrictionCount}개</strong>
-            </article>
-            <article>
-              <span>읽기 전용</span>
-              <strong>{status.readOnly ? "적용" : "해제"}</strong>
-            </article>
-          </div>
-          <div className="operation-mode-source">
-            <span>{status.source.operationMode}</span>
-            <span>{status.source.disabledCapabilities}</span>
-          </div>
-          <div className="retention-check-grid">
-            {status.restrictions.length === 0 ? (
-              <article>
-                <header>
-                  <strong>제한 없음</strong>
-                  <StatusPill value="정상" />
-                </header>
-                <span>지급, 파일 업로드, 업무 변경 API가 정상 처리됩니다.</span>
-              </article>
-            ) : status.restrictions.map((restriction) => (
-              <article className="attention" key={restriction.capability}>
-                <header>
-                  <strong>{restriction.label}</strong>
-                  <StatusPill value="차단" />
-                </header>
-                <span>{restriction.summary}</span>
-              </article>
-            ))}
-          </div>
-        </>
-      )}
-    </section>
-  );
-}
-
-function formatReportJobTime(value: string | null | undefined) {
-  return value ? value.slice(0, 16).replace("T", " ") : "-";
-}
-
-function reportJobResultLabel(status: ReportJobRunResult["results"][number]["status"]) {
-  if (status === "delivered") return "완료";
-  if (status === "retry_scheduled") return "재시도";
-  return "중지";
-}
-
-function ReportJobWorkerCard({
-  loading,
-  status,
-  onRefresh,
-  onRun,
-}: {
-  loading: boolean;
-  status: ReportJobRunResult | null;
-  onRefresh: () => void;
-  onRun: () => void;
-}) {
-  const summary = status?.summary;
-  const circuitOpen = Boolean(status?.circuitBreaker.open);
-  const canRun = Boolean(status && !loading && !circuitOpen && summary && summary.due > 0);
-  return (
-    <section className={circuitOpen ? "erp-card report-job-worker-card attention" : "erp-card report-job-worker-card"}>
-      <header>
-        <div>
-          <strong>보고서 예약 job</strong>
-          <span>{status ? `${formatReportJobTime(status.generatedAt)} · ${status.policy.deliveryMode} delivery · 최대 ${status.policy.maxAttempts}회` : "예약 job 조회 대기"}</span>
-        </div>
-        <div className="report-job-actions">
-          <button onClick={onRefresh} type="button">
-            <RefreshCw size={15} />
-            대기 확인
-          </button>
-          <button disabled={!canRun} onClick={onRun} type="button">
-            <CheckCircle2 size={15} />
-            예약 job 실행
-          </button>
-        </div>
-      </header>
-      {loading && <p>보고서 예약 job 상태를 확인하는 중입니다.</p>}
-      {!loading && !status && <p>보고서 예약 job 정보를 불러오지 못했습니다.</p>}
-      {status && summary && (
-        <>
-          <div className="report-job-summary">
-            <article>
-              <span>대기</span>
-              <strong>{summary.due}건</strong>
-            </article>
-            <article>
-              <span>처리</span>
-              <strong>{summary.processed}건</strong>
-            </article>
-            <article>
-              <span>발송</span>
-              <strong>{summary.delivered}건</strong>
-            </article>
-            <article>
-              <span>재시도</span>
-              <strong>{summary.retryScheduled}건</strong>
-            </article>
-            <article>
-              <span>dead-letter</span>
-              <strong>{summary.deadLetter}건</strong>
-            </article>
-            <article>
-              <span>차단</span>
-              <strong>{summary.skipped}건</strong>
-            </article>
-          </div>
-          <div className="report-job-policy">
-            <span>timeout {Math.round(status.policy.timeoutMs / 1000)}초</span>
-            <span>retry {status.policy.retryBaseSeconds}s~{status.policy.retryMaxSeconds}s</span>
-            <span>circuit {status.circuitBreaker.recentFailures}/{status.circuitBreaker.threshold}</span>
-            <span>{status.policy.webhookConfigured ? "webhook 설정됨" : "internal delivery"}</span>
-          </div>
-          <table>
-            <thead>
-              <tr>
-                <th>대기 보고서</th>
-                <th>소유자</th>
-                <th>예정 시각</th>
-              </tr>
-            </thead>
-            <tbody>
-              {status.dueSchedules.length === 0 ? (
-                <tr>
-                  <td colSpan={3}>실행 대기 중인 예약 보고서가 없습니다.</td>
-                </tr>
-              ) : status.dueSchedules.slice(0, 8).map((schedule) => (
-                <tr key={schedule.id}>
-                  <td>{schedule.reportName}</td>
-                  <td>{schedule.owner}</td>
-                  <td>{formatReportJobTime(schedule.nextRunAt)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <table>
-            <thead>
-              <tr>
-                <th>실행 결과</th>
-                <th>시도</th>
-                <th>다음 실행</th>
-                <th>상태</th>
-              </tr>
-            </thead>
-            <tbody>
-              {status.results.length === 0 ? (
-                <tr>
-                  <td colSpan={4}>{status.dryRun ? "대기 확인 결과입니다. 실행 버튼으로 처리할 수 있습니다." : "이번 실행 결과가 없습니다."}</td>
-                </tr>
-              ) : status.results.slice(0, 8).map((result) => (
-                <tr key={result.scheduleId}>
-                  <td>
-                    <b>{result.reportName}</b>
-                    {result.errorMessage && <small>{result.errorMessage}</small>}
-                  </td>
-                  <td>{result.attempt}회</td>
-                  <td>{formatReportJobTime(result.nextRunAt)}</td>
-                  <td><StatusPill value={reportJobResultLabel(result.status)} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {circuitOpen && <p>최근 실패가 circuit breaker 기준을 넘어 신규 실행이 보류됩니다. 실패 원인을 조치한 뒤 다시 확인하세요.</p>}
-        </>
-      )}
-    </section>
-  );
-}
-
-function formatPolicyMs(value: number | null | undefined) {
-  return typeof value === "number" && Number.isFinite(value) ? `${Math.round(value).toLocaleString("ko-KR")} ms` : "-";
-}
-
-function PerformancePolicyCard({
-  loading,
-  status,
-  onRefresh,
-}: {
-  loading: boolean;
-  status: PerformancePolicyStatus | null;
-  onRefresh: () => void;
-}) {
-  return (
-    <section className={status && !status.ok ? "erp-card performance-policy-card attention" : "erp-card performance-policy-card"}>
-      <header>
-        <div>
-          <strong>성능/용량 기준</strong>
-          <span>{status ? `${status.generatedAt.slice(0, 16).replace("T", " ")} · p95 ${formatPolicyMs(status.latency.p95TargetMs)} 목표` : "성능 기준 조회 대기"}</span>
-        </div>
-        <button disabled={loading} onClick={onRefresh} type="button">
-          <RefreshCw size={15} />
-          {loading ? "조회 중" : "새로고침"}
-        </button>
-      </header>
-      {loading && <p>성능/용량 기준을 조회하는 중입니다.</p>}
-      {!loading && !status && <p>성능/용량 기준을 불러오지 못했습니다.</p>}
-      {status && (
-        <>
-          <div className="performance-policy-grid">
-            <article>
-              <span>p95 목표</span>
-              <strong>{formatPolicyMs(status.latency.p95TargetMs)}</strong>
-              <small>현재 {formatPolicyMs(status.latency.currentP95Ms)} · {status.latency.p95Ok ? "정상" : "초과"}</small>
-            </article>
-            <article>
-              <span>p99 목표</span>
-              <strong>{formatPolicyMs(status.latency.p99TargetMs)}</strong>
-              <small>현재 {formatPolicyMs(status.latency.currentP99Ms)} · {status.latency.p99Ok ? "정상" : "초과"}</small>
-            </article>
-            <article>
-              <span>job 최대 처리</span>
-              <strong>{formatPolicyMs(status.reportJob.maxProcessingMs)}</strong>
-              <small>worker timeout {formatPolicyMs(status.reportJob.workerTimeoutMs)}</small>
-            </article>
-            <article>
-              <span>다운로드 행 제한</span>
-              <strong>{status.largeDownload.maxReportRows.toLocaleString("ko-KR")}행</strong>
-              <small>직접 다운로드 상한</small>
-            </article>
-            <article>
-              <span>다운로드 크기 제한</span>
-              <strong>{formatFileSize(status.largeDownload.maxReportBytes)}</strong>
-              <small>base64 payload 기준</small>
-            </article>
-            <article>
-              <span>latency sample</span>
-              <strong>{status.latency.sampleSize.toLocaleString("ko-KR")}건</strong>
-              <small>{status.latency.source}</small>
-            </article>
-          </div>
-          <div className="report-job-policy">
-            <span>batch {status.reportJob.batchSize}건</span>
-            <span>attempt {status.reportJob.maxAttempts}회</span>
-            <span>{status.reportJob.source}</span>
-            <span>{status.largeDownload.source}</span>
-          </div>
-        </>
-      )}
-    </section>
-  );
-}
-
-function capacityLevelLabel(level: CapacityPlanningReport["forecast"][number]["level"]) {
-  if (level === "critical") return "위험";
-  if (level === "warning") return "주의";
-  return "정상";
-}
-
-function CapacityPlanningCard({
-  loading,
-  report,
-  onRefresh,
-}: {
-  loading: boolean;
-  report: CapacityPlanningReport | null;
-  onRefresh: () => void;
-}) {
-  const current = report?.forecast[0];
-  return (
-    <section className={report?.actionRequired ? "erp-card capacity-planning-card attention" : "erp-card capacity-planning-card"}>
-      <header>
-        <div>
-          <strong>12개월 용량 계획</strong>
-          <span>{report ? `${report.baselineMonth} baseline · 다음 검토 ${report.summary.nextReviewMonth}` : "월별 데이터 증가량 예측 대기"}</span>
-        </div>
-        <button disabled={loading} onClick={onRefresh} type="button">
-          <RefreshCw size={15} />
-          {loading ? "집계 중" : "새로고침"}
-        </button>
-      </header>
-      {loading && <p>DB 행 수와 첨부 용량을 집계해 월별 증가량을 예측하는 중입니다.</p>}
-      {!loading && !report && <p>용량 계획 리포트를 불러오지 못했습니다.</p>}
-      {report && current && (
-        <>
-          <div className="performance-policy-grid capacity-planning-summary">
-            <article>
-              <span>업무 데이터</span>
-              <strong>{report.baseline.businessRows.toLocaleString("ko-KR")}행</strong>
-              <small>요청·승인·지급·운영 row</small>
-            </article>
-            <article>
-              <span>감사 로그</span>
-              <strong>{report.baseline.auditLogs.toLocaleString("ko-KR")}행</strong>
-              <small>월 증가율 {report.assumptions.auditGrowthPercent}%</small>
-            </article>
-            <article>
-              <span>첨부 저장량</span>
-              <strong>{formatFileSize(report.baseline.attachmentBytes)}</strong>
-              <small>{report.baseline.attachments.toLocaleString("ko-KR")}개 파일</small>
-            </article>
-            <article>
-              <span>첫 경고 월</span>
-              <strong>{report.summary.firstWarningMonth ?? "없음"}</strong>
-              <small>위험 {report.summary.firstCriticalMonth ?? "예측 범위 밖"}</small>
-            </article>
-            <article>
-              <span>용량 여유</span>
-              <strong>{report.summary.capacityHeadroomMonths > report.assumptions.forecastMonths ? "12개월+" : `${report.summary.capacityHeadroomMonths}개월`}</strong>
-              <small>위험 임계치 {report.assumptions.criticalPercent}%</small>
-            </article>
-            <article>
-              <span>현재 상태</span>
-              <strong>{capacityLevelLabel(current.level)}</strong>
-              <small>DB {current.databaseUtilizationPercent}% · 저장소 {current.objectStorageUtilizationPercent}%</small>
-            </article>
-          </div>
-          <div className="capacity-forecast-table">
-            <table>
-              <thead>
-                <tr>
-                  <th>월</th>
-                  <th>업무 행</th>
-                  <th>감사 로그</th>
-                  <th>첨부</th>
-                  <th>DB 사용률</th>
-                  <th>저장소 사용률</th>
-                  <th>상태</th>
-                </tr>
-              </thead>
-              <tbody>
-                {report.forecast.map((item) => (
-                  <tr key={item.month}>
-                    <td>{item.month}</td>
-                    <td>{item.businessRows.toLocaleString("ko-KR")}</td>
-                    <td>{item.auditLogs.toLocaleString("ko-KR")}</td>
-                    <td>{formatFileSize(item.objectStorageBytes)}</td>
-                    <td>{item.databaseUtilizationPercent}%</td>
-                    <td>{item.objectStorageUtilizationPercent}%</td>
-                    <td><StatusPill value={capacityLevelLabel(item.level)} /></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <ul className="capacity-planning-actions">
-            {report.recommendedActions.map((action) => <li key={action}>{action}</li>)}
-          </ul>
-          <small className="capacity-planning-source">{report.source}</small>
-        </>
-      )}
-    </section>
-  );
-}
-function RetentionPolicyCard({
-  loading,
-  summary,
-  onRefresh,
-}: {
-  loading: boolean;
-  summary: RetentionPolicySummary | null;
-  onRefresh: () => void;
-}) {
-  const totals = summary?.summary;
-  const totalRows = totals
-    ? [
-        ["감사 로그", totals.auditLogs],
-        ["알림", totals.notifications],
-        ["첨부 metadata", totals.attachments],
-        ["보고서 실행", totals.reportRuns],
-      ]
-    : [];
-  return (
-    <section className="erp-card retention-policy-card">
-      <header>
-        <div>
-          <strong>보관/불변성 정책</strong>
-          <span>{summary ? `정책 버전 ${summary.policyVersion} · ${summary.generatedAt.slice(0, 16).replace("T", " ")}` : "운영 정책 조회 대기"}</span>
-        </div>
-        <button onClick={onRefresh} type="button">
-          <RefreshCw size={15} />
-          새로고침
-        </button>
-      </header>
-      {loading && <p>보관 정책을 불러오는 중입니다.</p>}
-      {!loading && !summary && <p>보관 정책 정보를 불러오지 못했습니다. 새로고침으로 다시 조회하세요.</p>}
-      {summary && (
-        <>
-          <div className="retention-summary-grid">
-            {totalRows.map(([label, value]) => (
-              <article key={label}>
-                <span>{label}</span>
-                <strong>{Number(value).toLocaleString("ko-KR")}</strong>
-              </article>
-            ))}
-            <article>
-              <span>불변 정책</span>
-              <strong>{summary.summary.immutablePolicies}개</strong>
-            </article>
-            <article>
-              <span>조치 대상</span>
-              <strong>{summary.summary.triggeredChecks}개</strong>
-            </article>
-          </div>
-          <table>
-            <thead>
-              <tr>
-                <th>대상</th>
-                <th>보관 기준</th>
-                <th>불변</th>
-                <th>삭제 정책</th>
-                <th>보호 필드</th>
-                <th>운영 조치</th>
-              </tr>
-            </thead>
-            <tbody>
-              {summary.policies.map((policy) => (
-                <tr key={policy.entityType}>
-                  <td>
-                    <b>{policy.label}</b>
-                    <small>{policy.clockField}</small>
-                  </td>
-                  <td>{policy.retentionLabel}</td>
-                  <td><StatusPill value={policy.immutable ? "불변" : "변경가능"} /></td>
-                  <td>{policy.deletionPolicy}</td>
-                  <td>{policy.protectedFields.slice(0, 4).join(", ")}{policy.protectedFields.length > 4 ? " ..." : ""}</td>
-                  <td>{policy.operatorAction}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <div className="retention-check-grid">
-            {summary.checks.map((check) => (
-              <article key={check.id} className={check.ok ? undefined : "attention"}>
-                <header>
-                  <strong>{check.label}</strong>
-                  <StatusPill value={check.ok ? "정상" : check.severity === "critical" ? "위험" : "점검"} />
-                </header>
-                <b>{check.count.toLocaleString("ko-KR")}건</b>
-                <span>{check.detail}</span>
-                <small>{check.action}</small>
-              </article>
-            ))}
-          </div>
-        </>
-      )}
-    </section>
-  );
-}
-
-function AccountLifecycleCard({
-  loading,
-  reason,
-  summary,
-  onDeactivate,
-  onReasonChange,
-  onRefresh,
-}: {
-  loading: boolean;
-  reason: string;
-  summary: AccountLifecycleSummary | null;
-  onDeactivate: () => void;
-  onReasonChange: (value: string) => void;
-  onRefresh: () => void;
-}) {
-  const candidates = summary?.candidates ?? [];
-  return (
-    <section className="erp-card account-lifecycle-card">
-      <header>
-        <div>
-          <strong>계정 수명주기</strong>
-          <span>{summary ? `휴면 ${summary.summary.dormantCount}명 · 퇴사자 ${summary.summary.offboardingCount}명 · 기준 ${summary.dormantAccountDays}일` : "계정 후보 조회 대기"}</span>
-        </div>
-        <button onClick={onRefresh} type="button">
-          <RefreshCw size={15} />
-          새로고침
-        </button>
-      </header>
-      {loading && <p>계정 수명주기를 조회하는 중입니다.</p>}
-      {!loading && !summary && <p>계정 수명주기 정보를 불러오지 못했습니다.</p>}
-      {summary && (
-        <>
-          <div className="account-lifecycle-summary">
-            <article>
-              <span>전체 후보</span>
-              <strong>{summary.summary.totalCandidates}명</strong>
-            </article>
-            <article>
-              <span>휴면 기준일</span>
-              <strong>{summary.dormantCutoff.slice(0, 10)}</strong>
-            </article>
-            <article>
-              <span>퇴사자 원천</span>
-              <strong>{summary.offboardingConfigured ? "설정됨" : "미설정"}</strong>
-            </article>
-          </div>
-          <div className="account-lifecycle-actions">
-            <label>
-              실행 사유
-              <input
-                aria-label="계정 비활성화 배치 사유"
-                onChange={(event) => onReasonChange(event.currentTarget.value)}
-                value={reason}
-              />
-            </label>
-            <button disabled={loading || candidates.length === 0 || !reason.trim()} onClick={onDeactivate} type="button">
-              <UserCog size={15} />
-              후보 비활성화
-            </button>
-          </div>
-          <table>
-            <thead>
-              <tr>
-                <th>사용자</th>
-                <th>이메일</th>
-                <th>최근 로그인</th>
-                <th>사유</th>
-              </tr>
-            </thead>
-            <tbody>
-              {candidates.length === 0 ? (
-                <tr>
-                  <td colSpan={4}>비활성화 후보가 없습니다.</td>
-                </tr>
-              ) : candidates.slice(0, 8).map((candidate) => (
-                <tr key={candidate.id}>
-                  <td>{candidate.name}</td>
-                  <td>{candidate.email}</td>
-                  <td>{candidate.lastLoginAt ? candidate.lastLoginAt.slice(0, 10) : `생성 ${candidate.createdAt.slice(0, 10)}`}</td>
-                  <td>{candidate.reasons.map((item) => item === "dormant" ? "휴면" : "퇴사자").join(", ")}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </>
-      )}
-    </section>
-  );
-}
-
-function DataQualityRunCard({
-  data,
-  loading,
-  onDownload,
-  onRefresh,
-  onRun,
-}: {
-  data: DataQualityRunList | null;
-  loading: boolean;
-  onDownload: (runId: string) => void;
-  onRefresh: () => void;
-  onRun: () => void;
-}) {
-  const latest = data?.runs[0] ?? null;
-  return (
-    <section className="erp-card financial-reconciliation-card data-quality-run-card">
-      <header>
-        <div>
-          <strong>데이터 품질 배치</strong>
-          <span>
-            {data
-              ? (data.policy.enabled ? "자동 실행 " + data.policy.intervalMinutes + "분 주기" : "자동 실행 비활성") + " · 이력 " + data.runs.length + "건"
-              : "배치 정책과 실행 이력 조회 대기"}
-          </span>
-        </div>
-        <div className="financial-reconciliation-actions">
-          <button disabled={loading} onClick={onRefresh} type="button" title="데이터 품질 실행 이력 새로고침">
-            <RefreshCw size={15} />
-            새로고침
-          </button>
-          <button disabled={loading} onClick={onRun} type="button">
-            <Database size={15} />
-            지금 실행
-          </button>
-          <button disabled={loading || !latest} onClick={() => latest && onDownload(latest.id)} type="button">
-            <Download size={15} />
-            리포트
-          </button>
-        </div>
-      </header>
-      {loading && <p>데이터 품질 정합성 배치를 처리하는 중입니다.</p>}
-      {!loading && !data && <p>데이터 품질 실행 이력을 불러오지 못했습니다.</p>}
-      {data && (
-        <>
-          <div className="financial-reconciliation-summary">
-            <article>
-              <span>최근 상태</span>
-              <strong>{latest?.status ?? "미실행"}</strong>
-            </article>
-            <article>
-              <span>Critical</span>
-              <strong>{latest?.criticalCount ?? 0}건</strong>
-            </article>
-            <article>
-              <span>Warning</span>
-              <strong>{latest?.warningCount ?? 0}건</strong>
-            </article>
-            <article>
-              <span>최근 실행</span>
-              <strong>{latest ? latest.startedAt.slice(0, 16).replace("T", " ") : "-"}</strong>
-            </article>
-          </div>
-          <table>
-            <thead>
-              <tr>
-                <th>실행 시각</th>
-                <th>구분</th>
-                <th>상태</th>
-                <th>Critical</th>
-                <th>Warning</th>
-                <th>리포트</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.runs.length === 0 ? (
-                <tr>
-                  <td colSpan={6}>실행 이력이 없습니다.</td>
-                </tr>
-              ) : data.runs.slice(0, 8).map((run) => (
-                <tr key={run.id}>
-                  <td>
-                    <b>{run.startedAt.slice(0, 16).replace("T", " ")}</b>
-                    <small>{run.requestId}</small>
-                  </td>
-                  <td>{run.source === "scheduled" ? "예약" : run.source === "startup" ? "시작 점검" : "수동"}</td>
-                  <td><StatusPill value={run.status === "COMPLETED" ? (run.criticalCount > 0 ? "위험" : "완료") : run.status === "FAILED" ? "오류" : "진행"} /></td>
-                  <td>{run.criticalCount}건</td>
-                  <td>{run.warningCount}건</td>
-                  <td>
-                    <button disabled={loading || run.status !== "COMPLETED"} onClick={() => onDownload(run.id)} type="button" title="데이터 품질 JSON 리포트 다운로드">
-                      <Download size={14} />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </>
-      )}
-    </section>
-  );
-}
-
-function FinancialReconciliationCard({
-  loading,
-  summary,
-  onNotify,
-  onRefresh,
-}: {
-  loading: boolean;
-  summary: FinancialReconciliationSummary | null;
-  onNotify: () => void;
-  onRefresh: () => void;
-}) {
-  const totals = summary?.summary;
-  const monthlyRows = summary?.monthly.slice(-6).reverse() ?? [];
-  const mismatches = summary?.mismatches ?? [];
-  return (
-    <section className="erp-card financial-reconciliation-card">
-      <header>
-        <div>
-          <strong>재무 대사</strong>
-          <span>{summary ? `불일치 ${summary.summary.mismatchCount}건 · ${summary.generatedAt.slice(0, 16).replace("T", " ")}` : "예산/지급/보고서 대사 대기"}</span>
-        </div>
-        <div className="financial-reconciliation-actions">
-          <button onClick={onRefresh} type="button">
-            <RefreshCw size={15} />
-            새로고침
-          </button>
-          <button disabled={loading || !summary?.actionRequired} onClick={onNotify} type="button">
-            <Bell size={15} />
-            알림 발송
-          </button>
-        </div>
-      </header>
-      {loading && <p>재무 원장을 대사하는 중입니다.</p>}
-      {!loading && !summary && <p>재무 대사 결과를 불러오지 못했습니다.</p>}
-      {summary && totals && (
-        <>
-          <div className="financial-reconciliation-summary">
-            <article>
-              <span>예산 사용액</span>
-              <strong>{formatCurrencyWon(totals.totalBudgetUsed)}</strong>
-            </article>
-            <article>
-              <span>승인 요청</span>
-              <strong>{formatCurrencyWon(totals.approvedPaymentAmount)}</strong>
-            </article>
-            <article>
-              <span>지급 완료</span>
-              <strong>{formatCurrencyWon(totals.completedDisbursementAmount)}</strong>
-            </article>
-            <article>
-              <span>보고서 행</span>
-              <strong>{totals.reportRowsReviewed.toLocaleString("ko-KR")}건</strong>
-            </article>
-          </div>
-          <div className="retention-check-grid">
-            {summary.checks.map((check) => (
-              <article key={check.id} className={check.ok ? undefined : "attention"}>
-                <header>
-                  <strong>{check.label}</strong>
-                  <StatusPill value={check.ok ? "정상" : check.severity === "critical" ? "위험" : "점검"} />
-                </header>
-                <b>{check.count.toLocaleString("ko-KR")}건</b>
-                <span>{check.detail}</span>
-                <small>{check.action}</small>
-              </article>
-            ))}
-          </div>
-          <table>
-            <thead>
-              <tr>
-                <th>월/부서</th>
-                <th>승인 요청</th>
-                <th>지급 완료</th>
-                <th>차이</th>
-              </tr>
-            </thead>
-            <tbody>
-              {monthlyRows.length === 0 ? (
-                <tr>
-                  <td colSpan={4}>월별 대사 원장이 없습니다.</td>
-                </tr>
-              ) : monthlyRows.map((row) => (
-                <tr key={`${row.period}-${row.departmentId}`}>
-                  <td>
-                    <b>{row.period}</b>
-                    <small>{row.departmentName}</small>
-                  </td>
-                  <td>{formatCurrencyWon(row.approvedPaymentAmount)}</td>
-                  <td>{formatCurrencyWon(row.completedDisbursementAmount)}</td>
-                  <td>{formatCurrencyWon(row.diff)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <table>
-            <thead>
-              <tr>
-                <th>구분</th>
-                <th>범위</th>
-                <th>기대</th>
-                <th>실제</th>
-                <th>차이</th>
-                <th>상태</th>
-              </tr>
-            </thead>
-            <tbody>
-              {mismatches.length === 0 ? (
-                <tr>
-                  <td colSpan={6}>불일치가 없습니다.</td>
-                </tr>
-              ) : mismatches.slice(0, 10).map((item) => (
-                <tr key={item.id}>
-                  <td>
-                    <b>{item.label}</b>
-                    <small>{item.detail}</small>
-                  </td>
-                  <td>{item.scope}</td>
-                  <td>{formatCurrencyWon(item.expected)}</td>
-                  <td>{formatCurrencyWon(item.actual)}</td>
-                  <td>{formatCurrencyWon(item.diff)}</td>
-                  <td><StatusPill value={item.severity === "critical" ? "위험" : "점검"} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {summary.mismatchesTruncated && <p>불일치가 100건을 초과해 일부만 표시됩니다.</p>}
-        </>
-      )}
-    </section>
-  );
-}
-
-function ManualRecoveryCard({
-  draft,
-  loading,
-  summary,
-  onDraftChange,
-  onRefresh,
-  onRequest,
-  onReview,
-}: {
-  draft: { targetCode: string; nextStatus: string; accountStatus: string; scheduledDate: string; reason: string; reviewReason: string };
-  loading: boolean;
-  summary: ManualRecoverySummary | null;
-  onDraftChange: (draft: { targetCode: string; nextStatus: string; accountStatus: string; scheduledDate: string; reason: string; reviewReason: string }) => void;
-  onRefresh: () => void;
-  onRequest: () => void;
-  onReview: (recoveryId: string, decision: "approve" | "reject") => void;
-}) {
-  const items = summary?.items ?? [];
-  const pending = summary?.pending ?? [];
-  const visibleItems = pending.length > 0 ? pending : items.slice(0, 8);
-  const proposedText = (value: Record<string, unknown>) =>
-    Object.entries(value)
-      .map(([key, item]) => `${key}: ${String(item ?? "-")}`)
-      .join(" · ");
-  return (
-    <section className="erp-card manual-recovery-card">
-      <header>
-        <div>
-          <strong>수동 복구 2차 승인</strong>
-          <span>{summary ? `대기 ${summary.summary.pending}건 · 승인 ${summary.summary.approved}건 · 반려 ${summary.summary.rejected}건` : "복구 요청 조회 대기"}</span>
-        </div>
-        <button onClick={onRefresh} type="button">
-          <RefreshCw size={15} />
-          새로고침
-        </button>
-      </header>
-      <div className="manual-recovery-grid">
-        <label>
-          지급번호
-          <input
-            onChange={(event) => onDraftChange({ ...draft, targetCode: event.currentTarget.value })}
-            placeholder="PMT-2026-0001"
-            value={draft.targetCode}
-          />
-        </label>
-        <label>
-          복구 상태
-          <select onChange={(event) => onDraftChange({ ...draft, nextStatus: event.currentTarget.value })} value={draft.nextStatus}>
-            <option>오류</option>
-            <option>보류</option>
-            <option>지급 예정</option>
-            <option>오늘 지급</option>
-          </select>
-        </label>
-        <label>
-          계좌확인
-          <select onChange={(event) => onDraftChange({ ...draft, accountStatus: event.currentTarget.value })} value={draft.accountStatus}>
-            <option>확인 완료</option>
-            <option>확인 대기</option>
-            <option>계좌 불일치</option>
-            <option>비활성</option>
-          </select>
-        </label>
-        <label>
-          지급예정일
-          <input
-            onChange={(event) => onDraftChange({ ...draft, scheduledDate: event.currentTarget.value })}
-            type="date"
-            value={draft.scheduledDate}
-          />
-        </label>
-      </div>
-      <div className="manual-recovery-actions">
-        <label>
-          요청 사유
-          <input
-            onChange={(event) => onDraftChange({ ...draft, reason: event.currentTarget.value })}
-            value={draft.reason}
-          />
-        </label>
-        <button disabled={loading || !draft.targetCode.trim() || !draft.reason.trim()} onClick={onRequest} type="button">
-          <ShieldCheck size={15} />
-          복구 요청
-        </button>
-      </div>
-      <div className="manual-recovery-actions">
-        <label>
-          검토 사유
-          <input
-            onChange={(event) => onDraftChange({ ...draft, reviewReason: event.currentTarget.value })}
-            value={draft.reviewReason}
-          />
-        </label>
-      </div>
-      <table>
-        <thead>
-          <tr>
-            <th>대상</th>
-            <th>제안</th>
-            <th>요청자</th>
-            <th>승인자</th>
-            <th>상태</th>
-            <th>작업</th>
-          </tr>
-        </thead>
-        <tbody>
-          {!summary ? (
-            <tr>
-              <td colSpan={6}>수동 복구 요청을 불러오지 못했습니다.</td>
-            </tr>
-          ) : visibleItems.length === 0 ? (
-            <tr>
-              <td colSpan={6}>수동 복구 요청이 없습니다.</td>
-            </tr>
-          ) : visibleItems.map((item) => (
-            <tr key={item.id}>
-              <td>
-                <b>{item.targetCode}</b>
-                <small>{item.reason}</small>
-              </td>
-              <td>{proposedText(item.proposed)}</td>
-              <td>{item.reviewerName || "-"}</td>
-              <td>{item.approverName || "-"}</td>
-              <td><StatusPill value={item.status === "pending" ? "대기" : item.status === "approved" ? "승인" : "반려"} /></td>
-              <td>
-                {item.status === "pending" ? (
-                  <div className="manual-recovery-row-actions">
-                    <button disabled={loading || !draft.reviewReason.trim()} onClick={() => onReview(item.id, "approve")} type="button">승인</button>
-                    <button disabled={loading || !draft.reviewReason.trim()} onClick={() => onReview(item.id, "reject")} type="button">반려</button>
-                  </div>
-                ) : item.reviewedAt ? item.reviewedAt.slice(0, 16).replace("T", " ") : "-"}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </section>
-  );
-}
-
-function AuditIntegrityReportCard({
-  loading,
-  report,
-  onRefresh,
-}: {
-  loading: boolean;
-  report: AuditIntegrityReport | null;
-  onRefresh: () => void;
-}) {
-  const sampledLinks = report?.sampledLinks ?? [];
-  const tailHash = report?.summary.tailHash ?? "";
-  return (
-    <section className="erp-card audit-integrity-report-card">
-      <header>
-        <div>
-          <strong>감사 로그 무결성 리포트</strong>
-          <span>{report ? `${report.period.month} · 체인 ${report.summary.chainLength}건 · tail ${tailHash.slice(0, 12)}...` : "감사 로그 hash chain 생성 대기"}</span>
-        </div>
-        <button onClick={onRefresh} type="button">
-          <RefreshCw size={15} />
-          새로고침
-        </button>
-      </header>
-      {loading && <p>감사 로그 무결성 리포트를 생성하는 중입니다.</p>}
-      {!loading && !report && <p>감사 로그 무결성 리포트를 불러오지 못했습니다.</p>}
-      {report && (
-        <>
-          <div className="financial-control-summary">
-            <article>
-              <span>감사 로그</span>
-              <strong>{report.summary.auditLogsReviewed}/{report.summary.totalAuditLogs}</strong>
-            </article>
-            <article>
-              <span>체인 길이</span>
-              <strong>{report.summary.chainLength}건</strong>
-            </article>
-            <article>
-              <span>외부 보관</span>
-              <strong>{report.externalArchive.configured ? "연계" : "미연계"}</strong>
-            </article>
-            <article>
-              <span>점검</span>
-              <strong>{report.summary.checkpointsPassed}/{report.summary.checkpointsTotal}</strong>
-            </article>
-          </div>
-          <div className="retention-check-grid">
-            {report.checkpoints.map((item) => (
-              <article key={item.id} className={item.ok ? undefined : "attention"}>
-                <header>
-                  <strong>{item.label}</strong>
-                  <StatusPill value={item.ok ? "통과" : item.severity === "critical" ? "차단" : "확인"} />
-                </header>
-                <b>{item.owner}</b>
-                <span>{item.detail}</span>
-                <small>{item.evidence}</small>
-              </article>
-            ))}
-          </div>
-          <table>
-            <thead>
-              <tr>
-                <th>순서</th>
-                <th>대상</th>
-                <th>payload hash</th>
-                <th>chain hash</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sampledLinks.length === 0 ? (
-                <tr>
-                  <td colSpan={4}>이번 기간 감사 로그가 없어 genesis hash만 생성되었습니다.</td>
-                </tr>
-              ) : sampledLinks.map((item) => (
-                <tr key={item.id}>
-                  <td>
-                    <b>#{item.position}</b>
-                    <small>{item.time.slice(0, 16).replace("T", " ")}</small>
-                  </td>
-                  <td>
-                    <b>{item.entityType}</b>
-                    <small>{item.action} · {item.requestId}</small>
-                  </td>
-                  <td>{item.payloadHash.slice(0, 16)}...</td>
-                  <td>{item.recordHash.slice(0, 16)}...</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <p>{report.externalArchive.action}</p>
-          <p>{report.rawValuePolicy}</p>
-        </>
-      )}
-    </section>
-  );
-}
-function PrivacyAccessReportCard({
-  loading,
-  report,
-  onRefresh,
-}: {
-  loading: boolean;
-  report: PrivacyAccessReport | null;
-  onRefresh: () => void;
-}) {
-  const inventory = report?.inventory ?? [];
-  const accessEvents = report?.accessEvents ?? [];
-  const auditorEvents = report?.externalAuditorEvents ?? [];
-  return (
-    <section className="erp-card privacy-access-report-card">
-      <header>
-        <div>
-          <strong>개인정보 접근 리포트</strong>
-          <span>{report ? `${report.period.month} · 처리 ${report.summary.inventoryItems}개 · 다운로드 ${report.summary.downloadAccessEvents}건 · 외부 감사 ${report.summary.externalAuditorEvents}건` : "개인정보 처리 현황과 외부 감사 접근 조회 대기"}</span>
-        </div>
-        <button onClick={onRefresh} type="button">
-          <RefreshCw size={15} />
-          새로고침
-        </button>
-      </header>
-      {loading && <p>개인정보 접근 리포트를 생성하는 중입니다.</p>}
-      {!loading && !report && <p>개인정보 접근 리포트를 불러오지 못했습니다.</p>}
-      {report && (
-        <>
-          <div className="financial-control-summary">
-            <article>
-              <span>처리 항목</span>
-              <strong>{report.summary.inventoryItems}개</strong>
-            </article>
-            <article>
-              <span>거래처 계좌</span>
-              <strong>{report.summary.encryptedVendors}/{report.summary.vendors}</strong>
-            </article>
-            <article>
-              <span>다운로드 접근</span>
-              <strong>{report.summary.downloadAccessEvents}건</strong>
-            </article>
-            <article>
-              <span>외부 감사</span>
-              <strong>{report.summary.externalAuditorEvents}건</strong>
-            </article>
-          </div>
-          <div className="retention-check-grid">
-            {report.checklist.map((item) => (
-              <article key={item.id} className={item.ok ? undefined : "attention"}>
-                <header>
-                  <strong>{item.label}</strong>
-                  <StatusPill value={item.ok ? "통과" : "확인"} />
-                </header>
-                <b>{item.owner}</b>
-                <span>{item.detail}</span>
-                <small>{item.evidence}</small>
-              </article>
-            ))}
-          </div>
-          <table>
-            <thead>
-              <tr>
-                <th>처리 항목</th>
-                <th>건수</th>
-                <th>보호 조치</th>
-                <th>접근 통제</th>
-              </tr>
-            </thead>
-            <tbody>
-              {inventory.map((item) => (
-                <tr key={item.id}>
-                  <td>
-                    <b>{item.label}</b>
-                    <small>{item.storage}</small>
-                  </td>
-                  <td>{item.count.toLocaleString()}건</td>
-                  <td>{item.protection}</td>
-                  <td>{item.accessControl}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <table>
-            <thead>
-              <tr>
-                <th>접근자</th>
-                <th>대상</th>
-                <th>사유</th>
-                <th>범위</th>
-              </tr>
-            </thead>
-            <tbody>
-              {[...accessEvents, ...auditorEvents].slice(0, 8).length === 0 ? (
-                <tr>
-                  <td colSpan={4}>이번 기간 접근 리포트 대상 이력이 없습니다.</td>
-                </tr>
-              ) : [...accessEvents, ...auditorEvents].slice(0, 8).map((item) => (
-                <tr key={`${item.scope}-${item.id}`}>
-                  <td>
-                    <b>{item.actorName}</b>
-                    <small>{item.actorDepartment}</small>
-                  </td>
-                  <td>{item.entityType}</td>
-                  <td>{item.reason || "사유 누락"}</td>
-                  <td><StatusPill value={item.scope === "external_auditor" ? "외부 감사" : "파일 접근"} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <p>{report.rawValuePolicy}</p>
-        </>
-      )}
-    </section>
-  );
-}
-function PermissionReviewReportCard({
-  loading,
-  report,
-  onRefresh,
-}: {
-  loading: boolean;
-  report: PermissionReviewReport | null;
-  onRefresh: () => void;
-}) {
-  const exceptions = report?.exceptions ?? [];
-  const privilegedUsers = report?.privilegedUsers ?? [];
-  const reviewDue = report ? report.period.reviewDueAt.slice(0, 10) : "-";
-  return (
-    <section className="erp-card permission-review-report-card">
-      <header>
-        <div>
-          <strong>정기 권한 검토 리포트</strong>
-          <span>{report ? `${report.period.month} · 특권 ${report.summary.privilegedUsers}명 · 예외 ${report.summary.exceptions}건 · 다음 검토 ${reviewDue}` : "특권 권한과 예외 만료일 조회 대기"}</span>
-        </div>
-        <button onClick={onRefresh} type="button">
-          <RefreshCw size={15} />
-          새로고침
-        </button>
-      </header>
-      {loading && <p>권한 검토 리포트를 생성하는 중입니다.</p>}
-      {!loading && !report && <p>권한 검토 리포트를 불러오지 못했습니다.</p>}
-      {report && (
-        <>
-          <div className="financial-control-summary">
-            <article>
-              <span>특권 사용자</span>
-              <strong>{report.summary.privilegedUsers}명</strong>
-            </article>
-            <article>
-              <span>만료</span>
-              <strong>{report.summary.expiredExceptions}건</strong>
-            </article>
-            <article>
-              <span>30일 이내</span>
-              <strong>{report.summary.expiringExceptions}건</strong>
-            </article>
-            <article>
-              <span>만료일 없음</span>
-              <strong>{report.summary.missingExpiryExceptions}건</strong>
-            </article>
-          </div>
-          <div className="retention-check-grid">
-            {report.checklist.map((item) => (
-              <article key={item.id} className={item.ok ? undefined : "attention"}>
-                <header>
-                  <strong>{item.label}</strong>
-                  <StatusPill value={item.ok ? "통과" : "확인"} />
-                </header>
-                <b>{item.owner}</b>
-                <span>{item.detail}</span>
-                <small>{item.evidence}</small>
-              </article>
-            ))}
-          </div>
-          <table>
-            <thead>
-              <tr>
-                <th>사용자</th>
-                <th>역할</th>
-                <th>권한</th>
-                <th>만료</th>
-                <th>상태</th>
-              </tr>
-            </thead>
-            <tbody>
-              {exceptions.length === 0 ? (
-                <tr>
-                  <td colSpan={5}>검토 대상 예외 권한이 없습니다.</td>
-                </tr>
-              ) : exceptions.slice(0, 8).map((item) => (
-                <tr key={item.id}>
-                  <td>
-                    <b>{item.userName}</b>
-                    <small>{item.departmentName}</small>
-                  </td>
-                  <td>{item.roleName}</td>
-                  <td>
-                    <b>{item.permission}</b>
-                    <small>{item.action}</small>
-                  </td>
-                  <td>{item.expiresAt ? item.expiresAt.slice(0, 10) : "미지정"}</td>
-                  <td><StatusPill value={item.severity === "critical" ? "위험" : item.severity === "warning" ? "점검" : "정상"} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <table>
-            <thead>
-              <tr>
-                <th>특권 사용자</th>
-                <th>역할</th>
-                <th>고위험 권한</th>
-                <th>상태</th>
-              </tr>
-            </thead>
-            <tbody>
-              {privilegedUsers.length === 0 ? (
-                <tr>
-                  <td colSpan={4}>특권 권한을 가진 사용자가 없습니다.</td>
-                </tr>
-              ) : privilegedUsers.slice(0, 8).map((item) => (
-                <tr key={item.userId}>
-                  <td>
-                    <b>{item.userName}</b>
-                    <small>{item.departmentName}</small>
-                  </td>
-                  <td>{item.roles.join(", ") || "-"}</td>
-                  <td>{item.highRiskPermissions.join(", ")}</td>
-                  <td><StatusPill value={item.reviewStatus === "blocked" ? "위험" : item.reviewStatus === "review" ? "점검" : "정상"} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </>
-      )}
-    </section>
-  );
-}
-function FinancialControlReportCard({
-  loading,
-  report,
-  onRefresh,
-}: {
-  loading: boolean;
-  report: FinancialControlReport | null;
-  onRefresh: () => void;
-}) {
-  const exceptions = report?.exceptions ?? [];
-  return (
-    <section className="erp-card financial-control-report-card">
-      <header>
-        <div>
-          <strong>재무 통제 리포트</strong>
-          <span>{report ? `${report.period.month} · 점검 ${report.summary.checklistPassed}/${report.summary.checklistTotal}개 통과 · 예외 ${report.summary.exceptions}건` : "월말 결산 점검표 조회 대기"}</span>
-        </div>
-        <button onClick={onRefresh} type="button">
-          <RefreshCw size={15} />
-          새로고침
-        </button>
-      </header>
-      {loading && <p>재무 통제 리포트를 생성하는 중입니다.</p>}
-      {!loading && !report && <p>재무 통제 리포트를 불러오지 못했습니다.</p>}
-      {report && (
-        <>
-          <div className="financial-control-summary">
-            <article>
-              <span>예외</span>
-              <strong>{report.summary.exceptions}건</strong>
-            </article>
-            <article>
-              <span>위험</span>
-              <strong>{report.summary.criticalExceptions}건</strong>
-            </article>
-            <article>
-              <span>수동 복구 대기</span>
-              <strong>{report.summary.manualRecoveryPending}건</strong>
-            </article>
-            <article>
-              <span>은행 대사</span>
-              <strong>{report.summary.bankReconcileCount}건</strong>
-            </article>
-          </div>
-          <div className="retention-check-grid">
-            {report.checklist.map((item) => (
-              <article key={item.id} className={item.ok ? undefined : "attention"}>
-                <header>
-                  <strong>{item.label}</strong>
-                  <StatusPill value={item.ok ? "통과" : "확인"} />
-                </header>
-                <b>{item.owner}</b>
-                <span>{item.detail}</span>
-                <small>{item.evidence}</small>
-              </article>
-            ))}
-          </div>
-          <table>
-            <thead>
-              <tr>
-                <th>예외</th>
-                <th>범위</th>
-                <th>원천</th>
-                <th>상태</th>
-              </tr>
-            </thead>
-            <tbody>
-              {exceptions.length === 0 ? (
-                <tr>
-                  <td colSpan={4}>재무 통제 예외가 없습니다.</td>
-                </tr>
-              ) : exceptions.slice(0, 10).map((item) => (
-                <tr key={item.id}>
-                  <td>
-                    <b>{item.label}</b>
-                    <small>{item.detail}</small>
-                  </td>
-                  <td>{item.scope}</td>
-                  <td>{item.source}</td>
-                  <td><StatusPill value={item.severity === "critical" ? "위험" : item.severity === "warning" ? "점검" : "정보"} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </>
-      )}
-    </section>
-  );
-}
+const settingsHistoryFilterOptions = ["전체", "정책 변경", "권한 변경", "사용자 변경", "알림 변경", "연동 변경"];
+const settingsHistoryInitialCount = 5;
 
 function SettingsHistoryPanel({ history }: { history: SettingsHistoryItem[] }) {
-  const [filterIndex, setFilterIndex] = useState(0);
-  const [visibleCount, setVisibleCount] = useState(8);
-  const filterOptions = ["전체", "정책 변경", "권한 변경", "사용자 변경", "알림 변경", "연동 변경", "운영 변경"];
-  const activeFilter = filterOptions[filterIndex];
+  const [activeFilter, setActiveFilter] = useState("전체");
+  const [visibleCount, setVisibleCount] = useState(settingsHistoryInitialCount);
   const filteredHistory = activeFilter === "전체" ? history : history.filter((item) => item.tag === activeFilter);
+  const visibleHistory = filteredHistory.slice(0, visibleCount);
   return (
     <aside className="settings-history-panel">
       <header>
         <strong>변경 이력</strong>
-        <button onClick={() => setFilterIndex((current) => (current + 1) % filterOptions.length)} type="button">{activeFilter} <ChevronDown size={15} /></button>
+        <FilterDropdown
+          ariaLabel="변경 이력 분류"
+          triggerClassName="settings-history-filter"
+          value={activeFilter}
+          options={settingsHistoryFilterOptions}
+          onChange={(value) => {
+            setActiveFilter(value);
+            setVisibleCount(settingsHistoryInitialCount);
+          }}
+        />
       </header>
       <section>
         <b>최근 변경</b>
-        {filteredHistory.slice(0, visibleCount).map((item, index) => (
-          <article key={item.id}>
-            <i className={index === 0 ? "active" : undefined} />
-            <time>{item.time}</time>
-            <strong>{item.user}</strong>
-            <span>{item.desc}</span>
-            <small>{item.tag}</small>
-          </article>
-        ))}
+        {visibleHistory.length > 0 ? (
+          visibleHistory.map((item, index) => (
+            <article key={item.id}>
+              <i className={index === 0 ? "active" : undefined} />
+              <time>{item.time}</time>
+              <strong>{item.user}</strong>
+              <span>{item.desc}</span>
+              <small>{item.tag}</small>
+            </article>
+          ))
+        ) : (
+          <p className="settings-history-empty">{activeFilter === "전체" ? "변경 이력이 없습니다." : `'${activeFilter}' 분류의 변경 이력이 없습니다.`}</p>
+        )}
       </section>
-      <button className="history-more" disabled={visibleCount >= filteredHistory.length} onClick={() => setVisibleCount((current) => current + 5)} type="button">더보기</button>
+      {visibleCount < filteredHistory.length && (
+        <button className="history-more" onClick={() => setVisibleCount((current) => current + settingsHistoryInitialCount)} type="button">
+          더보기 ({filteredHistory.length - visibleCount}건)
+        </button>
+      )}
     </aside>
   );
 }
 
 function FavoritesBody({ currentUser, page }: { currentUser: AuthUser; page: PageDefinition }) {
   const [favorites, setFavorites] = useState<FavoriteItem[]>(initialFavoriteItems);
-  const [selectedId, setSelectedId] = useState(initialFavoriteItems[0]?.id ?? "");
+  const [selectedId, setSelectedId] = useState("");
   const [typeFilter, setTypeFilter] = useState(favoriteTypeOptions[0]);
   const [favoriteMessage, setFavoriteMessage] = useState("자주 쓰는 메뉴, 저장 필터, 최근 사용 목록이 사용자별 즐겨찾기로 연결됩니다.");
   const [favoritesLoading, setFavoritesLoading] = useState(false);
   const [favoritesMutating, setFavoritesMutating] = useState(false);
-  const [detailOpen, setDetailOpen] = useState(true);
   const [lastDeleted, setLastDeleted] = useState<FavoriteItem | null>(null);
   const [showAllSavedFilters, setShowAllSavedFilters] = useState(false);
   const [showAllRecent, setShowAllRecent] = useState(true);
-  const [favoriteSyncVersion, setFavoriteSyncVersion] = useState(0);
-  const [favoriteSyncReason, setFavoriteSyncReason] = useState<"initial" | "manual" | "focus">("initial");
   const [shortcutDraft, setShortcutDraft] = useState<ShortcutDraft>({
     title: "예산 초과 알림",
     target: "budget",
@@ -12531,14 +9436,8 @@ function FavoritesBody({ currentUser, page }: { currentUser: AuthUser; page: Pag
         if (cancelled) return;
         const loaded = response.data.rows.map((row, index) => favoriteFromRow(row, index, currentUser.name));
         setFavorites(loaded.length > 0 ? loaded : []);
-        setSelectedId((current) => loaded.some((item) => item.id === current) ? current : loaded[0]?.id ?? "");
-        setFavoriteMessage(
-          favoriteSyncReason === "manual"
-            ? "backend FavoriteItem에서 사용자 즐겨찾기와 저장 필터를 다시 동기화했습니다."
-            : favoriteSyncReason === "focus"
-              ? "다른 브라우저/탭 변경 가능성을 반영해 사용자 즐겨찾기를 다시 불러왔습니다."
-              : "backend FavoriteItem 기준으로 사용자 즐겨찾기를 불러왔습니다.",
-        );
+        setSelectedId((current) => (loaded.some((item) => item.id === current) ? current : ""));
+        setFavoriteMessage("backend FavoriteItem 기준으로 사용자 즐겨찾기를 불러왔습니다.");
       } catch (error) {
         if (cancelled) return;
         setFavoriteMessage(`즐겨찾기 조회 실패: ${error instanceof Error ? error.message : "요청을 처리하지 못했습니다."}`);
@@ -12550,28 +9449,10 @@ function FavoritesBody({ currentUser, page }: { currentUser: AuthUser; page: Pag
     return () => {
       cancelled = true;
     };
-  }, [currentUser.id, currentUser.name, favoriteSyncReason, favoriteSyncVersion]);
-
-  useEffect(() => {
-    const syncFromFocus = () => {
-      if (document.visibilityState !== "visible" || favoritesMutating) return;
-      setFavoriteSyncReason("focus");
-      setFavoriteSyncVersion((current) => current + 1);
-    };
-    window.addEventListener("focus", syncFromFocus);
-    document.addEventListener("visibilitychange", syncFromFocus);
-    return () => {
-      window.removeEventListener("focus", syncFromFocus);
-      document.removeEventListener("visibilitychange", syncFromFocus);
-    };
-  }, [favoritesMutating]);
-
-  const handleSyncFavorites = () => {
-    setFavoriteSyncReason("manual");
-    setFavoriteSyncVersion((current) => current + 1);
-  };
+  }, [currentUser.id, currentUser.name]);
 
   const selectedFavorite = favorites.find((item) => item.id === selectedId) ?? favorites[0] ?? null;
+  const detailOpen = useDetailOpen(Boolean(selectedId));
   const visibleFavorites = favorites.filter((item) => {
     if (typeFilter === "전체 유형") return true;
     if (typeFilter === "비활성") return item.status === "비활성";
@@ -12580,12 +9461,10 @@ function FavoritesBody({ currentUser, page }: { currentUser: AuthUser; page: Pag
   const menuFavorites = favorites.filter((item) => item.type !== "필터" && item.status === "활성").slice(0, 6);
   const savedFilters = favorites.filter((item) => item.type === "필터");
   const visibleSavedFilters = showAllSavedFilters ? savedFilters : savedFilters.slice(0, 4);
-  const recentFavorites = sortFavoritesByRecentUse(visibleFavorites);
-  const visibleRecentFavorites = showAllRecent ? recentFavorites : recentFavorites.slice(0, 10);
+  const visibleRecentFavorites = showAllRecent ? visibleFavorites : visibleFavorites.slice(0, 10);
 
   const handleSelectFavorite = (favoriteId: string) => {
     setSelectedId(favoriteId);
-    setDetailOpen(true);
   };
 
   const handleCycleTypeFilter = () => {
@@ -12620,10 +9499,32 @@ function FavoritesBody({ currentUser, page }: { currentUser: AuthUser; page: Pag
       const newFavorite = favoriteFromRow(response.data, favorites.length, currentUser.name);
       setFavorites((current) => [...current, newFavorite]);
       setSelectedId(newFavorite.id);
-      setDetailOpen(true);
       setFavoriteMessage(`${currentUser.name} 사용자 즐겨찾기에 바로가기가 추가되어 backend FavoriteItem으로 저장되었습니다.`);
     } catch (error) {
       setFavoriteMessage(`즐겨찾기 추가 실패: ${error instanceof Error ? error.message : "요청을 처리하지 못했습니다."}`);
+    } finally {
+      setFavoritesMutating(false);
+    }
+  };
+
+  const persistFavoriteOrder = async (reordered: FavoriteItem[], message: string) => {
+    setFavorites(reordered);
+    setFavoritesMutating(true);
+    try {
+      const responses = await Promise.all(reordered.map((item, index) => erpApi.updatePageRow("favorites", item.title, {
+        순서: String(index + 1),
+        rowVersion: item.rowVersion ?? "1",
+        즐겨찾기RowVersion: item.rowVersion ?? "1",
+        idempotencyKey: favoriteMutationKey("reorder", item),
+      })));
+      const updatedRows = responses.flatMap((response) => response.data ? [response.data] : []);
+      setFavorites(reordered.map((item, index) => {
+        const updated = updatedRows.find((row) => row.ID === item.id || row.항목명 === item.title);
+        return updated ? favoriteFromRow(updated, index, currentUser.name) : item;
+      }));
+      setFavoriteMessage(message);
+    } catch (error) {
+      setFavoriteMessage(`즐겨찾기 순서 저장 실패: ${error instanceof Error ? error.message : "요청을 처리하지 못했습니다."}`);
     } finally {
       setFavoritesMutating(false);
     }
@@ -12639,25 +9540,18 @@ function FavoritesBody({ currentUser, page }: { currentUser: AuthUser; page: Pag
     } else {
       reordered.splice(currentIndex - 1, 0, target);
     }
-    setFavoritesMutating(true);
-    try {
-      const responses = await Promise.all(reordered.map((item, index) => erpApi.updatePageRow("favorites", item.title, {
-        순서: String(index + 1),
-        rowVersion: item.rowVersion ?? "1",
-        즐겨찾기RowVersion: item.rowVersion ?? "1",
-        idempotencyKey: favoriteMutationKey("reorder", item),
-      })));
-      const updatedRows = responses.flatMap((response) => response.data ? [response.data] : []);
-      setFavorites(reordered.map((item, index) => {
-        const updated = updatedRows.find((row) => row.ID === item.id || row.항목명 === item.title);
-        return updated ? favoriteFromRow(updated, index, currentUser.name) : item;
-      }));
-      setFavoriteMessage(`${selectedFavorite.title} 순서를 편집하고 backend FavoriteItem.sortOrder에 저장했습니다.`);
-    } catch (error) {
-      setFavoriteMessage(`즐겨찾기 순서 저장 실패: ${error instanceof Error ? error.message : "요청을 처리하지 못했습니다."}`);
-    } finally {
-      setFavoritesMutating(false);
-    }
+    await persistFavoriteOrder(reordered, `${selectedFavorite.title} 순서를 편집하고 backend FavoriteItem.sortOrder에 저장했습니다.`);
+  };
+
+  const handleReorderFavoriteByDrag = async (fromId: string, toId: string) => {
+    if (fromId === toId || favoritesMutating) return;
+    const fromIndex = favorites.findIndex((item) => item.id === fromId);
+    const toIndex = favorites.findIndex((item) => item.id === toId);
+    if (fromIndex < 0 || toIndex < 0) return;
+    const reordered = [...favorites];
+    const [moved] = reordered.splice(fromIndex, 1);
+    reordered.splice(toIndex, 0, moved);
+    await persistFavoriteOrder(reordered, `${moved.title} 순서를 드래그로 변경하고 backend FavoriteItem.sortOrder에 저장했습니다.`);
   };
 
   const handleDeleteFavorite = async () => {
@@ -12684,17 +9578,9 @@ function FavoritesBody({ currentUser, page }: { currentUser: AuthUser; page: Pag
   const handleOpenFavorite = async () => {
     if (!selectedFavorite) return;
     if (selectedFavorite.status === "비활성") {
-      setFavoriteMessage("비활성 메뉴는 열기와 신규 바로가기 추가를 차단하고 조회와 삭제만 허용합니다.");
+      setFavoriteMessage("비활성 메뉴는 열기와 신규 바로가기 추가를 차단하고 조회만 허용합니다.");
       return;
     }
-    const route = favoritePageForItem(selectedFavorite);
-    if (!canAccessPage(currentUser, route)) {
-      const fallbackPage = getDefaultPage(currentUser);
-      setFavoriteMessage(`${selectedFavorite.title} 대상 화면 권한이 회수되어 ${pages[fallbackPage].title} 화면으로 이동합니다.`);
-      goToPage(fallbackPage);
-      return;
-    }
-    const unsupportedFilterFields = favoriteUnsupportedFilterFields(selectedFavorite);
     try {
       const response = await erpApi.updatePageRow("favorites", selectedFavorite.title, {
         최근사용: new Date().toISOString(),
@@ -12710,10 +9596,9 @@ function FavoritesBody({ currentUser, page }: { currentUser: AuthUser; page: Pag
       setFavoriteMessage(`즐겨찾기 사용 기록 저장 실패: ${error instanceof Error ? error.message : "요청을 처리하지 못했습니다."}`);
       return;
     }
+    const route = favoritePageForItem(selectedFavorite);
     applyFavoriteRouteState(selectedFavorite);
-    setFavoriteMessage(unsupportedFilterFields.length > 0
-      ? `${selectedFavorite.title} 바로가기를 열었습니다. 삭제되었거나 현재 화면에서 지원하지 않는 필터 ${unsupportedFilterFields.join(", ")} 조건은 제외했습니다.`
-      : `${selectedFavorite.title} 바로가기를 열고 서버 저장 라우트, 필터, 정렬 조건을 적용했습니다.`);
+    setFavoriteMessage(`${selectedFavorite.title} 바로가기를 열고 서버 저장 라우트, 필터, 정렬 조건을 적용했습니다.`);
     goToPage(route);
   };
 
@@ -12761,18 +9646,16 @@ function FavoritesBody({ currentUser, page }: { currentUser: AuthUser; page: Pag
   };
 
   return (
-    <div className="favorites-management-page">
+    <div className={detailOpen ? "favorites-management-page" : "favorites-management-page detail-hidden"}>
       <section className="management-main-column">
         <FavoritesToolbar
           filterLabel={typeFilter}
-          isSyncing={favoritesLoading}
           message={favoritesLoading ? "backend FavoriteItem에서 즐겨찾기를 불러오는 중입니다." : favoritesMutating ? "즐겨찾기 변경 사항을 backend에 저장하는 중입니다." : favoriteMessage}
           page={page}
           onAddShortcut={handleAddShortcut}
           onCycleFilter={handleCycleTypeFilter}
           onReorder={handleReorderFavorite}
           onSaveUserFavorites={handleSaveUserFavorites}
-          onSyncFavorites={handleSyncFavorites}
         />
         <ShortcutDraftPanel draft={shortcutDraft} onDraftChange={setShortcutDraft} />
         {lastDeleted && (
@@ -12781,7 +9664,7 @@ function FavoritesBody({ currentUser, page }: { currentUser: AuthUser; page: Pag
             <button onClick={restoreDeletedFavorite} type="button">undo</button>
           </div>
         )}
-        <FavoriteMenuCards items={menuFavorites} selectedId={selectedId} onSelect={handleSelectFavorite} />
+        <FavoriteMenuCards items={menuFavorites} selectedId={selectedId} onSelect={handleSelectFavorite} onReorder={handleReorderFavoriteByDrag} />
         <SavedFilterCards
           filters={visibleSavedFilters}
           selectedId={selectedId}
@@ -12792,6 +9675,7 @@ function FavoritesBody({ currentUser, page }: { currentUser: AuthUser; page: Pag
             setShowAllSavedFilters((current) => !current);
             setFavoriteMessage(showAllSavedFilters ? "저장된 필터 일부를 표시합니다." : "저장된 필터 전체 목록을 표시합니다.");
           }}
+          onReorder={handleReorderFavoriteByDrag}
         />
         <FavoriteRecentTable
           rows={visibleRecentFavorites}
@@ -12803,19 +9687,18 @@ function FavoritesBody({ currentUser, page }: { currentUser: AuthUser; page: Pag
             setShowAllRecent((current) => !current);
             setFavoriteMessage(showAllRecent ? "최근 사용 일부를 표시합니다." : "최근 사용 전체 이력을 표시합니다.");
           }}
+          onReorder={handleReorderFavoriteByDrag}
         />
       </section>
-      {detailOpen ? (
+      {detailOpen && (
         <FavoriteDetailPanel
           favorite={selectedFavorite}
           onAddShortcut={handleAddShortcut}
-          onClose={() => setDetailOpen(false)}
+          onClose={() => setSelectedId("")}
           onDelete={handleDeleteFavorite}
           onOpen={handleOpenFavorite}
           onReorder={handleReorderFavorite}
         />
-      ) : (
-        <ClosedDetailPanel title="즐겨찾기 상세" onOpen={() => setDetailOpen(true)} />
       )}
     </div>
   );
@@ -12854,24 +9737,20 @@ function ShortcutDraftPanel({ draft, onDraftChange }: { draft: ShortcutDraft; on
 
 function FavoritesToolbar({
   filterLabel,
-  isSyncing,
   message,
   page,
   onAddShortcut,
   onCycleFilter,
   onReorder,
   onSaveUserFavorites,
-  onSyncFavorites,
 }: {
   filterLabel: string;
-  isSyncing: boolean;
   message: string;
   page: PageDefinition;
   onAddShortcut: () => void;
   onCycleFilter: () => void;
   onReorder: () => void;
   onSaveUserFavorites: () => void;
-  onSyncFavorites: () => void;
 }) {
   return (
     <div className="favorites-toolbar-wrap">
@@ -12883,10 +9762,6 @@ function FavoritesToolbar({
         <div>
           <button className="management-primary-button" onClick={onAddShortcut} type="button">바로가기 추가</button>
           <button className="management-secondary-button" onClick={onReorder} type="button">순서 편집</button>
-          <button className="management-secondary-button" disabled={isSyncing} onClick={onSyncFavorites} type="button">
-            <RefreshCw size={15} />
-            동기화
-          </button>
           <button className="management-secondary-button" onClick={onSaveUserFavorites} type="button">사용자 저장</button>
         </div>
       </div>
@@ -12898,7 +9773,41 @@ function FavoritesToolbar({
   );
 }
 
-function FavoriteMenuCards({ items, selectedId, onSelect }: { items: FavoriteItem[]; selectedId: string; onSelect: (favoriteId: string) => void }) {
+// 드래그 앤 드롭으로 카드 순서를 바꾸기 위한 핸들러 묶음을 제공한다.
+function useDragReorder(onReorder: (fromId: string, toId: string) => void) {
+  const [draggingId, setDraggingId] = useState("");
+  const [overId, setOverId] = useState("");
+  return (id: string) => ({
+    draggable: true,
+    onDragStart: (event: DragEvent<HTMLElement>) => {
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", id);
+      setDraggingId(id);
+    },
+    onDragOver: (event: DragEvent<HTMLElement>) => {
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "move";
+      if (overId !== id) setOverId(id);
+    },
+    onDragLeave: () => setOverId((current) => (current === id ? "" : current)),
+    onDrop: (event: DragEvent<HTMLElement>) => {
+      event.preventDefault();
+      const fromId = event.dataTransfer.getData("text/plain") || draggingId;
+      if (fromId && fromId !== id) onReorder(fromId, id);
+      setDraggingId("");
+      setOverId("");
+    },
+    onDragEnd: () => {
+      setDraggingId("");
+      setOverId("");
+    },
+    "data-dragging": draggingId === id ? "true" : undefined,
+    "data-drag-over": overId === id && draggingId !== id ? "true" : undefined,
+  });
+}
+
+function FavoriteMenuCards({ items, selectedId, onSelect, onReorder }: { items: FavoriteItem[]; selectedId: string; onSelect: (favoriteId: string) => void; onReorder: (fromId: string, toId: string) => void }) {
+  const getDragProps = useDragReorder(onReorder);
   return (
     <section className="favorites-section">
       <h2>자주 쓰는 메뉴</h2>
@@ -12906,8 +9815,8 @@ function FavoriteMenuCards({ items, selectedId, onSelect }: { items: FavoriteIte
         {items.map((item) => {
           const Icon = favoriteIconMap[item.iconKey];
           return (
-            <button className={selectedId === item.id ? "selected" : undefined} key={item.id} onClick={() => onSelect(item.id)} type="button">
-              <b className="drag-handle">⋮⋮</b>
+            <button className={selectedId === item.id ? "selected" : undefined} key={item.id} onClick={() => onSelect(item.id)} type="button" {...getDragProps(item.id)}>
+              <b className="drag-handle" aria-hidden="true">⋮⋮</b>
               <span className={`favorite-icon ${item.tone}`}>
                 <Icon size={23} />
               </span>
@@ -12929,6 +9838,7 @@ function SavedFilterCards({
   totalCount,
   onSelect,
   onShowAll,
+  onReorder,
 }: {
   filters: FavoriteItem[];
   showAll: boolean;
@@ -12936,7 +9846,9 @@ function SavedFilterCards({
   totalCount: number;
   onSelect: (favoriteId: string) => void;
   onShowAll: () => void;
+  onReorder: (fromId: string, toId: string) => void;
 }) {
+  const getDragProps = useDragReorder(onReorder);
   return (
     <section className="favorites-section">
       <header>
@@ -12945,8 +9857,8 @@ function SavedFilterCards({
       </header>
       <div className="saved-filter-grid">
         {filters.map((item) => (
-          <button className={selectedId === item.id ? "selected" : undefined} key={item.id} onClick={() => onSelect(item.id)} type="button">
-            <b className="drag-handle">⋮⋮</b>
+          <button className={selectedId === item.id ? "selected" : undefined} key={item.id} onClick={() => onSelect(item.id)} type="button" {...getDragProps(item.id)}>
+            <b className="drag-handle" aria-hidden="true">⋮⋮</b>
             <Star className="filled" size={17} />
             <strong>{item.title}</strong>
             <span>{item.description}</span>
@@ -12969,6 +9881,7 @@ function FavoriteRecentTable({
   totalCount,
   onSelect,
   onShowAll,
+  onReorder,
 }: {
   showAll: boolean;
   rows: FavoriteItem[];
@@ -12976,9 +9889,11 @@ function FavoriteRecentTable({
   totalCount: number;
   onSelect: (favoriteId: string) => void;
   onShowAll: () => void;
+  onReorder: (fromId: string, toId: string) => void;
 }) {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
+  const getDragProps = useDragReorder(onReorder);
   const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
   const pageRows = rows.slice((page - 1) * pageSize, page * pageSize);
   useEffect(() => {
@@ -13002,8 +9917,8 @@ function FavoriteRecentTable({
           {pageRows.map((row, index) => {
             const Icon = favoriteIconMap[row.iconKey];
             return (
-              <tr className={selectedId === row.id ? "selected" : undefined} key={row.id} onClick={() => onSelect(row.id)}>
-                <td>⋮⋮ <Star className={row.status === "활성" ? "filled" : undefined} size={16} /></td>
+              <tr className={selectedId === row.id ? "selected" : undefined} key={row.id} onClick={() => onSelect(row.id)} {...getDragProps(row.id)}>
+                <td><span className="drag-handle" aria-hidden="true">⋮⋮</span> <Star className={row.status === "활성" ? "filled" : undefined} size={16} /></td>
                 <td><span className={`favorite-row-icon tone-${index % 5}`}><Icon size={15} /></span>{row.title}</td>
                 <td>{row.type}</td>
                 <td>{row.description}</td>
@@ -13035,7 +9950,7 @@ function FavoriteRecentTable({
           ))}
           <button onClick={() => setPage((current) => Math.min(pageCount, current + 1))} type="button">›</button>
         </div>
-        <button className="rows-select" onClick={() => setPageSize((current) => (current === 20 ? 10 : 20))} type="button">{pageSize}개씩</button>
+        <RowsPerPageSelect pageSize={pageSize} onChange={setPageSize} unit="개씩" />
       </footer>
     </section>
   );
@@ -13109,7 +10024,7 @@ function FavoriteDetailPanel({
           열기
           <span>↗</span>
         </button>
-        <button disabled={favorite.status === "비활성"} onClick={onAddShortcut} type="button">
+        <button onClick={onAddShortcut} type="button">
           바로가기 추가
           <span>+</span>
         </button>
@@ -13203,6 +10118,71 @@ function CardHeader({ action, onAction, title }: { title: string; action?: strin
   );
 }
 
+function FilterBar({ items }: { items: string[] }) {
+  return (
+    <div className="filter-bar">
+      {items.map((item) => (
+        <button key={item}>
+          {item}
+          <ChevronDown size={15} />
+        </button>
+      ))}
+      <button className="filter-button">
+        <SlidersHorizontal size={16} />
+        필터
+      </button>
+    </div>
+  );
+}
+
+function DataTable({ page, selectable = false }: { page: PageDefinition; selectable?: boolean }) {
+  return (
+    <div className="data-table-wrap">
+      <CardHeader title={page.tableTitle} action="전체 보기" />
+      <table className="data-table">
+        <thead>
+          <tr>
+            {selectable && (
+              <th>
+                <span className="checkbox-fake" />
+              </th>
+            )}
+            {page.tableColumns.map((column) => (
+              <th key={column}>{column}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {page.tableRows.map((row, rowIndex) => (
+            <tr className={rowIndex === 0 ? "selected" : ""} key={`${page.title}-${rowIndex}`}>
+              {selectable && (
+                <td>
+                  <span className={rowIndex === 0 ? "checkbox-fake checked" : "checkbox-fake"} />
+                </td>
+              )}
+              {page.tableColumns.map((column) => {
+                const value = row[column] ?? "";
+                return <td key={column}>{isStatusColumn(column) ? <StatusPill value={value} /> : value}</td>;
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <footer className="table-footer">
+        <span>전체 {page.tableRows.length * 24 + 38} 건</span>
+        <div>
+          <button>‹</button>
+          <button className="active">1</button>
+          <button>2</button>
+          <button>3</button>
+          <button>›</button>
+        </div>
+        <button>10 건씩</button>
+      </footer>
+    </div>
+  );
+}
+
 function StatusPill({ value }: { value: string }) {
   return <span className={`status-pill ${statusClass(value)}`}>{value}</span>;
 }
@@ -13293,6 +10273,74 @@ function PaymentBreakdown() {
         </p>
       ))}
     </div>
+  );
+}
+
+function DetailPanel({ variant }: { variant: "dashboard" | "approval" }) {
+  const isApproval = variant === "approval";
+  const title = isApproval ? "상세 정보" : "긴급 결재";
+
+  return (
+    <aside className="erp-card span-3 detail-panel">
+      <CardHeader title={title} />
+      <div className="detail-summary">
+        <b>PR-2024-0058</b>
+        <StatusPill value="승인 대기" />
+      </div>
+      <dl className="detail-list">
+        <dt>요청일</dt>
+        <dd>2024-05-31</dd>
+        <dt>부서</dt>
+        <dd>마케팅팀</dd>
+        <dt>요청자</dt>
+        <dd>이주연 대리</dd>
+        <dt>거래처</dt>
+        <dd>이노베이션(주)</dd>
+        <dt>금액</dt>
+        <dd>2,450,000 원</dd>
+        <dt>처리기한</dt>
+        <dd className="danger">2024-06-01</dd>
+      </dl>
+      <section className="attachment-box">
+        <strong>첨부 파일 (2)</strong>
+        <p>
+          <FileText size={16} />
+          세금계산서_20240531.pdf
+          <Download size={15} />
+        </p>
+        <p>
+          <FileText size={16} />
+          견적서_이노베이션.jpg
+          <Download size={15} />
+        </p>
+      </section>
+      <Timeline />
+      <div className="panel-actions">
+        <button className="erp-primary">승인</button>
+        <button className="danger-action">반려</button>
+        <button className="ghost-action">보류</button>
+      </div>
+    </aside>
+  );
+}
+
+function Timeline() {
+  return (
+    <ol className="erp-timeline">
+      {[
+        ["요청", "이주연 대리", "2024-05-31 09:30"],
+        ["1차 결재", "김민수 과장", "대기 중"],
+        ["2차 결재", "박정우 대리", "대기"],
+        ["최종 결재", "이상훈 차장", "대기"],
+      ].map(([step, user, time], index) => (
+        <li className={index < 2 ? "active" : ""} key={step}>
+          <i />
+          <b>{step}</b>
+          <span>{user}</span>
+          <small>{time}</small>
+        </li>
+      ))}
+    </ol>
   );
 }
 

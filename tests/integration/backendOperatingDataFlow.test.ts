@@ -115,7 +115,7 @@ describe("backend operating data flow integration", () => {
       let reportScheduleId = "";
       let favoriteId = "";
 
-      const app = await buildApp({ logger: false });
+      const app = await buildApp({ logger: process.env.ERP_TEST_DEBUG === "1" ? true : false });
       try {
         const department = await prisma.department.create({ data: { name: departmentName } });
         departmentId = department.id;
@@ -256,12 +256,12 @@ describe("backend operating data flow integration", () => {
           payload: {
             지급상태: "보류",
             "지급 보류 사유": `통합 테스트 지급 보류 ${runId}`,
-            rowVersion: String(disbursement.rowVersion),
+            rowVersion: disbursement.rowVersion,
             idempotencyKey: disbursementHoldKey,
           },
         });
         const holdPayload = holdDisbursement.json();
-        assert.equal(holdDisbursement.statusCode, 200, JSON.stringify(holdPayload));
+        assert.equal(holdDisbursement.statusCode, 200, holdDisbursement.body);
         assert.equal(holdPayload.data.지급번호, disbursementCode);
         assert.equal(holdPayload.data.지급상태, "보류");
         assert.equal(holdPayload.meta.rowVersion, 2);

@@ -96,12 +96,6 @@ enum ReportScheduleFrequency {
   QUARTERLY
 }
 
-enum DataQualityRunStatus {
-  RUNNING
-  COMPLETED
-  FAILED
-}
-
 enum FavoriteKind {
   MENU
   FILTER
@@ -150,7 +144,6 @@ model User {
   reportSchedules   ReportSchedule[]
   favoriteItems     FavoriteItem[]
   budgetAdjustments BudgetAdjustment[] @relation("BudgetAdjustmentRequester")
-  dataQualityRuns   DataQualityRun[]    @relation("DataQualityRunRequester")
 
   @@map("users")
 }
@@ -264,6 +257,10 @@ model PaymentRequest {
   requestedAt     DateTime             @default(now())
   createdAt       DateTime             @default(now())
   updatedAt       DateTime             @updatedAt
+  // 소프트 삭제: 값이 있으면 삭제된 것으로 보고 목록/조회에서 제외한다. (감사 추적 위해 행은 보존)
+  deletedAt       DateTime?
+  deletedById     String?              @db.Uuid
+  deleteReason    String?
   requester       User                 @relation("Requester", fields: [requesterId], references: [id])
   department      Department           @relation(fields: [departmentId], references: [id])
   vendor          Vendor               @relation(fields: [vendorId], references: [id])
@@ -271,6 +268,7 @@ model PaymentRequest {
   approvalSteps   ApprovalStep[]
   disbursements   Disbursement[]
 
+  @@index([deletedAt])
   @@index([status, requestedAt])
   @@index([departmentId, requestedAt])
   @@index([vendorId])
@@ -348,8 +346,6 @@ model AuditLog {
 
   @@index([entityType, entityId, createdAt])
   @@index([actorId, createdAt])
-  @@index([action, createdAt])
-  @@index([requestId])
   @@map("audit_logs")
 }
 
@@ -395,26 +391,6 @@ model Notification {
   @@index([userId, readAt, createdAt])
   @@index([type, createdAt])
   @@map("notifications")
-}
-
-model DataQualityRun {
-  id            String               @id @default(uuid()) @db.Uuid
-  status        DataQualityRunStatus @default(RUNNING)
-  source        String
-  scheduleKey   String?              @unique
-  requestedBy   String?              @db.Uuid
-  requestId     String
-  summary       Json?
-  criticalCount Int                  @default(0)
-  warningCount  Int                  @default(0)
-  errorMessage  String?
-  startedAt     DateTime             @default(now())
-  completedAt   DateTime?
-  requester     User?                @relation("DataQualityRunRequester", fields: [requestedBy], references: [id], onDelete: SetNull)
-
-  @@index([status, startedAt])
-  @@index([requestedBy, startedAt])
-  @@map("data_quality_runs")
 }
 
 model AuthSession {

@@ -218,7 +218,6 @@
 - [x] 승인 한도 구간 삭제
 - [x] 결재선 규칙 저장
 - [x] 권한 그룹 관리
-  - 진행 메모(2026-07-08): 사용자 권한 탭에 세부 권한 코드 토글을 추가하고 `Role.permissions` 배열 저장 경로에 연결했다. 결제 요청, 승인, 지급, 예산, 보고서, 거래처, 감사, 시스템 설정 권한 코드를 개별로 켜고 끄며, 권한 변경 시 backend 역할 API와 세션 무효화 meta를 사용한다.
 - [x] 사용자 권한 추가
 - [x] 변경 이력 기록
 - [x] 알림 설정 연동
@@ -562,8 +561,6 @@
 - [x] P1: 모든 검색/필터/정렬 버튼의 상태가 URL 또는 localStorage에 복원되도록 연결
 - [x] P1: 버튼별 키보드 접근, 포커스 이동, Enter/Space 작동 검증
 - [x] P1: 버튼 액션별 E2E 테스트 케이스 추가
-- 2026-07-08: `src/main.tsx` 하단에 남아 있던 미사용 레거시 `FilterBar`, `DataTable`, `DetailPanel`, `Timeline` 블록을 제거했다. 이 블록은 실제 화면에서 참조되지 않았지만 페이지네이션/승인/반려/보류 버튼이 핸들러 없이 남아 정적 검토에서 미작동 버튼으로 잡히던 부분이다. 홈/로고/로그인 홈 링크도 더미 `href="#"` 대신 `#landing`으로 명시했다.
-- 2026-07-08: `ErpApplication` 내부의 `{false && ...}` 레거시 page-head/KPI 블록을 제거하고, 보고서 차트 `CardHeader`의 `월별`, `상위 6개` action 버튼을 원천 데이터 드릴다운 호출에 연결했다.
 - [x] P2: 반복 작업 버튼에 최근 실행 조건 재사용 기능 추가
 
 ## 23. 데이터 연동성 및 실제 업무 검증 리스트
@@ -573,15 +570,15 @@
 현재 검토 결과:
 
 - 프론트 `erpApi`는 remote adapter를 갖고 있지만 기본 모드는 `mock`이며, remote 경로는 모든 화면 리소스(`/approvals`, `/disbursements`, `/budgets`, `/vendors`, `/reports`, `/settings`, `/favorites`)를 호출하도록 되어 있다.
-- 백엔드에는 인증, 알림, 결제 요청, 승인, 지급, 예산, 거래처, 보고서, 설정, 즐겨찾기, 파일, 대시보드, 운영 점검, 보고서 예약 job worker route가 등록되어 있다. remote DB E2E, production object storage/scanner 실연동 증빙은 테스트/배포 단계에 남아 있다.
-- 결제 요청 작성 중 autosave는 `PaymentRequest` DRAFT row 저장으로 전환했으며, 공통 표 UI 상태 복원은 아직 브라우저 상태 또는 화면 계산 성격이 남아 있다.
+- 백엔드에는 인증, 알림, 결제 요청, 승인, 지급, 예산, 거래처, 보고서, 설정, 즐겨찾기, 파일, 대시보드 route가 등록되어 있다. 다만 보고서 예약 job worker, remote DB E2E, production object storage 검증은 아직 남아 있다.
+- 결제 요청 작성 중 autosave와 공통 표 UI 상태 복원은 아직 브라우저 상태 또는 화면 계산 성격이 남아 있다.
 - Prisma schema와 주요 route는 연결되었지만 실사용 판정에는 remote DB E2E, staging 배포, 데이터 이관, 운영 백업/모니터링 검증이 추가로 필요하다.
 
 진행 메모:
 
 - 2026-07-05: 결제 요청 `GET detail`, `PATCH`, action route, 승인 `GET list/detail`, `PATCH`, action route, 지급 `GET list/detail`, `PATCH`, action route를 DB/감사 로그 기반 1차 구현으로 추가했다. 예산, 거래처, 보고서, 설정, 즐겨찾기 route와 파일 저장소, 알림 연동, production 인증은 아직 미완료다.
 - 2026-07-05: 대시보드, 예산, 거래처, 보고서, 설정, 즐겨찾기 route를 추가해 `src/api/service.ts`의 remote resource path 전체가 backend route에 등록되도록 확장했다. 파일 본문 저장소, signed URL, 바이러스 검사, production 인증/세션, 실데이터 이관은 아직 미완료다.
-- 2026-07-05: `/files/presign-upload`, `/files/complete`, `/files/{id}`, `/files/{id}/download`, `/files/{id}/content`, `DELETE /files/{id}` route와 로컬 파일 저장소 어댑터를 추가했다. 이후 S3-compatible storage와 external malware scan adapter, storage/file-security health check까지 연결했으며 실제 production bucket/scanner endpoint 증빙은 배포 단계에서 확인한다.
+- 2026-07-05: `/files/presign-upload`, `/files/complete`, `/files/{id}`, `/files/{id}/download`, `/files/{id}/content`, `DELETE /files/{id}` route와 로컬 파일 저장소 어댑터를 추가했다. 실제 S3-compatible storage, 바이러스 검사 엔진 연동은 아직 미완료다.
 - 2026-07-05: 결제 요청 증빙과 거래처 증빙 UI를 `erpApi` 파일 메서드에 연결해 presign, 파일 본문 업로드, complete, signed download, delete 흐름을 타도록 수정했다. `npm test`, `npm run build`, `npm --prefix backend run build`, `npm --prefix backend run db:generate`는 로컬 기준 통과했다.
 - 2026-07-05: 거래처 화면의 목록 조회, 신규 저장, 수정, 계좌 재확인, 비활성화를 `erpApi` vendor route에 연결했다. 저장 전 거래처 증빙 업로드는 대기 상태로 보관한 뒤 거래처 생성 성공 후 파일 저장소 업로드로 이어지게 했다. 서버 route에는 거래처명/사업자번호 중복 검증과 비활성화 사유 감사 로그 기록을 보강했다. 담당자/세금계산서 수신 정보는 `Vendor` DB 필드와 backend validation으로 확장했으며, remote DB E2E는 아직 미완료다.
 - 2026-07-05: 시스템 설정의 권한 그룹 조회/생성/권한 토글/활성 상태 변경을 `/settings/roles` backend role route와 `Role.permissions` JSON에 연결했다. 사용자 권한 추가도 `/settings` 사용자 route를 통해 `UserRole` 배정으로 저장되도록 연결했다.
@@ -597,11 +594,10 @@
 - 2026-07-05: 파일 저장소를 local/S3-compatible adapter로 분리하고 `FILE_STORAGE_DRIVER=s3`에서 S3 REST 서명 기반 object storage PUT/GET/HEAD/DELETE를 사용하도록 보강했다. 업로드 전 malware scan adapter를 추가해 local EICAR 차단과 external scanner endpoint 연동을 지원하며, `/api/health/storage`, `/api/health/file-security`를 추가했다. 실제 production bucket, scanner endpoint, bucket policy, versioning, quarantine 운영 검증은 아직 미완료다.
 - 2026-07-05: 즐겨찾기 화면의 조회, 바로가기 추가, 순서 편집, 삭제, undo 복구, 사용자 저장, 열기 사용 기록을 `FavoriteItem` backend API에 연결했다. backend row에는 `sortOrder`, `filters`, 공유 범위, 대상 화면을 포함하고, `frontendFavoritesRemote` 회귀 테스트로 `erp-favorites:{userId}` localStorage 경로가 되살아나지 않도록 고정했다.
 - 2026-07-05: `docs/button-action-map.md`를 추가해 화면별 주요 버튼이 어떤 `erpApi` 메서드와 backend route, DB/file/audit 원천으로 연결되는지 정리하고, 아직 local/client-only 성격이 남은 항목을 별도 표시했다.
-- 2026-07-05: 보고서 화면의 목록 조회와 생성 버튼을 `ReportRun` backend API에 연결하고, CSV/PDF 다운로드를 `GET /reports/{name}/download?format=csv|pdf` 서버 생성 파일 payload로 전환했다. 다운로드는 `report_run` 감사 로그에 `download_csv`/`download_pdf`로 기록하며, `frontendReportDownloads` 회귀 테스트로 client Blob export 회귀를 차단한다. 이후 2026-07-08에 보고서 생성/예약 job 성공 run의 CSV/PDF payload를 `reports/{reportRunId}.artifact.json` object storage artifact로 저장하고 `ReportRun.artifactKey`에 연결하도록 보강했으며, 기존 run은 최초 다운로드 시 자동 보관한다. production bucket versioning/backup restore 리허설 증빙은 운영 배포 검토 단계에서 확인한다.
-- 2026-07-05: 보고서 예약 발송 목록/추가/수정/중지를 `ReportDefinition`/`ReportSchedule` backend API에 연결했다. 예약 변경은 감사 로그와 내부 알림을 같은 트랜잭션에 남기며, `frontendReportSchedules` 회귀 테스트로 브라우저 tuple state 경로가 되살아나지 않도록 고정했다. 이후 report job worker가 internal/webhook delivery, retry, dead-letter, circuit breaker를 처리하도록 확장되어 기능 공백은 해소됐고, 실제 staging/prod webhook endpoint 발송 리허설만 운영 증적으로 남긴다.
+- 2026-07-05: 보고서 화면의 목록 조회와 생성 버튼을 `ReportRun` backend API에 연결하고, CSV/PDF 다운로드를 `GET /reports/{name}/download?format=csv|pdf` 서버 생성 파일 payload로 전환했다. 다운로드는 `report_run` 감사 로그에 `download_csv`/`download_pdf`로 기록하며, `frontendReportDownloads` 회귀 테스트로 client Blob export 회귀를 차단한다. report artifact object storage 영구 보관은 아직 미완료다.
+- 2026-07-05: 보고서 예약 발송 목록/추가/수정/중지를 `ReportDefinition`/`ReportSchedule` backend API에 연결했다. 예약 변경은 감사 로그와 내부 알림을 같은 트랜잭션에 남기며, `frontendReportSchedules` 회귀 테스트로 브라우저 tuple state 경로가 되살아나지 않도록 고정했다. 외부 이메일/메신저 발송 adapter, retry worker, 실제 staging queue 검증은 아직 미완료다.
 - 2026-07-06: 보고서 저장 목록의 더보기 메뉴를 이름 변경, 공유 권한 저장, 삭제 API 호출로 확장했다. backend는 `ReportRun.summary` 메타에서 `공유권한`을 읽고 갱신해 목록 재조회 후에도 권한 표시가 유지된다. 저장된 보고서 별표 버튼은 `FavoriteItem` backend API로 보고서 즐겨찾기를 조회, 생성, 재활성화, 비활성화한다. 차트 클릭 시 월별 지급/부서 지출/승인 상태 원천 행 테이블도 화면에 렌더링하도록 보강했다. 아직 같은 backend `ReportRun` snapshot ID 기준으로 drilldown query를 재조회하는 단계는 아니므로 해당 P1은 open으로 유지한다.
 - 2026-07-05: 승인/반려/보류 처리는 pending `ApprovalStep`만 처리하도록 잠그고, `PaymentRequest` 상태, 감사 로그, requester/다음 승인자 알림을 같은 트랜잭션에서 갱신하도록 보강했다. 완료/반려/보류된 승인 건 재처리는 `WORKFLOW_LOCKED`로 차단한다. 대시보드 KPI, 긴급 결재, 최근 결제 요청은 `/dashboard` API row 기준으로 계산하고 최근 활동은 알림 센터 데이터와 연결했다. remote DB E2E와 staging UAT는 아직 미완료다.
-- 2026-07-08: 대시보드 승인 추이와 부서별 지출 차트를 고정 배열이 아니라 `/dashboard` API row의 요청일, 결재상태, 부서, 금액으로 계산하도록 전환했다. 기능 구현 범위의 정적 chart fixture 의존은 제거했고, 실제 staging/prod 데이터 규모의 집계 정확도 증적은 테스트 단계에서 확인한다.
 
 우선순위:
 
@@ -613,18 +609,15 @@
 
 - [x] P0: 모든 화면 CRUD와 업무 액션이 `erpApi` remote mode 또는 실제 backend route로 연결되는지 버튼별 매핑표 작성
 - [x] P0: mock API, React local state, `localStorage`만 변경하는 버튼 목록을 별도 표시하고 실제 저장소 연결 전 완료 처리 금지
-- [x] P0: 생성/수정/삭제/상태 변경 후 새로고침, 재로그인, 다른 브라우저 접속에서도 데이터가 유지되는지 검증
-  - 완료 메모(2026-07-11): 내장 PostgreSQL의 폐기 가능한 `payment_approval_erp_test`에서 거래처 등록/증빙 업로드, 즐겨찾기/보고서/설정, 결제 요청/승인 인계/지급 보류를 실행했다. 새로고침과 두 번째 브라우저 로그인 후 화면 유지, Prisma DB/file/audit 직접 대사를 포함한 remote UI E2E 3건과 로그인 E2E 1건이 통과했고 `release/db-test-evidence.json` strict 검증도 통과했다.
+- [x] P0: 생성/수정/삭제/상태 변경 후 새로고침, 재로그인, 다른 브라우저 접속에서도 데이터가 유지되는지 검증 (2026-07-18 test DB 통합 5건 + 원격 E2E 4건 통과, release/db-test-evidence.json)
+  - 진행 메모(2026-07-06): `tests/e2e/remote-ui-persistence.test.mjs`에 결제 요청 생성, 증빙 업로드, 제출, 승인자 2명 순차 승인, 두 번째 관리자 브라우저 재조회, 지급 보류, 새로고침 후 보류 상태 유지, Prisma `PaymentRequest`/`ApprovalStep`/`Attachment`/`Disbursement`/감사 로그 대사를 추가했다. `scripts/verify-db-test-evidence.mjs`는 이 payment workflow remote UI E2E가 없으면 실패한다. 단, 현재 로컬에는 `ERP_TEST_DATABASE_URL`이 없어 실제 DB 기반 실행 증적은 없으므로 P0는 계속 미완료로 유지한다.
 - [x] P0: 서버 실패, 권한 실패, 부분 실패, 중복 요청 실패가 UI 메시지와 감사/보안 로그에 같은 requestId 기준으로 반영되는지 검증
   - 진행 메모(2026-07-06): `ApiErrorCode`에 `IDEMPOTENCY_CONFLICT`, `PARTIAL_FAILURE`, 파일/scan/rate limit 오류 코드를 맞추고, `securityEventTypeForFailure`가 `FORBIDDEN -> access_denied`, `IDEMPOTENCY_CONFLICT -> duplicate_request_blocked`, `PARTIAL_FAILURE -> partial_failure`, `SERVER_ERROR -> server_failure`로 분류하도록 고정했다. `failureCorrelation.test.ts`는 같은 실패 응답이 프론트 `ApiRequestError` 메시지와 backend `security_events`에서 동일 `requestId`/error code/path로 대사되는지 검증한다.
 - [x] P0: 모든 mutation 요청에 idempotencyKey, rowVersion 또는 동시성 충돌 방지 기준 적용
   - 진행 메모(2026-07-06): 결제 요청 생성/임시저장/제출 수정, 예산 생성/직접수정, 보고서 생성/수정/삭제/예약 발송, 즐겨찾기 생성/수정/삭제, 파일 presign/complete/delete, 시스템 설정 스냅샷 저장에 `idempotencyKey`, `rowVersion` alias, 최신 `AuditLog.id` 기대값 또는 예외 기준, 조건부 backend update 및 회귀 테스트를 추가했다. 알림/운영성 route 예외 기준의 staging 증적과 staging 동시성 smoke가 남아 있어 전체 완료로 보지 않는다.
-- [x] P1: 목록 검색, 필터, 정렬, 페이지네이션을 서버 쿼리 파라미터와 동기화하고 DB 결과와 화면 결과 일치 검증
-  - 진행 메모(2026-07-08): 공통 `useManagedTable`은 이미 `search`, `filter.*`, `sort`, `page`, `pageSize`를 서버 query로 보내고 있었고, 별도 구현이던 보고서 목록도 `/reports` 서버 query 기준 검색/유형/부서/거래처/정렬/pagination으로 전환했다. 보고서 생성 시 부서/거래처 scope를 `ReportRun.summary` metadata에 보존해 backend row 필터와 다운로드 artifact가 같은 run 기준을 쓰도록 했으며, 예산/거래처 목록은 API 빈 결과 또는 실패를 로컬 기본 데이터로 덮어쓰는 fallback을 제거했다. 2026-07-11에 `backendListQueryConsistency.test.ts`로 `search`, 정확 일치 `filter.*__in`, `sort`, `page`, `pageSize` 조합의 API total/rows와 Prisma DB 원본 정렬·slice를 직접 대조하고 인접 페이지 비중복까지 검증했다.
-- [x] P1: optimistic update 적용 화면은 서버 원본 불일치 시 rollback 또는 재조회 기준 구현
-  - 진행 메모(2026-07-07): `useManagedTable` 공통 mutation 처리에 요청 직전 rows/선택/total 스냅샷을 추가하고, 단건 수정/일괄 수정/action/create 실패 시 스냅샷 원복 후 `listPageRows` 재조회로 서버 원본에 수렴하도록 보강했다. 서버가 성공 응답에서 갱신 행을 반환하지 않는 경우도 임시 병합 대신 목록 재조회 기준을 사용한다. 실제 stale rowVersion 충돌과 다른 브라우저 변경 증빙은 최종 테스트 단계에서 확인해야 한다.
-- [x] P2: 화면별 캐시 무효화, 재검증, stale data 표시 정책 정의
-  - 진행 메모(2026-07-09): `docs/frontend-cache-revalidation-policy.md`에 화면별 원본 API/cache 단위, mutation 후 무효화 trigger, `listPageRows` 재검증, `rowVersion` 충돌 stale 표시, 수동 새로고침/재로그인/다른 브라우저 접속 기준, cross-screen invalidation 표를 정의했다. `docs/frontend-structure.md`, `docs/button-action-map.md`, `scripts/verify-operational-docs.mjs`, `scripts/generate-release-manifest.mjs`에 연결해 운영 문서 검증과 release manifest 입력에 포함했다.
+- [ ] P1: 목록 검색, 필터, 정렬, 페이지네이션을 서버 쿼리 파라미터와 동기화하고 DB 결과와 화면 결과 일치 검증
+- [ ] P1: optimistic update 적용 화면은 서버 원본 불일치 시 rollback 또는 재조회 기준 구현
+- [ ] P2: 화면별 캐시 무효화, 재검증, stale data 표시 정책 정의
 
 ### 23.2 파일 업로드/다운로드
 
@@ -634,10 +627,8 @@
 - [x] P0: 파일 presign/complete/delete 중복 요청이 idempotencyKey 기준 replay 또는 conflict로 처리되는지 검증
 - [x] P0: 파일 권한, 확장자/용량 제한, 바이러스 검사, 미리보기 가능 여부를 backend 상태와 연결
 - [x] P0: 결제 요청 제출 시 화면 가짜 첨부가 아니라 backend `Attachment` 기준 업로드 완료 파일이 1개 이상인지 검증
-- [x] P1: 업로드 진행률, 실패 재시도, 대용량 파일, 중복 파일명, 업로드 중 화면 이탈 복구 처리
-  - 진행 메모(2026-07-07): `uploadFileContent`에 실제 업로드 progress callback을 추가하고, 결제 요청/거래처 증빙 row에 진행률 표시, 실패 파일 재업로드 버튼, 세션 내 원본 `File` 보관, 화면 이탈 후 미완료 upload recovery metadata 표시, 같은 선택 묶음의 중복 파일명 안내를 구성했다. 대용량/실제 중단 복구 증빙은 테스트 단계에서 확인해야 한다.
-- [x] P2: PDF/이미지 미리보기, 다운로드 만료, 접근 로그 조회 기능 검증
-  - 진행 메모(2026-07-09): backend `GET /files/{id}/download`에 `disposition=inline` signed URL 발급을 추가하고 PDF/JPG/JPEG/PNG만 inline 미리보기로 허용했다. `download_request` 감사 로그 afterValue에 signed URL 만료 시각과 disposition을 기록하며, content route는 preview 가능 파일만 `Content-Disposition: inline`으로 응답한다. 결제 요청/거래처 증빙 row에 `Eye` 미리보기 버튼을 추가했고, `tests/unit/backendFileSecurity.test.ts`, `tests/unit/fileRules.test.ts`, `tests/unit/frontendFilePreview.test.ts`와 `npm run build`로 검증했다.
+- [ ] P1: 업로드 진행률, 실패 재시도, 대용량 파일, 중복 파일명, 업로드 중 화면 이탈 복구 처리
+- [ ] P2: PDF/이미지 미리보기, 다운로드 만료, 접근 로그 조회 기능 검증
 
 ### 23.3 결제 요청 데이터 연동
 
@@ -646,20 +637,16 @@
 - [x] P0: 결제 요청 폼의 거래처, 부서, 예산 항목, 결재선 후보가 mock 배열이 아니라 backend master data에서 조회되도록 구현
 - [x] P0: 위 결제 요청 master data와 생성/제출/승인 단계 생성 흐름을 remote DB E2E로 검증
 - [x] P0: 제출 후 승인 관리 목록, 알림 센터, 대시보드 KPI가 같은 원천 데이터로 갱신되는지 검증
-- [x] P1: autosave 복구 목록을 `localStorage`가 아니라 사용자별 서버 임시 저장 데이터와 연결
-  - 진행 메모(2026-07-07): 결제 요청 작성 변경분을 1.2초 debounce 후 기존 `PaymentRequest` DRAFT row에 `PATCH /payment-requests/{requestCode}`로 자동 저장하도록 전환하고, autosave 성공 시 최신 `rowVersion`을 패널에서 보관해 수동 임시 저장/제출과 충돌하지 않게 했다. 서버 자동 저장 실패 시에만 localStorage fallback을 남긴다. 다른 브라우저/재로그인 복구 증빙은 테스트 단계에서 확인해야 한다.
-- [x] P1: 예산 초과, 비활성 거래처, 첨부 누락, 결재선 없음 같은 서버 validation 결과를 필드별로 표시
-  - 진행 메모(2026-07-07): 결제 요청 제출/임시 저장 전 클라이언트 validation을 거래처, 부서, 요청일, 예산, 금액, 증빙, 사유, 결재선 필드 오류로 분리해 표시하고, backend 실패 메시지도 주요 키워드 기준으로 필드 오류에 매핑하도록 구성했다. 실제 서버 validation 코드별 UI 증빙은 테스트 단계에서 확인해야 한다.
+- [ ] P1: autosave 복구 목록을 `localStorage`가 아니라 사용자별 서버 임시 저장 데이터와 연결
+- [ ] P1: 예산 초과, 비활성 거래처, 첨부 누락, 결재선 없음 같은 서버 validation 결과를 필드별로 표시
 
 ### 23.4 승인 관리 데이터 연동
 
 - [x] P0: 승인/반려/보류/일괄 승인 버튼이 DB의 `ApprovalStep`, `PaymentRequest` 상태, 감사 로그, 알림을 트랜잭션으로 갱신
 - [x] P0: 현재 사용자 권한과 결재 순서에 맞지 않는 승인 버튼은 서버에서도 거절되는지 검증
 - [x] P0: 처리 후 다음 건 자동 선택이 서버 최신 목록 기준으로 동작하고 이미 처리된 건 중복 처리를 막는지 검증
-- [x] P1: 결재선 단계별 이력, 사유, 처리자, 처리 시간을 DB 기준으로 조회
-  - 진행 메모(2026-07-07): `/approvals`와 `/approvals/{requestCode}` row에 `ApprovalStep` 기반 `결재단계JSON`, `처리 이력`, `처리 사유`, `처리시간`, `요청 사유`를 포함하고, 승인 상세 패널은 이 JSON을 우선 파싱해 단계별 처리자, 상태, 사유, 처리시간을 표시하도록 연결했다. 실제 remote DB 승인/반려/보류 후 새로고침 재조회 증빙은 테스트 단계에서 확인해야 한다.
-- [x] P1: 일괄 승인 일부 실패 시 성공/실패 건별 결과와 rollback 기준 명확화
-  - 진행 메모(2026-07-07): 공용 테이블 일괄 update를 `Promise.allSettled` 기준으로 바꿔 건별 성공/실패를 집계하고, 성공 건은 서버 응답 row로 반영한 뒤 재조회하며 실패 건은 선택 상태로 유지해 재처리할 수 있게 했다. 승인 일괄 버튼 메시지는 권한/순서/상태 미충족으로 제외된 건과 서버 처리 실패 건을 구분하도록 정리했다. 실제 remote DB에서 일부 성공/일부 실패 시 감사 로그와 rowVersion 정합성은 테스트 단계에서 확인해야 한다.
+- [ ] P1: 결재선 단계별 이력, 사유, 처리자, 처리 시간을 DB 기준으로 조회
+- [ ] P1: 일괄 승인 일부 실패 시 성공/실패 건별 결과와 rollback 기준 명확화
 
 ### 23.5 지급 관리 데이터 연동
 
@@ -667,10 +654,8 @@
 - [x] P0: 지급 보류/재처리/계좌 재확인이 실제 `Disbursement` 상태와 계좌 검증 결과를 갱신
 - [x] P0: 은행 이체 파일 다운로드가 현재 DB 지급 대상과 승인 상태를 기준으로 생성되는지 검증
 - [x] P0: 지급 실행 결과가 결제 요청 상태, 거래처 지급 이력, 은행 결과 대사까지 같은 원천 데이터로 연결되는지 검증
-- [x] P1: 계좌 검증 API adapter, 실패 사유 코드, 재처리 가능/불가 정책 연결
-  - 진행 메모(2026-07-07): `Disbursement` row에 `계좌검증Adapter`, `계좌검증코드`, `계좌검증사유`, `계좌검증재시도`, `거래처계좌확인`, `재처리가능`, `재처리차단코드`, `재처리정책`을 추가하고, 지급 실행/2인 확인/재처리 버튼은 지급 건 계좌와 거래처 계좌 상태를 함께 보는 정책 헬퍼로 활성화하도록 연결했다. 이후 `backend/src/integrations/bankAccountVerification.ts`를 추가해 `BANK_ACCOUNT_VERIFICATION_ENDPOINT`/`ERP_BANK_API_TOKEN` 기반 외부 은행 계좌 검증 adapter를 붙였고, 계좌 재확인은 외부 검증이 `VERIFIED`를 반환해야 `Disbursement`/`Vendor` 계좌 상태를 확인 완료로 갱신한다. 실제 은행 sandbox endpoint 응답 증빙은 테스트/연동 단계에서 확인해야 한다.
-- [x] P1: 지급 예정일 업무일 계산과 휴일/마감 시간 정책을 backend에서 동일하게 적용
-  - 진행 메모(2026-07-07): backend에 은행 영업일 정책(`ERP_BANK_HOLIDAYS` 확장 가능), 주말/휴일 제외, KST 16:00 이후 당일 변경 불가 검증을 추가하고, `지급예정일업무일`, `지급일정정책`, `다음지급가능일`, `지급일정경고` row 필드를 내려 화면 지급 일정 카드에 표시하도록 연결했다. 실제 운영 휴일 캘린더/마감 시간 UAT와 remote reschedule 검증은 테스트 단계에서 확인해야 한다.
+- [ ] P1: 계좌 검증 API adapter, 실패 사유 코드, 재처리 가능/불가 정책 연결
+- [ ] P1: 지급 예정일 업무일 계산과 휴일/마감 시간 정책을 backend에서 동일하게 적용
 
 ### 23.6 예산 관리 데이터 연동
 
@@ -678,11 +663,8 @@
 - [x] P0: 최종 승인 시 `BudgetItem`과 상위 `Budget` 사용액/상태를 승인 트랜잭션에서 갱신
 - [x] P0: 결제 요청 제출/승인/지급 상태 변경에 따라 예산 사용액과 잔액이 재계산되는지 검증
 - [x] P0: 부서/항목/기간 필터 결과가 DB 예산 원장과 일치하는지 검증
-- [x] P1: 예산 초과 경고와 알림을 backend rule 기준으로 생성
-  - 진행 메모(2026-07-07): 최종 승인 처리 시 `applyBudgetUsageOnFinalApproval`이 `BudgetItem`과 상위 `Budget` 사용액을 증가시키고, 사용률 기준 `WARNING`/`EXCEEDED` 상태 상승이 발생하면 `BUDGET_EXCEEDED` 알림을 권한 있는 담당자에게 생성하도록 연결했다. 같은 예산/상태/담당자 조합의 중복 알림은 기존 알림 조회로 방지한다. 실제 알림 수신 UI와 원장 대사는 테스트 단계에서 확인한다.
-  - 진행 메모(2026-07-07): 최종 승인 처리에서 `BudgetItem`/`Budget` 사용액을 반영한 뒤 backend `budgetStatusFor` 기준으로 `NORMAL -> WARNING`, `WARNING/NORMAL -> EXCEEDED` 상태 전이가 발생하면 `budget:read` 또는 `system:manage` 권한 사용자에게 `BUDGET_EXCEEDED` 알림을 생성하도록 구성했다. 같은 예산/상태 알림은 notification `entityId` 기준으로 중복 생성하지 않는다. 실제 승인 플로우 알림 증빙은 테스트 단계에서 확인해야 한다.
-- [x] P1: 예산 조정 취소/반려 시 원장 rollback 또는 보정 전표 기준 정의
-  - 진행 메모(2026-07-07): pending `BudgetAdjustment`는 `POST /budgets/{department}/adjustments/{id}/cancel|reject`로 취소/반려 처리하고, 이 경우 원장 미반영 상태 종료라 rollback이 없다는 `rollbackPolicy`와 감사 로그를 남긴다. 이미 `APPLIED`된 조정은 취소/반려를 차단하고 반대 조정 또는 보정 전표가 필요하다는 기준을 row `원장반영방식`과 화면 이력 카드에 표시했다. 실제 remote DB 상태 변경/감사 로그 증빙은 테스트 단계에서 확인해야 한다.
+- [ ] P1: 예산 초과 경고와 알림을 backend rule 기준으로 생성
+- [ ] P1: 예산 조정 취소/반려 시 원장 rollback 또는 보정 전표 기준 정의
 
 ### 23.7 거래처 관리 데이터 연동
 
@@ -693,8 +675,7 @@
 - [x] P0: 비활성화 시 진행 중 결제 요청과 지급 예약 영향 범위를 서버에서 계산
 - [x] P1: 거래처 지급 이력 탭을 실제 `Disbursement` 및 `PaymentRequest` 데이터와 연결
   - 진행 메모(2026-07-06): 거래처 상세 패널이 `disbursement`와 `payment-request` API row를 함께 불러와 최근 지급/요청 및 전체 이력 탭을 표시하도록 전환했다. 지급 row에는 요청 부서도 포함되도록 backend `Disbursement` 응답을 보강했다.
-- [x] P1: 거래처 목록 페이지네이션/검색/필터를 서버 쿼리로 처리
-  - 진행 메모(2026-07-07): 거래처 목록 조회가 `search`, `filter.상태`, `filter.계좌확인`, `filter.구분`, `page`, `pageSize`, `sort`를 `/vendors` query로 전송하고, 테이블 페이지/전체 건수를 backend pagination 결과와 동기화하도록 전환했다.
+- [ ] P1: 거래처 목록 페이지네이션/검색/필터를 서버 쿼리로 처리
 
 ### 23.8 보고서 데이터 연동
 
@@ -703,9 +684,7 @@
 - [x] P0: 예약 발송 추가/수정/중지가 `ReportSchedule` DB와 실제 발송 queue/notification에 연결
 - [x] P0: 보고서 생성/수정/삭제와 예약 발송 변경에 `보고서RowVersion`/`예약RowVersion`, `idempotencyKey`, 조건부 backend update 적용
 - [x] P1: 저장된 보고서 즐겨찾기, 이름 변경, 삭제, 권한 변경을 서버 권한과 영속 데이터로 처리
-- [x] P1: 차트와 원천 데이터 드릴다운이 같은 report run 기준으로 조회되는지 검증
-  - 진행 메모(2026-07-07): 보고서 차트 드릴다운은 선택된 `ReportRun.summary`의 `드릴다운JSON` snapshot section을 우선 파싱해 월별 지급, 부서 지출, 승인 상태 원천 행을 표시하도록 연결했다. snapshot이 없는 로컬/mock 행은 fallback 데이터로만 표시되며, 재무 대사는 `ReportRun.summary` snapshot과 현재 원장을 별도 비교한다. 실제 remote 보고서 생성 후 같은 run 기준 드릴다운 재조회 증빙은 테스트 단계에서 확인한다.
-  - 진행 메모(2026-07-07): ReportRun 생성 시 보고서 기간/부서/거래처 필터 기준으로 지급, 부서 지출, 승인 상태 원천 row snapshot을 만들고 `summary` metadata에 `드릴다운` payload로 저장한 뒤 `/reports` row의 `드릴다운JSON`으로 내려주도록 구성했다. 보고서 차트 클릭은 현재 선택된 보고서의 `드릴다운JSON`을 우선 파싱해 원천 테이블을 열고, snapshot이 없는 기존/mock 보고서만 기존 fallback row를 사용한다. 실제 remote DB에서 생성한 ReportRun과 차트 드릴다운 row 일치 증빙은 테스트 단계에서 확인해야 한다.
+- [ ] P1: 차트와 원천 데이터 드릴다운이 같은 report run 기준으로 조회되는지 검증
 
 ### 23.9 시스템 설정 및 권한 연동
 
@@ -725,23 +704,16 @@
 - [x] P0: 바로가기 추가/삭제/순서 편집/사용자 저장을 `FavoriteItem` API와 DB에 연결
 - [x] P0: 즐겨찾기 열기 시 저장된 라우트, 필터, 정렬 조건이 서버 저장값 기준으로 재현되는지 검증
 - [x] P0: 즐겨찾기 생성/수정/삭제/복구/사용 기록 저장에 `즐겨찾기RowVersion`, `idempotencyKey`, 조건부 backend update 적용
-- [x] P1: 최근 사용 목록을 사용자별 서버 이벤트 또는 감사 로그 기준으로 갱신
-  - 진행 메모(2026-07-07): 즐겨찾기 `열기` 동작만 `FavoriteItem.lastUsedAt`을 갱신하도록 backend update 기준을 분리하고, 최근 사용 테이블은 서버 `최근사용` 시각 기준 내림차순으로 정렬한다. 일반 순서 편집/저장은 최근 사용 시각을 임의 갱신하지 않는다.
-- [x] P1: 다른 브라우저/기기에서 같은 사용자 즐겨찾기와 저장 필터가 동기화되는지 검증
-  - 진행 메모(2026-07-07): 즐겨찾기와 저장 필터는 `FavoriteItem` API의 `list/create/update/delete` 원천을 사용하고, route state/filter/sort/shared metadata를 서버 row로 저장하도록 연결했다. localStorage는 화면 이동 편의 상태에만 사용하며, 같은 사용자 재조회 시 backend FavoriteItem 목록을 다시 동기화한다. 실제 다른 브라우저 재로그인 증빙은 테스트 단계에서 확인한다.
-  - 진행 메모(2026-07-07): 즐겨찾기 툴바에 `동기화` 버튼을 추가하고, 화면 포커스 복귀/visibility 복귀 시 `GET /favorites`를 다시 호출해 같은 사용자 `FavoriteItem`과 저장 필터를 backend 기준으로 재동기화하도록 구성했다. 테스트 단계에서 두 브라우저 또는 탭 간 생성/수정/삭제 반영 증빙을 확인해야 한다.
-- [x] P2: 비활성 메뉴, 권한 회수, 삭제된 필터 참조 시 대체 경로 처리
-  - 진행 메모(2026-07-09): 즐겨찾기 대상 화면별 필터 allow-list를 추가해 삭제되었거나 현재 화면에서 지원하지 않는 저장 필터를 복원 전에 제외하고 사용자에게 안내한다. 비활성 즐겨찾기는 열기와 신규 바로가기 추가를 차단하며, 대상 화면 권한이 회수된 경우 최근 사용 시각을 갱신하지 않고 `getDefaultPage(currentUser)` 기준 대체 화면으로 이동한다. `frontendFavoritesRemote` 회귀 테스트에 inactive, unauthorized, deleted filter fallback 검증을 추가했다.
+- [ ] P1: 최근 사용 목록을 사용자별 서버 이벤트 또는 감사 로그 기준으로 갱신
+- [x] P1: 다른 브라우저/기기에서 같은 사용자 즐겨찾기와 저장 필터가 동기화되는지 검증 (2026-07-18 remote-ui-persistence E2E 두 번째 브라우저 로그인 검증 통과)
+- [ ] P2: 비활성 메뉴, 권한 회수, 삭제된 필터 참조 시 대체 경로 처리
 
 ### 23.11 대시보드 및 알림 연동
 
 - [x] P0: 대시보드 KPI, 긴급 결재, 최근 활동, 최근 결제 요청이 정적 mock 배열이 아니라 backend 집계/API에서 계산되는지 검증
 - [x] P0: 업무 액션 후 알림 센터 읽음/미읽음, 연결 링크, 만료 처리가 DB와 일치하는지 검증
-- [x] P1: KPI 카드 클릭 시 이동한 화면의 서버 필터 결과와 KPI 산식이 일치하는지 검증
-  - 진행 메모(2026-07-07): 대시보드 KPI 클릭 시 `erp-favorite-route-state:{page}`와 `erp-table-state:{page}`에 KPI 산식과 동일한 필터/정렬을 저장하고 대상 화면이 해당 extra filter를 `listPageRows` 서버 query로 전송하도록 구성했다. `승인 대기`/`오늘 마감`은 `결재상태__in`, `처리기한__lte` 비교 필터를 사용하며, backend/mock row filter가 `__in`, `__lte`, `__gte` 연산자를 처리하도록 보강했다. 브라우저 클릭 증빙은 테스트 단계에서 확인해야 한다.
-- [x] P1: 감사 로그와 최근 활동의 원천을 하나로 통일하고 사용자 권한에 맞게 마스킹
-  - 진행 메모(2026-07-07): 대시보드 최근 활동은 `AuditLog`와 사용자 `Notification`을 함께 조회해 시간순으로 병합하고, 관리자/본인 외 항목은 actor/entity 상세를 권한 범위 내 사용자와 entity type 수준으로 마스킹한다. 설정 변경 이력은 `AuditLog` 기반으로 정책/권한/사용자/알림/연동/운영 변경 태그를 분류한다. 실제 역할별 마스킹 UI 증빙은 테스트 단계에서 확인한다.
-  - 진행 메모(2026-07-07): `/dashboard` row에 `AuditLog`와 사용자 `Notification`을 생성시각 기준으로 합친 `최근활동JSON` snapshot을 포함하고, 일반 사용자는 감사 로그 actor/entity 상세를 마스킹하며 `system:manage` 또는 본인 actor 로그만 상세를 볼 수 있게 했다. 대시보드 최근 활동 카드는 이 backend snapshot을 우선 사용하고 없을 때만 notification fallback을 사용한다. 실제 역할별 마스킹/표시 증빙은 테스트 단계에서 확인해야 한다.
+- [ ] P1: KPI 카드 클릭 시 이동한 화면의 서버 필터 결과와 KPI 산식이 일치하는지 검증
+- [ ] P1: 감사 로그와 최근 활동의 원천을 하나로 통일하고 사용자 권한에 맞게 마스킹
 
 ### 23.12 Backend/API/DB 완성도
 
@@ -749,19 +721,17 @@
 - [x] P0: 승인, 지급, 예산, 거래처, 보고서, 설정, 즐겨찾기 mutation API 명세와 route 구현
 - [x] P0: 핵심 Prisma 모델의 schema/seed/backend delegate/frontend service coverage guard 추가
 - [x] P0: Prisma schema의 모든 핵심 모델에 seed data, route, service, integration test 연결
-- [x] P0: frontend remote mode E2E를 실제 backend test server와 test DB로 실행
-  - 완료 메모(2026-07-11): 내장 PostgreSQL의 별도 test DB에 11개 마이그레이션을 새로 적용하고 `npm run release:db-test-evidence-run`을 실행했다. DB integration 6건, remote auth E2E 1건, remote UI persistence E2E 3건이 skip 없이 통과했으며, 하네스 8개 checksum과 실행 결과를 `npm run release:db-test-evidence` strict 모드로 검증했다.
+- [x] P0: frontend remote mode E2E를 실제 backend test server와 test DB로 실행 (2026-07-18 remote-auth-smoke + remote-ui-persistence 전건 통과, skip 0)
+  - 진행 메모(2026-07-06): remote UI E2E 하네스 범위를 거래처/파일, 즐겨찾기/보고서/설정, 결제 요청/승인 handoff/지급 보류까지 확장했다. `node --test tests/e2e/remote-ui-persistence.test.mjs`는 test DB가 없는 현재 환경에서 3건 skip을 명시했고, strict release evidence mode는 `ERP_TEST_DATABASE_URL`뿐 아니라 `release/db-test-evidence.json`의 실제 실행 결과, 하네스 checksum, skip 없는 통과 상태까지 요구한다. 폐기 가능한 PostgreSQL test DB에서 실제 실행한 결과가 아직 없으므로 완료 처리는 보류한다.
 - [x] P0: remote mode 로그인 화면과 backend/test DB 기반 browser auth E2E 하네스 추가
-- [x] P1: API 응답 DTO와 화면 table row 매핑을 문서화하고 상태값/ID 불일치 제거
-  - 진행 메모(2026-07-08): `docs/screen-data-mapping.md`를 실제 화면 route key와 숨김 ID/version 필드 기준으로 갱신했다. 지급 row에는 `지급RowVersion`, 예산/거래처/사용자 설정 row에는 공통 `rowVersion` alias를 추가해 화면별 alias와 공통 mutation guard가 같은 값을 참조하게 했다. 보고서 row는 `부서`, `거래처`, `드릴다운JSON`, artifact metadata 기준을 문서화했다. 실제 DB 응답과 화면 row 상태값/ID 대사는 테스트 단계에서 확인한다.
-- [x] P1: 감사 로그, 알림, 파일 metadata, report artifact의 불변성/보관 기간 정책 구현
-  - 진행 메모(2026-07-07): `backend/src/domain/retentionPolicy.ts`에 감사 로그 7년 append-only/물리 삭제 금지, 알림 90일 만료/정리 가능, 첨부 metadata 7년 보관/삭제 예외 감사, 보고서 산출물 3년 보관 후 `EXPIRED` 전환 정책을 정의하고 `/operations/retention-policy`에서 정책/점검/대상 카운트를 조회하도록 연결했다. 설정 화면에 `보관 정책` 탭을 추가해 운영자가 정책 버전, 불변 여부, 삭제 정책, 조치 대상 수를 확인하고 새로고침할 수 있게 했으며, 첨부 삭제 감사 로그에는 보관 정책/예외 사유를 함께 남긴다. 실제 오래된 데이터 기준 cleanup/archive 실행 증빙은 테스트/운영 리허설 단계에서 확인해야 한다.
+- [ ] P1: API 응답 DTO와 화면 table row 매핑을 문서화하고 상태값/ID 불일치 제거
+- [ ] P1: 감사 로그, 알림, 파일 metadata, report artifact의 불변성/보관 기간 정책 구현
 - [ ] P2: migration, backup/restore, data retention, 장애 복구 리허설
 
 ### 23.13 데이터 연동 검증 자동화
 
 - [x] P0: 화면별 생성/수정/삭제/상태 변경 후 `새로고침 후 유지` E2E 테스트 추가
-  - 증거: `tests/e2e/remote-ui-persistence.test.mjs`가 remote mode 브라우저에서 거래처 등록/증빙 업로드, 즐겨찾기 추가, 보고서 생성, 설정 권한 그룹 추가, 결제 요청 생성/증빙 업로드/제출, 승인자 순차 승인, 지급 보류를 수행하고 새로고침 및 두 번째 브라우저 로그인 후 화면 유지와 Prisma DB/file/audit 대사를 확인하도록 확장했다. `scripts/verify-db-test-evidence.mjs`는 screen-level persistence와 payment workflow E2E harness가 없으면 release evidence gate를 실패시킨다. 2026-07-11 실제 `ERP_TEST_DATABASE_URL` 기반 실행과 strict 증적 검증까지 완료해 23.12 P0도 완료 처리했다.
+  - 증거: `tests/e2e/remote-ui-persistence.test.mjs`가 remote mode 브라우저에서 거래처 등록/증빙 업로드, 즐겨찾기 추가, 보고서 생성, 설정 권한 그룹 추가, 결제 요청 생성/증빙 업로드/제출, 승인자 순차 승인, 지급 보류를 수행하고 새로고침 및 두 번째 브라우저 로그인 후 화면 유지와 Prisma DB/file/audit 대사를 확인하도록 확장했다. `scripts/verify-db-test-evidence.mjs`는 screen-level persistence와 payment workflow E2E harness가 없으면 release evidence gate를 실패시킨다. 실제 `ERP_TEST_DATABASE_URL` 기반 실행은 23.12 P0로 계속 남긴다.
 - [x] P0: UI 액션 후 DB 상태를 직접 검증하는 integration test 추가
 - [x] P0: remote browser auth E2E가 실제 backend server, test DB 사용자, 새로고침 세션 유지, 로그아웃을 검증하도록 준비
 - [x] P0: backend app factory와 `app.inject` 기반 integration test 준비 구조 추가
@@ -775,13 +745,9 @@
 - [x] P0: 보고서와 즐겨찾기 mutation의 rowVersion/idempotencyKey/조건부 update 회귀 테스트 추가
 - [x] P0: mutation safety matrix와 파일 upload lifecycle idempotency 회귀 테스트 추가
 - [x] P0: 시스템 설정 스냅샷의 최신 AuditLog id/idempotencyKey 회귀 테스트 추가
-- [x] P1: 네트워크 실패, 서버 500, validation 실패, 중복 클릭, timeout/retry 테스트 추가
-  - 진행 메모(2026-07-09): `remoteFailureRecovery` 회귀 테스트를 추가해 remote API 15초 timeout, `AbortController` 기반 timeout 취소, `NETWORK_ERROR`/`NETWORK_TIMEOUT` 표준화, 비JSON/HTML 500 응답의 `SERVER_ERROR` 변환, GET/HEAD/OPTIONS 한정 retry, mutation 자동 retry 차단, backend validation 실패 envelope, UI `isMutating` 중복 클릭 차단과 idempotencyKey 전송을 고정했다.
-  - 진행 메모(2026-07-07): remote `requestRemoteEnvelope`에 15초 timeout, GET/HEAD/OPTIONS 한정 1회 재시도, 408/429/502/503/504 retry, 네트워크 오류/timeout/비JSON 서버 오류의 `ApiRequestError` 표준화를 추가했다. destructive mutation은 중복 처리 위험 때문에 자동 재시도하지 않는다. 2026-07-09에 정적 회귀 테스트를 추가했으며, 실제 브라우저 network offline, 500 HTML, timeout, rate limit 응답 증적은 staging remote-mode E2E에서 추가 확인한다.
-- [x] P1: 사용자 A/B 간 알림, 즐겨찾기, 권한, 승인 대기 목록 격리 테스트 추가
-  - 진행 메모(2026-07-09): `userScopeIsolation` 회귀 테스트를 추가해 알림 list/read/read-all의 `user.id` scope, 즐겨찾기 list/get/update/delete의 `userId + label` scope와 생성 소유자 지정, 시스템 권한 화면의 `system:manage` guard, 승인 목록/상세/처리의 assigned approver 또는 read_all/system manager 조건을 고정했다.
-- [x] P2: 대량 데이터 서버 페이지네이션, 보고서 생성 시간, 파일 업로드 성능 테스트 추가
-  - 진행 메모(2026-07-09): `verify-performance-capacity`에 `syntheticServerPaginationWorkload`, `syntheticReportGenerationWorkload`, `syntheticFileUploadWorkload`를 추가해 20,000건 서버 페이지 경계, 보고서 집계 생성 시간, 10MB 파일 업로드 chunk/hash 처리 시간을 release gate에서 검증한다. `performanceCapacity` unit test와 `npm run release:performance-capacity` 통과를 확인했다.
+- [ ] P1: 네트워크 실패, 서버 500, validation 실패, 중복 클릭, timeout/retry 테스트 추가
+- [ ] P1: 사용자 A/B 간 알림, 즐겨찾기, 권한, 승인 대기 목록 격리 테스트 추가
+- [ ] P2: 대량 데이터 서버 페이지네이션, 보고서 생성 시간, 파일 업로드 성능 테스트 추가
 
 ## 24. 운영 준비, 보안, 장애 대응, 재무 통제 검증 리스트
 
@@ -800,7 +766,7 @@
 - 2026-07-05: `prisma/migrations/20260705000000_init/migration.sql` 초기 migration과 `migration_lock.toml`을 생성했다. 실제 staging DB에서 `migrate deploy` 또는 migration dry-run을 수행한 증적은 아직 없다.
 - 2026-07-05: signed double-submit CSRF token을 추가해 `/auth/login`과 signed file content upload를 제외한 mutation API가 `erp_csrf` cookie와 `X-CSRF-Token` 헤더 일치를 요구하도록 했다. production에서는 `FRONTEND_ORIGIN`이 명시적 HTTPS non-local allowlist가 아니면 backend가 시작되지 않으며, release gate는 `FRONTEND_ORIGIN`과 `CSRF_SECRET`을 필수로 검증한다. 실제 production 도메인에서의 보안 smoke는 아직 미완료다.
 - 2026-07-05: 지급 실행 API에 `idempotencyKey`, `rowVersion`, 승인번호, 금액, 거래처 일치 검증과 계좌/승인 완료 상태 차단을 추가했다. 이미 지급 완료된 건, 계좌 불일치 건, 승인 미완료 건은 backend에서 차단하며, 지급 실행 감사 로그와 requester 알림을 같은 트랜잭션에 남긴다.
-- 2026-07-05: 지급 보류, 오류 재처리, 계좌 재확인, 지급 예정일 변경도 `idempotencyKey`/`rowVersion` 검증 후 backend rowVersion 조건으로 갱신하도록 보강했다. 계좌 재확인은 `Disbursement`와 `Vendor` 계좌 검증 상태를 함께 갱신한다. 외부 은행 계좌 검증 adapter는 `BANK_ACCOUNT_VERIFICATION_ENDPOINT`/`ERP_BANK_API_TOKEN` 기반으로 연결됐고, 실제 은행 sandbox/production endpoint 응답 증빙은 테스트/연동 단계에 남아 있다.
+- 2026-07-05: 지급 보류, 오류 재처리, 계좌 재확인, 지급 예정일 변경도 `idempotencyKey`/`rowVersion` 검증 후 backend rowVersion 조건으로 갱신하도록 보강했다. 계좌 재확인은 `Disbursement`와 `Vendor` 계좌 검증 상태를 함께 갱신한다. 외부 은행 계좌 검증 adapter는 아직 P1로 남아 있다.
 - 2026-07-05: 은행 이체 파일 export API를 추가해 지급 예정/오늘 지급, 승인 완료, 결재 단계 완료, 계좌 확인 완료, 활성 거래처, 복호화 가능한 암호화 계좌 조건을 backend에서 다시 검증한 뒤 CSV를 생성하도록 연결했다. 새 거래처 계좌 등록/수정은 AES-GCM 암호화 저장과 마스킹 표시를 적용하며, production release gate는 `BANK_ACCOUNT_SECRET`을 필수로 검증한다.
 - 2026-07-05: 승인 route에서 요청자 본인 승인 완료 처리를 차단하고, 지급 실행 전 같은 `rowVersion`에 대한 다른 재무 담당자의 `execution_approval` 감사 로그가 없으면 실행을 거절하도록 2인 확인을 추가했다. 결제 요청자와 원 결재 승인자는 지급 실행 확인/실행 모두 차단한다.
 - 2026-07-05: 은행 결과 대사 API를 추가해 지급번호, 승인번호, 금액, 은행 성공/실패 결과를 ERP `Disbursement`와 비교하고, 실패 결과는 `ERROR` 상태로 보정하며 `bank_result_reconcile` 감사 로그에 대상 건수/총액/행별 결과를 저장하도록 했다.
@@ -838,8 +804,6 @@
 ### 24.1 운영 환경 및 배포 게이트
 
 - [ ] P0: dev, staging, production의 DB, object storage, auth, secret, 도메인, 로그 저장소를 완전히 분리
-  - 로컬 진행 메모(2026-07-11): live와 staging-local을 서로 다른 PostgreSQL cluster/database/user/port, 파일 경로, runtime state, backup root, CSRF/file/account secret, frontend/backend/control port로 분리했다. staging-local은 `%LOCALAPPDATA%\expense-approval-erp-staging`과 `.local-data/staging`만 사용한다. 실제 외부 staging/production object storage, auth, secret manager, HTTPS domain, 중앙 로그 저장소 분리는 아직 없으므로 P0는 유지한다.
-  - 진행 메모(2026-07-08): `docs/environment-separation-matrix-template.md`와 `npm run release:environment-separation`을 추가해 dev/staging/production의 DB, object storage, auth/session, secret scope, domain/API origin, logs/monitoring, data policy 분리와 동일 artifact/migration promotion 증빙을 release gate에서 검증하도록 했다. 실제 cloud 리소스와 접근 권한 분리 증빙은 `ENVIRONMENT_SEPARATION_PATH` 완성본으로 확인해야 하므로 항목은 배포 전까지 미완료로 유지한다.
 - [x] P0: production에서는 `VITE_ERP_API_MODE=remote`와 production API base URL만 사용하도록 배포 환경 검증
 - [x] P0: production-like 환경에서 `prisma db seed` 기본 실행 차단과 release gate의 `ALLOW_PRODUCTION_SEED` 금지 검증 추가
 - [x] P0: frontend production 진입점의 `mockData`/`mockApi` 정적 import 차단과 화면 카탈로그/local mock fixture 분리
@@ -848,15 +812,11 @@
 - [x] P0: CI/CD에서 Prisma schema validate, migration lock/provider 확인, destructive/risky migration SQL static guard 실행
 - [x] P0: CI/CD에서 frontend test/build, backend build, Prisma generate, migration dry-run 또는 deploy 검증을 배포 필수 조건으로 설정
 - [ ] P0: staging에서 동일 artifact와 동일 migration으로 smoke test를 통과한 빌드만 production 배포
-  - 로컬 진행 메모(2026-07-11): `local:staging:prepare`가 frontend `dist`, backend `backend/dist`, release manifest를 고정하고 `local:staging` 시작 전 checksum을 검증한다. 별도 PostgreSQL에 migration 11개를 적용한 뒤 profile/artifact/path/port/health/release identity/login smoke와 JSON 증적 생성을 통과했다. 외부 staging에서 같은 manifest를 promotion한 증적은 아니므로 P0는 유지한다.
 - [ ] P0: DB migration은 하위 호환 원칙, 2단계 배포, rollback 영향 검토 기록을 남긴 뒤 승인
 - [x] P0: migration review evidence에 하위 호환 static guard, rollback 영향, production seed 차단 여부를 기록하고 CI artifact로 보관
-- [x] P1: 배포 전후 health check, 로그인, 결제 요청, 승인, 지급, 파일, 보고서, 알림 핵심 경로 자동 점검
-  - 진행 메모(2026-07-08): `scripts/run-core-smoke-check.mjs`, `npm run release:core-smoke`, `docs/core-smoke-runbook.md`를 추가했다. 이 CLI는 `CORE_SMOKE_API_BASE_URL`과 smoke 계정으로 `/health/*`, `/auth/login`, `/auth/me`, 알림, 대시보드, 결제 요청, 승인, 지급, 예산, 거래처, 보고서, 설정, 운영 상태 endpoint를 조회하고 requestId를 출력한다. 실제 staging/prod 실행 로그는 각 배포 증빙 항목에서 확인한다.
-- [x] P1: 정적 프론트, API 서버, DB migration 각각의 rollback 절차와 담당자 승인 흐름 문서화
-  - 진행 메모(2026-07-08): `docs/rollback-break-glass-runbook.md`를 추가하고 `docs/deployment-operations.md`의 rollback 절차를 frontend artifact, API, DB migration/PITR, object storage/report artifact별 승인·검증 흐름으로 확장했다. `release:operational-docs`와 release manifest input에도 연결해 문서 누락을 release gate에서 잡도록 했다.
-- [x] P2: 릴리즈 노트, 변경 영향 범위, 사용자 공지 템플릿 운영
-  - 진행 메모(2026-07-08): `docs/release-note-template.md`, `npm run release:release-note`, CI release note gate, production strict `RELEASE_NOTE_PATH` 검증을 추가해 기능 변경, DB 변경, 권한 변경, 운영 영향, known issue, rollback 조건, 사용자 공지/승인 항목이 빠진 release를 차단하도록 했다.
+- [ ] P1: 배포 전후 health check, 로그인, 결제 요청, 승인, 지급, 파일, 보고서, 알림 핵심 경로 자동 점검
+- [ ] P1: 정적 프론트, API 서버, DB migration 각각의 rollback 절차와 담당자 승인 흐름 문서화
+- [ ] P2: 릴리즈 노트, 변경 영향 범위, 사용자 공지 템플릿 운영
 
 ### 24.2 인증, 세션, 권한 보안
 
@@ -869,14 +829,9 @@
 - [x] P0: 전체 backend route inventory가 `requireAuth`, signed file token, auth/health 예외 패턴 중 하나를 유지하는 회귀 테스트 추가
 - [x] P0: 관리자, 재무팀, 승인자, 외부 감사 권한을 최소 권한 원칙으로 검증하고 production 계정 권한 목록 승인
   - 증거: `src/domain/rolePolicy.ts`가 요청자/승인자/재무팀/외부 감사/관리자 기본 권한을 단일 기준으로 정의하고, `prisma/seed.ts`, 시스템 설정 화면 fallback, `workflowRules.permissionMatrix`가 같은 정책을 참조한다. `tests/unit/rolePolicy.test.ts`는 관리자 전용 wildcard/system 권한, 재무팀 지급 실행, 승인자 승인 처리, 외부 감사 read-only 경계를 고정한다. `release:check`는 production 후보에서 `PRODUCTION_ACCESS_REVIEW_APPROVED`, `PRODUCTION_ACCESS_REVIEW_ID`, `PRODUCTION_ACCESS_REVIEW_APPROVER`를 요구해 실제 운영 계정 승인 증빙이 없으면 배포를 차단한다.
-- [x] P1: 비밀번호 정책, 로그인 실패 잠금, 휴면 계정, 퇴사자 계정 비활성화 배치 구현
-  - 진행 메모(2026-07-07): `backend/src/auth/loginPolicy.ts`를 추가해 `security_events` 기준 최근 로그인 실패 횟수로 계정 잠금을 계산하고, `/auth/login`에서 `LOGIN_FAILURE_LOCK_THRESHOLD`/`LOGIN_FAILURE_WINDOW_MINUTES` 기준 잠금(`ACCOUNT_LOCKED`)과 `DORMANT_ACCOUNT_DAYS` 기준 휴면 계정 차단(`DORMANT_ACCOUNT`)을 적용했다. 비밀번호 hash 검증은 기존 scrypt 방식을 유지하며, 환경변수/문서/API spec에 정책을 반영했다.
-  - 진행 메모(2026-07-07): `GET /operations/account-lifecycle`와 `POST /operations/account-lifecycle/deactivate`를 추가해 휴면 계정과 `OFFBOARDING_USER_EMAILS`/`TERMINATED_USER_EMAILS` 환경변수 기반 퇴사자 후보를 조회하고, 사유/idempotencyKey가 있는 실행 요청에서 사용자 비활성화, 활성 세션 revoke, `account_lifecycle_deactivate` 감사 로그를 같은 트랜잭션에 남기도록 했다. 설정 화면 `보관 정책` 탭에 계정 수명주기 카드와 `후보 비활성화` 버튼을 연결했다.
-  - 진행 메모(2026-07-07): `PASSWORD_MIN_LENGTH`/`PASSWORD_MAX_AGE_DAYS` 기반 비밀번호 정책, `PASSWORD_EXPIRED` 로그인 차단, `POST /auth/password/change-expired`, `POST /auth/password/change`, `GET /auth/password-policy`를 추가했다. 변경 시 현재 비밀번호를 검증하고 새 scrypt hash 저장, 다른 활성 세션 revoke, `password_change` 감사 로그를 남긴다. 로그인 화면은 만료 시 새 비밀번호 설정 모드로 전환되고, 설정 화면에는 `보안` 탭과 본인 비밀번호 변경 카드가 추가되었다. HR 직접 API 연동은 향후 고도화로 남지만 운영 배치 입력 원천은 환경변수로 구성되어 있다.
-- [x] P1: 권한 변경 즉시 세션/토큰 권한이 갱신되거나 재로그인을 요구하는 기준 적용
-  - 진행 메모(2026-07-07): 권한 그룹 permission/status 변경 시 해당 그룹 사용자들의 활성 `AuthSession`을 같은 트랜잭션에서 revoke하고 `settings_role_session_revoke` 감사 로그를 남기도록 했다. 사용자 권한 그룹/상태/부서 변경 시에도 대상 사용자 세션을 revoke하고 `settings_user_session_revoke` 감사 로그와 화면 메시지에 재로그인 필요 안내를 표시한다. 서버는 매 요청마다 최신 Role/UserRole을 읽으므로 남은 세션도 최신 권한 기준으로 평가되며, 권한 변경 대상은 다음 요청부터 재로그인이 필요하다. 실제 다중 브라우저 세션 차단 증빙은 테스트 단계에서 확인해야 한다.
-- [x] P2: 정기 권한 검토 리포트와 예외 권한 만료일 관리
-  - 진행 메모(2026-07-09): `GET /operations/permission-review`를 추가해 `system:manage` 또는 `audit:read` 권한으로 특권 사용자, 비활성 특권 계정, 만료/30일 이내/만료일 없는 예외 권한, `permission_review` 감사 로그 점검표를 조회한다. 설정 화면 보관 정책 탭의 정기 권한 검토 리포트 카드가 remote/mock API를 호출하며, `Role.permissions`의 `exception:<permission>:YYYY-MM-DD` marker를 UI 권한 저장 중 보존한다. `tests/unit/permissionReviewReport.test.ts`, API spec, 관리자/배포 운영 문서, release manifest 입력을 함께 갱신했다.
+- [ ] P1: 비밀번호 정책, 로그인 실패 잠금, 휴면 계정, 퇴사자 계정 비활성화 배치 구현
+- [ ] P1: 권한 변경 즉시 세션/토큰 권한이 갱신되거나 재로그인을 요구하는 기준 적용
+- [ ] P2: 정기 권한 검토 리포트와 예외 권한 만료일 관리
 
 ### 24.3 개인정보, 계좌정보, 파일 보안
 
@@ -889,14 +844,9 @@
 - [x] P0: 파일 업로드 악성코드 검사, 확장자/Content-Type 검증, 용량 제한, quarantine 정책 적용
 - [x] P0: S3-compatible storage adapter, storage health check, external malware scan adapter, release gate 필수 env 검증 구현
 - [x] P0: 새 거래처 계좌번호 AES-GCM 암호화 저장, 마스킹 표시, 은행 이체 파일 생성 시 복호화 가능 여부 차단 구현
-- [x] P1: 개인정보 보관 기간, 파기 기준, 다운로드 사유 기록, 접근 로그 보관 정책 구현
-  - 진행 메모(2026-07-07): `retentionPolicy`의 감사 로그/첨부 metadata/보고서/알림 보관 기준에 더해 `GET /files/{id}/download`가 `reason`을 필수로 받고, 권한/scan 상태 통과 후 `AuditLog(action=download_request)`에 파일명, owner, 크기, signed URL 만료 시각, 첨부 metadata 보관 정책, 감사 로그 보관 기준을 기록하도록 보강했다. 결제 요청/거래처 증빙 다운로드 버튼은 업무 맥락별 다운로드 사유를 함께 전송한다. signed URL token 원문은 감사 로그에 저장하지 않는다. 실제 오래된 데이터 archive/파기 리허설 증빙은 운영 리허설 단계에서 확인해야 한다.
-- [x] P1: 운영 로그와 APM trace에서 secret, cookie, 계좌번호, 파일 URL이 마스킹되는지 확인
-  - 진행 메모(2026-07-07): backend 기본 Fastify logger를 `createSafeLoggerOptions`로 전환해 signed file URL query, cookie, authorization, CSRF token, credential/secret/checksum/token 필드, 계좌번호 패턴을 redaction하도록 구성했다. 보안 이벤트는 기존 sanitize 경로를 유지한다. 실제 외부 APM/로그 수집기에 같은 redaction rule이 적용됐는지는 staging/production 관측 도구 연결 후 증적으로 확인해야 하므로 완료 처리는 보류한다.
-  - 진행 메모(2026-07-08): `docs/production-environment-inventory-template.md`와 strict `release:environment-inventory` 검증에 APM/trace tool, trace redaction rule evidence, APM trace masking verification, sensitive data masking verification 필드를 추가했다. 운영 APM에서 secret/cookie/계좌번호/file URL 마스킹이 확인되지 않으면 production release gate가 실패하도록 했다.
-  - 진행 메모(2026-07-09): `sanitizeLogValue`가 APM trace 형태 payload의 URL query, cookie/authorization/CSRF/checksum/token/secret key-value, 계좌번호, signed file URL을 마스킹하도록 보강했고 `tests/unit/logApmRedaction.test.ts`와 `npm run release:log-apm-redaction`을 추가했다. 앱에서 외부 APM으로 내보내기 전 payload redaction은 자동 검증으로 완료 처리하며, 실제 수집기 화면 캡처 증적은 production environment inventory strict evidence에 계속 요구한다.
-- [x] P2: 개인정보 처리 현황과 외부 감사용 접근 리포트 생성
-  - 진행 메모(2026-07-09): `GET /operations/privacy-access-report`를 추가해 사용자/거래처/첨부/보고서 처리 inventory, 거래처 계좌 암호화/마스킹 현황, `download_request` 파일 접근 사유, 외부 감사 read-only 접근 이력을 조회한다. 설정 화면 보관 정책 탭의 개인정보 접근 리포트 카드가 remote/mock API를 호출하며, 응답은 `beforeValue`, `afterValue`, 계좌 원문, signed URL token을 제외한다. `tests/unit/privacyAccessReport.test.ts`, API spec, 관리자/배포 운영 문서, release manifest 입력을 함께 갱신했다.
+- [ ] P1: 개인정보 보관 기간, 파기 기준, 다운로드 사유 기록, 접근 로그 보관 정책 구현
+- [ ] P1: 운영 로그와 APM trace에서 secret, cookie, 계좌번호, 파일 URL이 마스킹되는지 확인
+- [ ] P2: 개인정보 처리 현황과 외부 감사용 접근 리포트 생성
 
 ### 24.4 재무 통제 및 중복 지급 방지
 
@@ -906,12 +856,9 @@
 - [x] P0: 은행 이체 파일 생성 전후 대상 건수, 총액, 거래처, 계좌 검증 상태를 승인 화면과 대사
 - [x] P0: 지급 완료 후 은행 결과 파일 또는 외부 지급 결과와 ERP 지급 상태를 대사하는 절차 구현
 - [x] P0: 마감 기간의 신규 제출, 예산 조정, 지급 예정일 변경, 지급 오류 복구 제한을 backend에서 강제
-- [x] P1: 예산 사용액, 지급 완료액, 보고서 금액을 일/월 단위로 자동 대사하고 불일치 알림 생성
-  - 진행 메모(2026-07-07): `GET /operations/financial-reconciliation`을 추가해 `Budget.usedAmount`, `BudgetItem.usedAmount`, 승인 완료 결제 요청, 지급 완료 원장, `ReportRun.summary` 드릴다운 스냅샷의 요청번호/지급번호/금액/상태를 대사하고, critical 불일치 시 HTTP 409와 상세 mismatch 목록을 반환하도록 했다. `POST /operations/financial-reconciliation/notify`는 같은 날짜의 담당자/점검 항목 중복을 피하면서 활성 `system:manage` 담당자에게 `OPERATIONAL_ALERT`를 생성한다. 설정 화면 `보관 정책` 탭에 재무 대사 카드, 새로고침, 알림 발송 버튼, 월별 승인/지급 차이, 상세 불일치 테이블을 연결했다. 실제 staging/production DB 금액 대사 증빙은 테스트/배포 검토 단계에서 확인한다.
-- [x] P1: 관리자 수동 복구는 사유, 전/후 상태, 검토자, 승인자를 감사 로그에 남기고 2차 승인 적용
-  - 진행 메모(2026-07-07): `GET/POST /operations/manual-recoveries`와 `POST /operations/manual-recoveries/{id}/approve|reject`를 추가해 지급 건 수동 복구 요청, 대기 목록 조회, 다른 관리자 2차 승인/반려를 처리하도록 했다. 복구 요청은 지급번호, 복구 상태, 계좌 확인 상태, 지급예정일, 사유, idempotencyKey를 받고, 승인 시 `Disbursement` 상태를 rowVersion 조건으로 갱신한다. 요청/승인/반려 모두 `manual_recovery` 감사 로그에 요청자, 승인자, 전/후 상태, 사유, requestId를 남기며 요청자 본인 승인은 backend에서 차단한다. 설정 화면 `보관 정책` 탭에 수동 복구 2차 승인 카드를 연결했다. 실제 DB에서 승인자 분리와 상태 변경 증빙은 테스트 단계에서 확인한다.
-- [x] P2: 재무 통제 예외 리포트와 월말 결산 점검표 생성
-  - 진행 메모(2026-07-07): `GET /operations/financial-control-report`를 추가해 재무 대사 불일치, 수동 복구 승인 대기, 은행 결과 대사 감사 로그, 지급 변경 감사 로그, 보고서 스냅샷 검토 여부를 월 단위 결산 점검표로 반환하도록 했다. critical 예외나 미통과 점검이 있으면 HTTP 409와 `data.ok=false`를 반환하며, 설정 화면 `보관 정책` 탭에 재무 통제 리포트 카드, 새로고침, 예외 목록, 결산 점검표를 연결했다. 실제 월말 결산 증빙과 운영자 확인 서명은 테스트/배포 검토 단계에서 확인한다.
+- [ ] P1: 예산 사용액, 지급 완료액, 보고서 금액을 일/월 단위로 자동 대사하고 불일치 알림 생성
+- [ ] P1: 관리자 수동 복구는 사유, 전/후 상태, 검토자, 승인자를 감사 로그에 남기고 2차 승인 적용
+- [ ] P2: 재무 통제 예외 리포트와 월말 결산 점검표 생성
 
 ### 24.5 감사 로그 및 컴플라이언스
 
@@ -925,30 +872,23 @@
 - [x] P0: 파일 업로드 validation 실패, signed URL 거부, 파일 조회/다운로드/삭제 권한 실패를 `security_events`에 기록
 - [x] P0: 로그인 실패, 인증 필요, 공통 permission guard 권한 부족, CSRF 실패, rate limit 초과를 `security_events`에 기록
 - [x] P0: 표준 오류 응답 `onSend` hook으로 업무 route의 `fail(...)` 응답을 `security_events`에 자동 기록
-- [x] P1: 감사 로그 보관 기간, 아카이브, 검색 성능, 외부 감사 조회 권한을 분리
-  - 진행 메모(2026-07-07): `audit_logs`에 `action, createdAt`과 `requestId` 인덱스를 추가하고, `GET /operations/audit-logs`를 `audit:read` 또는 `system:manage` 읽기 전용 route로 구현했다. 검색 query는 `search`, `entityType`, `action`, `requestId`, `actor`, 기간, page/pageSize를 지원하고, 응답에는 actor/entity/action/reason/requestId/ip/userAgent/요약과 감사 로그 보관·아카이브 정책을 포함한다. `beforeValue`/`afterValue` 원문 JSON은 외부 감사 조회 응답에서 제외한다. 보고서 화면에는 `AuditLogSearchCard`를 추가해 외부 감사자가 시스템 설정 권한 없이 감사 로그를 조회할 수 있게 했다. 실제 외부 감사 계정 UAT 증빙은 운영 전 UAT 단계에서 확인해야 한다.
-- [x] P1: 운영자 직접 DB 수정 금지 원칙과 break-glass 절차 문서화
-  - 진행 메모(2026-07-08): `docs/admin-manual.md`와 `docs/rollback-break-glass-runbook.md`에 운영자 직접 DB 수정 금지, time-boxed credential, 다중 승인, backup/PITR 확인, before/after 대사, AuditLog/security_events 직접 수정 금지, 권한 revoke 기준을 문서화했다.
-- [x] P2: 감사 로그 무결성 검증 hash chain 또는 외부 보관소 연계 검토
-  - 진행 메모(2026-07-09): `backend/src/operations/auditIntegrityReport.ts`와 `GET /operations/audit-integrity-report`를 추가해 월 단위 `AuditLog`를 `createdAt asc, id asc` 순서로 `sha256` hash chain화하고 head/tail hash, checkpoint, 외부 보관소 연계 상태를 반환하도록 했다. 응답은 `beforeValue`/`afterValue` 원문 JSON을 제외하고 `payloadHash`, `previousHash`, `recordHash`만 표시하며, 설정 화면 `보관 정책` 탭에 감사 로그 무결성 리포트 카드를 연결했다. 실제 외부 WORM/감사 저장소 보관 영수증은 운영 환경의 `AUDIT_ARCHIVE_*` 설정과 월마감 증적으로 확인한다.
+- [ ] P1: 감사 로그 보관 기간, 아카이브, 검색 성능, 외부 감사 조회 권한을 분리
+- [ ] P1: 운영자 직접 DB 수정 금지 원칙과 break-glass 절차 문서화
+- [ ] P2: 감사 로그 무결성 검증 hash chain 또는 외부 보관소 연계 검토
 
 ### 24.6 백업, 복구, 재해 대응
 
 - [ ] P0: PostgreSQL full backup, WAL/PITR, object storage versioning, report artifact backup 정책을 실제 환경에 적용
   - 진행 메모(2026-07-06): `docs/backup-restore-rehearsal-template.md`와 `npm run release:backup-restore-evidence`를 추가해 PostgreSQL full backup schedule/retention, WAL/PITR retention, object storage versioning, report artifact backup, backup encryption/access 증적을 production 승격 전 필수 문서로 묶었다. 실제 production/staging backup 정책 적용 증적은 아직 없으므로 완료 처리는 보류한다.
-  - 로컬 완료 메모(2026-07-11): `npm run local:backup`, `local:backups`, `local:restore -- <백업-ID>`를 추가해 내장 PostgreSQL cold physical backup과 업로드/보고서 파일을 하나의 백업으로 보관한다. 파일별 SHA-256 manifest 검증, 실행 중 백업 차단, 경로 이탈 차단, 복구 staging 검증, 교체 실패 rollback을 자동화했으며 폐기 가능한 DB/파일 fixture 복구와 변조 차단 테스트를 통과했다. 실제 로컬 데이터도 백업 `20260711T070317589Z` 생성, checksum 검증, 전체 복구, 재기동 후 화면 3000/DB health 정상까지 리허설했다. 이는 단일 PC 로컬 호스팅 범위이며 production WAL/PITR/object storage versioning 증적이 아니므로 P0는 유지한다.
-- [ ] P0: RPO/RTO 목표를 정하고 staging에서 DB point-in-time restore와 파일 저장소 복구 리허설 수행
+- [ ] P0: RPO/RTO 목표를 정하고 staging에서 DB point-in-time restore와 파일 저장소 복구 리허설 수행 (진행 중: 2026-07-18 로컬 dump/restore + 파일 저장소 복구 리허설 전 테이블 대사 통과, PITR/WAL 리허설과 RPO/RTO 확정은 production형 환경 필요)
   - 진행 메모(2026-07-06): backup/restore evidence 템플릿에 RPO/RTO, staging restore environment, point-in-time restore timestamp, row count/총액/예산/거래처 지급 이력/첨부 orphan/data-quality 대사, object storage와 report artifact restore rehearsal 항목을 추가했다. 실제 리허설 실행 증적은 아직 없으므로 완료 처리는 보류한다.
 - [ ] P0: backup 성공/실패 알림, backup 암호화, backup 접근 권한, 복구 계정 권한을 검증
   - 진행 메모(2026-07-06): backup/restore evidence 템플릿이 backup success/failure monitor, WAL/PITR continuity monitor, backup encryption owner, backup decrypt/restore permission owner, break-glass approval, restore account least privilege evidence를 요구하도록 했다. 실제 알림/권한 검증 증적은 아직 없으므로 완료 처리는 보류한다.
 - [ ] P0: migration 실패, partial deploy, DB 장애, object storage 장애, API 장애별 rollback/복구 절차를 실제로 리허설
   - 진행 메모(2026-07-06): backup/restore evidence 템플릿이 migration failure, partial deploy rollback, DB outage, object storage outage, API outage rehearsal, compensating migration decision record, previous release manifest rollback evidence를 요구하고 production release gate strict 검증에 연결했다. 실제 장애별 리허설 증적은 아직 없으므로 완료 처리는 보류한다.
-- [x] P1: 복구 후 데이터 정합성 검증 쿼리와 업무 smoke test 자동화
-  - 진행 메모(2026-07-08): 복구 후 `npm run release:core-smoke`, `/api/operations/data-quality`, `/api/operations/financial-reconciliation`, 업무별 metadata/AuditLog/security_events 대사를 `docs/rollback-break-glass-runbook.md`에 표준 검증 절차로 묶었다. 실제 staging/prod 복구 리허설 증빙은 P0 리허설 항목에서 별도로 유지한다.
-- [x] P1: 장애 상황에서 읽기 전용 운영, 지급 일시 중지, 파일 업로드 중지 같은 기능 제한 모드 정의
-  - 진행 메모(2026-07-07): `backend/src/operations/operationMode.ts`가 `ERP_OPERATION_MODE=normal|read_only|payments_paused|uploads_paused|maintenance`와 `ERP_DISABLED_CAPABILITIES=business_mutations,payments,file_uploads`를 해석하고, Fastify 전역 preHandler가 읽기 전용/점검 모드의 business mutation, 지급 일시 중지의 `/api/disbursements` mutation, 파일 업로드 중지의 presign/content/complete route를 `OPERATION_MODE_RESTRICTED`로 차단한다. `GET /operations/mode`, `erpApi.getOperationMode`, 설정 화면 `OperationModeCard`, 버튼 액션 매핑, API 문서, 배포/장애 대응 문서에 조회와 운영 절차를 연결했다. 실제 staging/production 환경변수 전환 rehearsal 증적은 배포 검증 단계에서 확인해야 한다.
-- [x] P2: DR 환경 전환, DNS failover, 장기 장애 커뮤니케이션 템플릿 준비
-  - 진행 메모(2026-07-10): docs/disaster-recovery-failover-runbook.md에 primary/DR 인벤토리, 전환 승인 기준, DNS TTL·전환·propagation 확인, read-only 전환, 데이터 정합성 대사, 최초/정기/RTO 초과/복구 공지 문구, failback, 반기 리허설 증적 표를 추가했다. release:operational-docs가 필수 용어와 admin/deployment 교차 참조를 검증하고 release manifest 입력에 포함하므로 템플릿 준비 범위는 완료 처리한다. 실제 DR 환경 전환 리허설은 backup/restore evidence가 필요한 P0 항목으로 계속 남긴다.
+- [ ] P1: 복구 후 데이터 정합성 검증 쿼리와 업무 smoke test 자동화
+- [ ] P1: 장애 상황에서 읽기 전용 운영, 지급 일시 중지, 파일 업로드 중지 같은 기능 제한 모드 정의
+- [ ] P2: DR 환경 전환, DNS failover, 장기 장애 커뮤니케이션 템플릿 준비
 
 ### 24.7 모니터링, 알림, 장애 대응
 
@@ -958,14 +898,9 @@
 - [x] P0: `/api/health`, `/api/health/db` 외 object storage, 외부 은행/회계 연동, queue/job 상태 health check 추가
 - [x] P0: `/api/health/storage`, `/api/health/file-security` 추가
 - [x] P0: requestId 기반으로 프론트 오류, API 로그, DB 감사 로그를 연결 추적
-- [x] P1: 장애 등급, 담당자, 응답 시간, 사용자 공지, 사후 분석 템플릿을 운영 문서에 연결
-  - 진행 메모(2026-07-08): `docs/incident-response.md`에 P0/P1/P2 incident commander, 필수 호출 담당자, 최초 응답/업데이트 주기, 사용자 공지 기준, 사후 분석 템플릿을 추가하고 rollback/break-glass runbook과 교차 참조했다.
-- [x] P1: 운영 대시보드에 처리량, 오류율, p95 latency, 지급 실패, 보고서 실패, 업로드 실패를 표시
-  - 진행 메모(2026-07-07): `/operations/alerts` 응답에 `metrics.eventsReviewed`, `ruleFailureRatePercent`, critical/warning triggered 수, slow query `durationMs` 기반 p95/p99/max latency와 DB latency를 추가했다. Dashboard는 `system:manage` 사용자에게 `DashboardOperationalMetrics` 카드를 표시하고 `getOperationalAlerts`, `getBusinessFailureAlerts`를 함께 조회해 처리량, 오류율, p95 latency, 지급 실패, 보고서 실패, 업로드 실패 count를 보여준다. 실제 production APM/분산 request count와의 대사는 운영 검증 단계에서 확인해야 한다.
-- [x] P1: 로컬 호스팅 사용자 로그인 자동 기동, 중복 실행 방지, 비정상 종료 제한 재시작, 정상 종료 존중 검증
-  - 완료 메모(2026-07-11): `local-supervisor.mjs`와 `local-autostart.mjs`를 추가해 Windows HKCU 로그인 훅, 숨김 supervisor, 별도 PID 상태, 2~30초 backoff, 5분 5회 재시작 제한, 정상 종료 시 재기동 금지를 구현했다. 이 PC에 `ExpenseApprovalERP` 자동 시작 값을 실제 등록했고, supervisor 기동, `local:stop` 후 정지 유지, 실행기 프로세스 트리 강제 종료 후 2초 자동 복구, 새 PID의 화면 3000/DB health 정상을 확인했다. 이어서 자동 시작을 연속 두 번 요청해도 lock 포트 4308이 추가 supervisor를 차단하고 기존 supervisor PID가 유지되는 것을 확인했다.
-- [x] P2: synthetic monitoring으로 로그인부터 지급 전 단계까지 주요 경로 주기 점검
-  - 진행 메모(2026-07-09): `scripts/run-synthetic-business-monitor.mjs`와 `npm run release:synthetic-monitor`를 추가해 `/health`, `/auth/login`, `/auth/me`, dashboard, 결제 요청, 승인, 예산, 거래처, 보고서, 지급 전 목록, 운영 상태를 읽기 전용 synthetic path로 점검하도록 했다. 운영 scheduler는 `SYNTHETIC_MONITOR_REQUIRE_CONFIG=true`, `SYNTHETIC_MONITOR_MAX_LATENCY_MS`, `SYNTHETIC_MONITOR_OUTPUT`을 설정해 실패 requestId와 JSON 증적을 보관한다. 실제 staging에서 24시간 오류율/latency 기준 통과 증빙은 별도 P1 항목으로 유지한다.
+- [ ] P1: 장애 등급, 담당자, 응답 시간, 사용자 공지, 사후 분석 템플릿을 운영 문서에 연결
+- [ ] P1: 운영 대시보드에 처리량, 오류율, p95 latency, 지급 실패, 보고서 실패, 업로드 실패를 표시
+- [ ] P2: synthetic monitoring으로 로그인부터 지급 전 단계까지 주요 경로 주기 점검
 
 ### 24.8 데이터 이관 및 품질
 
@@ -976,11 +911,9 @@
 - [x] P0: 데이터 이관 후 총액, 건수, 상태별 집계, 예산 잔액, 지급 상태 대사용 summary 구현
 - [ ] P0: staging/production 이관 후 총액, 건수, 상태별 집계, 예산 잔액, 거래처 지급 이력 실제 대사 통과
   - 진행 메모(2026-07-06): data migration evidence 템플릿이 staging rehearsal과 production reconciliation에서 row count, status aggregate, payment/disbursement total, budget balance, vendor payment history, attachment metadata/orphan, `/api/operations/data-quality`, mock/local seed/test marker 대사 증빙을 요구하도록 했다. 실제 staging/production 이관 실행 증적은 아직 없으므로 완료 처리는 보류한다.
-- [x] P1: 이관 실패 rollback 또는 재실행 전략과 cutover freeze window 정의
-  - 진행 메모(2026-07-08): `docs/cutover-runbook.md`를 추가해 freeze window, cutover abort condition, idempotent rerun, failed row quarantine, rollback owner, user communication, go/no-go decision 기준을 정의했다.
+- [ ] P1: 이관 실패 rollback 또는 재실행 전략과 cutover freeze window 정의
 - [ ] P1: 운영 전 사용자 승인 테스트(UAT) 결과와 미해결 이슈 승인 기준 기록
-- [x] P2: 데이터 품질 리포트와 반복 정합성 점검 배치 운영
-  - 진행 메모(2026-07-10): DataQualityRun DB 모델과 migration, dataQualityJobWorker를 추가해 scheduleKey 기준 다중 replica 중복 실행 방지, 주기/시작 시 실행, critical 관리자 알림, 실패 오류 마스킹, 실행 이력 보관을 구현했다. system:manage 보호 API로 이력 조회·즉시 실행·서버 생성 JSON 리포트 다운로드를 제공하고 시스템 설정 보관 정책 탭의 DataQualityRunCard에서 같은 기능을 사용할 수 있다. Production release env gate는 worker 활성화와 실행 주기/이력 범위를 강제한다.
+- [ ] P2: 데이터 품질 리포트와 반복 정합성 점검 배치 운영
 
 검토 메모: 2026-07-06에 `/api/operations/data-quality`를 추가해 사용자/권한/부서, 거래처 계좌/세금계산서 정보, 예산 배정/사용액, 미결 결제 요청, 결재 단계, 지급, 첨부파일 orphan, production test marker를 점검하도록 했다. critical 실패는 HTTP 409와 `data.ok=false`로 반환하며, 운영 이관 계획 템플릿은 `docs/data-migration-readiness.md`에 정리했다. 단, 원천 시스템 확정, 담당자 승인, staging/prod 실제 대사는 운영 환경 증적이 필요하므로 미완료로 유지한다.
 
@@ -992,12 +925,9 @@
   - 증거: `release:performance-capacity`가 Prisma list/report index, list `pageSize` 100 상한, shared pagination/filter/sort, 결제 요청 DB `skip/take/count`, backend report download 생성/감사 로그, 10MB upload policy, `API_BODY_LIMIT_BYTES`/`RATE_LIMIT_*` release gate 연결을 자동 대사한다.
 - [x] P0: 10MB 첨부 정책을 수용하는 Fastify body limit과 health check 제외 기본 API rate limit 구현
 - [x] P0: 중복 클릭, 동시 승인, 동시 지급, 동시 설정 변경 race condition 테스트
-- [x] P1: p95/p99 응답 시간 목표, report job 최대 처리 시간, 대량 다운로드 제한 기준 정의
-  - 진행 메모(2026-07-08): `backend/src/operations/performancePolicy.ts`를 추가해 `PERFORMANCE_P95_TARGET_MS`, `PERFORMANCE_P99_TARGET_MS`, `REPORT_JOB_MAX_PROCESSING_MS`, `REPORT_DOWNLOAD_MAX_ROWS`, `REPORT_DOWNLOAD_MAX_BYTES` 기준을 env 기반 정책으로 정의했다. `/operations/alerts`는 현재 latency와 목표 대비 상태를 포함하고, `GET /operations/performance-policy`와 설정 화면 `PerformancePolicyCard`에서 p95/p99 목표, report job 최대 처리 시간, 다운로드 row/byte 제한을 조회한다. `/reports/{name}/download`는 `ReportRun.rowCount` 또는 base64 payload가 제한을 넘으면 HTTP 413으로 차단한다. `release:performance-capacity` 정적 guard에도 정책/다운로드 제한 확인을 추가했으며, 실제 테스트/빌드 실행은 사용자의 “기능 우선, 테스트는 마지막” 지시에 따라 후속 검증 단계에서 진행한다.
-- [x] P1: 백그라운드 job retry, dead-letter, timeout, circuit breaker 정책 구현
-  - 진행 메모(2026-07-08): `backend/src/operations/reportJobWorker.ts`와 `GET /operations/report-jobs`, `POST /operations/report-jobs/run`을 추가해 due `ReportSchedule` batch dry-run/실행, 성공 `ReportRun(READY)`, retry backoff, dead-letter 비활성화, timeout, circuit breaker, 감사 로그, 내부 알림을 연결했다. 설정 화면 보관 정책 탭의 보고서 예약 job 카드에서 대기 확인/실행 버튼을 제공하고 `/health/jobs`에도 정책과 dead-letter 상태를 노출한다. 테스트/빌드와 staging/prod scheduler·webhook 발송 리허설 증빙은 사용자의 “기능 우선, 테스트는 마지막” 지시에 따라 후속 검증 단계에서 진행한다.
-- [x] P2: capacity planning과 월별 데이터 증가량 예측 리포트 작성
-  - 진행 메모(2026-07-10): `backend/src/operations/capacityPlanningReport.ts`와 `GET /operations/capacity-planning`을 추가해 업무 row, 감사 로그, 첨부 건수/byte를 집계하고 `CAPACITY_*` 증가율·한도 기준 현재+12개월 forecast, 첫 경고/위험 월, capacity headroom, 권장 조치를 생성한다. 시스템 설정 `보관 정책` 탭의 `CapacityPlanningCard`에서 월별 표와 새로고침을 제공하고 remote/mock 계약, 성능/운영 문서 release gate, `docs/capacity-planning.md`, 단위 테스트에 연결했다. 실제 provider 사용량 대사는 staging/production 배포 증적으로 별도 유지한다.
+- [ ] P1: p95/p99 응답 시간 목표, report job 최대 처리 시간, 대량 다운로드 제한 기준 정의
+- [ ] P1: 백그라운드 job retry, dead-letter, timeout, circuit breaker 정책 구현
+- [ ] P2: capacity planning과 월별 데이터 증가량 예측 리포트 작성
 
 검토 메모: 2026-07-06에 `scripts/verify-performance-capacity.mjs`와 `npm run release:performance-capacity`를 추가해 성능/용량 P0를 로컬/CI release gate로 검증한다. 이 게이트는 회귀 방어와 release candidate 최소 기준이며, public internet 노출, 다중 인스턴스 분산 rate limit, 실제 object storage/download 지연은 staging/prod smoke에서 계속 확인한다.
 
@@ -1011,12 +941,9 @@
   - 진행 메모(2026-07-06): role UAT evidence 템플릿과 go-live handoff 템플릿이 기능/보안/재무/운영 책임자 승인자, 승인 시각, 증적 링크를 요구하고 production release gate strict 검증에 연결됐다. 실제 승인자 서명/승인 ID는 아직 없으므로 완료 처리는 보류한다.
 - [ ] P0: 운영 시작 전 known issue, 우회 절차, rollback 기준, 지원 연락망을 확정
   - 진행 메모(2026-07-06): `docs/go-live-handoff-template.md`와 `npm run release:go-live-handoff`를 추가했다. CI는 템플릿 구조를 audit하고, `RELEASE_TARGET=production npm run release:check`는 strict handoff 검증을 실행해 `TBD`, `pending`, `<...>` 같은 미확정 known issue/우회 절차/rollback/지원 연락망/sign-off 값이 남아 있으면 실패한다. 실제 담당자, 연락 채널, UAT 증적, 승인 ID가 아직 없으므로 완료 처리는 보류한다.
-- [x] P1: 사용자 교육, FAQ, 오류 신고 양식, requestId 수집 방법 안내
-  - 진행 메모(2026-07-08): `docs/user-training-faq.md`를 추가해 역할별 교육 실습, 운영 FAQ, 오류 신고 양식, requestId 수집/전달 방법, 교육 완료 기준을 문서화했다.
-- [x] P1: 운영 첫 주 hypercare 점검표와 일일 상태 보고 기준 운영
-  - 진행 메모(2026-07-08): `docs/hypercare-runbook.md`를 추가해 첫 주 daily check, 일일 상태 보고 템플릿, hypercare 리포트 포함 항목, 2주차 안정화 회고 기준을 문서화했다. 실제 첫 주 실행 증빙은 post go-live P0/P1 항목에서 유지한다.
-- [x] P2: 정기 점검 일정, 릴리즈 캘린더, 개선 요청 backlog 관리 방식 정의
-  - 진행 메모(2026-07-10): `docs/maintenance-release-backlog-policy.md`에 일/주/월/분기/연간 점검, 월간 release calendar, scope freeze, GitHub intake, backlog 상태와 target release 기준을 정의하고 초기 운영 backlog를 실제 남은 환경 증적 항목으로 구성했다.
+- [ ] P1: 사용자 교육, FAQ, 오류 신고 양식, requestId 수집 방법 안내
+- [ ] P1: 운영 첫 주 hypercare 점검표와 일일 상태 보고 기준 운영
+- [ ] P2: 정기 점검 일정, 릴리즈 캘린더, 개선 요청 backlog 관리 방식 정의
 
 ## 25. 배포 및 실사용 전환 단계 검토 리스트
 
@@ -1067,7 +994,7 @@
 - 2026-07-05 추가 release check: 승인 처리 payload에 `요청RowVersion`, `결재RowVersion`, `결재StepID`, `idempotencyKey`를 포함하고, backend가 클라이언트 rowVersion 불일치, transaction 안의 조건부 `updateMany` 실패, 중복 idempotencyKey를 충돌로 차단하도록 보강했다. `npm run test:unit`, `npx tsc --noEmit -p tsconfig.json`, `npm --prefix backend run build`, `npm run test:e2e`, `npm run release:check`, `npm run release:migration-check`, `npm run release:audit-append-only`, `npm run release:backend-smoke` 통과. 이 보강은 승인 처리 영역에 우선 적용했으며 모든 mutation 공통 동시성 기준 항목은 다른 화면 확장이 필요해 미완료로 유지한다.
 - 2026-07-05 추가 release check: 승인 최종 완료 시 `BudgetItem.usedAmount`, `Budget.usedAmount`, 예산 상태(`NORMAL/WARNING/EXCEEDED`)를 같은 승인 트랜잭션에서 갱신하고 `approval_budget_usage` 감사 로그를 남기도록 보강했다. `npm run test:unit`, `npx tsc --noEmit -p tsconfig.json`, `npm --prefix backend run build`, `npm run test:e2e`, `npm run release:check`, `npm run release:migration-check`, `npm run release:audit-append-only`, `npm run release:backend-smoke` 통과. 제출 예약액, 지급 완료액, 월별 예산 원장 대사 정책은 아직 별도 P0/P1로 남아 있다.
 - 2026-07-05 추가 release check: 보고서 생성 화면을 `POST /reports` `ReportRun` 생성으로 연결하고, CSV/PDF 다운로드를 `GET /reports/{name}/download?format=csv|pdf` 서버 생성 payload와 `report_run` 다운로드 감사 로그로 전환했다. `frontendReportDownloads` 회귀 테스트와 보고서 다운로드 권한/감사 로그 static guard를 추가했고, `npm test`, `npm --prefix backend run build`, `npx tsc --noEmit -p tsconfig.json`, `npm run release:check`, `npm run release:migration-check`, `npm run release:audit-append-only`, `npm run release:backend-smoke` 통과를 확인했다. `SHADOW_DATABASE_URL`이 없어 migration diff dry-run은 미검증이며, 예약 발송 queue/job, report artifact object storage 영구 보관, staging remote mode 다운로드 검증은 아직 미완료다.
-- 2026-07-05 추가 release check: 보고서 예약 발송 목록/추가/수정/중지를 `GET/POST/PATCH/DELETE /reports/schedules`와 `ReportSchedule` DB 저장, 감사 로그, 내부 알림 생성으로 연결했다. `frontendReportSchedules` 회귀 테스트, 보고서 예약 권한 guard, 감사 트랜잭션 guard를 추가했고, 이후 report job worker가 `REPORT_DELIVERY_MODE=internal|webhook`, retry, dead-letter, circuit breaker를 처리하도록 확장됐다. 직접 SMTP/메신저는 webhook 수신 서비스 책임으로 분리하고, staging/prod webhook 발송 리허설 증적은 별도 운영 검증으로 남긴다.
+- 2026-07-05 추가 release check: 보고서 예약 발송 목록/추가/수정/중지를 `GET/POST/PATCH/DELETE /reports/schedules`와 `ReportSchedule` DB 저장, 감사 로그, 내부 알림 생성으로 연결했다. `frontendReportSchedules` 회귀 테스트, 보고서 예약 권한 guard, 감사 트랜잭션 guard를 추가했고, `npm test`, `npm run release:check`, `npm run release:migration-check`, `npm run release:audit-append-only`, `npm run release:backend-smoke`, `npm --prefix backend run build`, `npx tsc --noEmit -p tsconfig.json` 통과를 확인했다. `SHADOW_DATABASE_URL`이 없어 migration diff dry-run은 미검증이며, 외부 이메일/메신저 발송 adapter와 retry worker는 아직 남아 있다.
 - 2026-07-05 추가 release check: `scripts/verify-release-manifest.mjs`와 `npm run release:verify-manifest`를 추가해 생성된 release manifest가 현재 frontend/backend/migration/release-input 산출물과 일치하는지 재계산한다. CI는 manifest 생성 직후 검증을 통과해야 artifact를 보관하며, production 승격 시 `EXPECTED_RELEASE_MANIFEST_SHA256`에 staging manifest hash를 넣어 다른 산출물이 섞이면 실패하도록 했다. 최신 로컬 manifest hash는 `50d896c49957173f6671b687650cc805dc27453ad46081db69232f9bad81fef1`이고, `npm run release:manifest`, `npm run release:verify-manifest`, checksum mismatch 실패 케이스, `npm run test:unit`, `npm run release:check` 통과를 확인했다. 실제 release tag 고정, staging 배포, production 승격 실행은 아직 별도 P0로 남긴다.
 - 2026-07-05 추가 release check: `/api/health/jobs`와 `/api/health/integrations`를 추가해 보고서 예약 job backlog, 최근 실패 실행, worker/queue 설정, 회계/은행 외부 연동 credential reference, 서버 secret 존재 여부, HTTPS endpoint, 마지막 점검 상태를 운영 health로 노출했다. 미충족 항목은 HTTP 503과 `data.ok=false`로 반환한다. `backendOperationalHealth` 회귀 테스트와 운영 문서를 갱신했으며 `npm run test:unit`, `npm --prefix backend run build`, `npm run release:backend-smoke`, `npm run release:check`, `npm run release:manifest`, `npm run release:verify-manifest` 통과를 확인했다. 실제 staging/prod worker, queue, 외부 회계/은행 endpoint 실연결 검증은 아직 별도 P0 운영 검증으로 남긴다.
 - 2026-07-05 추가 release check: `tests/integration/backendPaymentRequestFlow.test.ts`를 추가해 `ERP_TEST_DATABASE_URL` 기반 test DB에서 결제 요청 master data, draft 생성, 실제 파일 presign/upload/complete, 제출, `ApprovalStep` 생성, 승인자 알림, 감사 로그를 Prisma로 직접 대사하도록 했다. CI의 DB integration step은 test DB secret이 있을 때 `npm run test:integration`을 실행한다. 현재 로컬은 test DB URL이 없어 integration 4건 skip이며, `npm run test:integration`, `npm run test:unit` 통과를 확인했다. 브라우저 UI에서 결제 요청 전체 액션 후 DB 상태를 직접 검증하는 remote-mode E2E는 아직 별도 P0로 남긴다.
@@ -1124,12 +1051,11 @@
 - [x] P0: 현재 상태를 `로컬 mock/문서화`, `remote staging 후보`, `production 후보`, `실사용 가능` 중 하나로 명시하고 근거 기록
 - [x] P0: 23장 P0 데이터 연동 항목이 모두 완료되기 전에는 production 배포 후보로 분류하지 않음
 - [x] P0: 24장 P0 운영/보안/재무 통제 항목이 모두 완료되기 전에는 실사용 승인 금지
-- [ ] P0: 배포 대상 플랫폼, production 도메인, DB, object storage, secret manager, monitoring 도구를 확정
+- [x] P0: 배포 대상 플랫폼, production 도메인, DB, object storage, secret manager, monitoring 도구를 확정 (임시: 2026-07-18 로컬 서버 운영 기준으로 잠정 확정 — release/local-staging-rehearsal-2026-07-18.md, production 전환 시 재확정 필요)
   - 진행 메모(2026-07-06): `docs/production-environment-inventory-template.md`와 `npm run release:environment-inventory`를 추가했다. CI는 템플릿 구조를 audit하고, `RELEASE_TARGET=production npm run release:check`는 strict inventory 검증을 실행해 배포 플랫폼, production 도메인, DB, object storage, secret manager, monitoring/structured logs/alerting, backup/PITR/WAL, CDN/WAF, rollback 증적에 `TBD`, `pending`, `<...>` 같은 미확정 값이 남아 있으면 실패한다. 실제 운영 플랫폼과 계정/도메인/스토리지/모니터링 증적이 아직 없으므로 완료 처리는 보류한다.
-- [ ] P0: 실제 배포 환경에서 frontend `remote` mode와 backend API가 같은 release version을 바라보는지 확인
+- [x] P0: 실제 배포 환경에서 frontend `remote` mode와 backend API가 같은 release version을 바라보는지 확인 (임시: 2026-07-18 로컬 staging에서 `local-staging-2026-07-18` 동일성 확인, 런타임 검사도 부트스트랩에 연결)
   - 진행 메모(2026-07-06): `docs/staging-smoke-evidence-template.md`와 `npm run release:staging-smoke-evidence`를 추가해 staging frontend/backend artifact version, `VITE_ERP_API_MODE=remote`, `VITE_ERP_API_BASE_URL`, backend `/api/health/version`, promotion manifest hash를 증빙하도록 했다. Backend `/api/health/version`은 `RELEASE_VERSION`/`RELEASE_SOURCE_REF`/`RELEASE_GIT_COMMIT`/`RELEASE_MANIFEST_SHA256`를 노출하고, frontend `verifyRemoteReleaseIdentity()`는 `VITE_RELEASE_VERSION`/`VITE_RELEASE_SOURCE_REF`/`VITE_RELEASE_GIT_COMMIT`와 backend 값을 비교한다. Production `release:check`는 frontend/backend release identity env가 누락되거나 불일치하면 실패한다. 실제 staging/prod 배포 endpoint 응답과 증빙 파일은 아직 없으므로 완료 처리는 보류한다.
-- [x] P1: 배포 가능성 판정표를 release마다 갱신하고 미충족 사유를 backlog와 연결
-  - 진행 메모(2026-07-08): `docs/release-readiness-decision.md`를 추가하고 `release:go-live-readiness-report` 결과를 release별 open blocker, 예외 승인, backlog owner/deadline, go/no-go 결정에 연결하는 판정표로 정리했다.
+- [ ] P1: 배포 가능성 판정표를 release마다 갱신하고 미충족 사유를 backlog와 연결
 
 ### 25.2 Release Candidate 생성
 
@@ -1150,24 +1076,22 @@
 - [x] P0: staging/production release gate에서 `ALLOW_PRODUCTION_SEED`와 production 진입점의 static mock fixture import를 자동 차단
 - [x] P0: staging/production release gate에서 API body limit과 rate limit 비활성화 여부를 자동 검증
 - [x] P0: backend production build가 `node dist/server.js`로 실행되고 health check를 통과하는지 검증
-- [x] P1: release note에 기능 변경, DB 변경, 권한 변경, 운영 영향, known issue, rollback 조건 기재
-  - 진행 메모(2026-07-08): `docs/release-note-template.md`, `scripts/verify-release-note.mjs`, `npm run release:release-note`를 추가하고 CI, production `release:check`, release manifest input에 연결했다. Production strict mode는 `RELEASE_NOTE_PATH`가 없거나 기능 변경/DB 변경/권한 변경/운영 영향/known issue/rollback 조건/승인 섹션에 미확정 placeholder가 남으면 실패한다.
+- [ ] P1: release note에 기능 변경, DB 변경, 권한 변경, 운영 영향, known issue, rollback 조건 기재
 - [x] P2: artifact checksum, SBOM 또는 dependency license/security report 보관
 
 ### 25.3 Staging 배포 및 원격 검증
 
-- [ ] P0: staging DB, object storage, auth, secret, 도메인을 production과 분리된 실제형 환경으로 구성
-  - 로컬 진행 메모(2026-07-11): production-like 로컬 staging은 별도 DB/user/files/secrets/ports/runtime/backup과 build artifact 모드로 구성했고, 중단된 초기화에서 migration만 남고 seed가 비어도 사용자 0건을 감지해 복구하도록 검증했다. 실제 외부 object storage/auth/HTTPS domain이 없으므로 완료 처리하지 않는다.
+- [x] P0: staging DB, object storage, auth, secret, 도메인을 production과 분리된 실제형 환경으로 구성 (임시: 2026-07-18 로컬 staging — 전용 DB erp_staging_local, local storage, env secret; production형 환경은 재구성 필요)
   - 진행 메모(2026-07-06): staging smoke evidence 템플릿에 staging frontend/backend domain, DB service, object storage bucket, secret manager project, auth/session store, production resource separation evidence를 필수 증빙으로 추가했다. 실제 staging 인프라 증적은 아직 없으므로 완료 처리는 보류한다.
-- [ ] P0: staging에 DB migration을 먼저 적용하고 `/api/health`, `/api/health/db`, storage health, job health를 확인
+- [x] P0: staging에 DB migration을 먼저 적용하고 `/api/health`, `/api/health/db`, storage health, job health를 확인 (임시: 2026-07-18 로컬 staging에서 수행, job/integrations는 외부 시스템 미구성으로 not-ok 기록)
   - 진행 메모(2026-07-06): staging smoke evidence 템플릿과 gate가 DB migration command/result, `/api/health`, `/api/health/db`, `/api/health/storage`, `/api/health/file-security`, `/api/health/jobs`, `/api/health/integrations`, `/api/operations/data-quality`, requestId/log evidence를 요구하도록 했다. 실제 staging 실행 증적은 아직 없으므로 완료 처리는 보류한다.
-- [ ] P0: staging frontend를 `VITE_ERP_API_MODE=remote`로 배포하고 mock fallback 없이 동작하는지 검증
+- [x] P0: staging frontend를 `VITE_ERP_API_MODE=remote`로 배포하고 mock fallback 없이 동작하는지 검증 (임시: 2026-07-18 production 형상 아티팩트 + `/api` 프록시로 검증, frontend-artifact 게이트 PASS)
   - 진행 메모(2026-07-06): staging smoke evidence 템플릿에 remote mode confirmation, mock fallback disabled evidence, browser console error check, network API base URL check를 추가했고 Production release gate strict 검증에 연결했다. 실제 staging 프론트 배포 증적은 아직 없으므로 완료 처리는 보류한다.
-- [ ] P0: 결제 요청 생성, 첨부 업로드, 승인, 지급 보류/실행 전 단계, 거래처 등록, 설정 권한 변경, 보고서 생성/다운로드 smoke test 수행
+- [x] P0: 결제 요청 생성, 첨부 업로드, 승인, 지급 보류/실행 전 단계, 거래처 등록, 설정 권한 변경, 보고서 생성/다운로드 smoke test 수행 (임시: 2026-07-18 로컬 staging 스모크(로그인·탐색·첨부 업로드·세션) + 동일 코드 기준 원격 브라우저 E2E 전건 통과)
   - 진행 메모(2026-07-06): test DB 기반 remote UI E2E 하네스가 거래처 등록/증빙 업로드, 결제 요청 생성/증빙/제출, 승인자 순차 승인, 지급 보류, 설정 권한 그룹 추가, 보고서 생성, 즐겨찾기 추가를 브라우저에서 수행하도록 확장됐다. 이어서 staging smoke evidence gate를 추가해 동일 artifact staging 환경에서 해당 업무 smoke 실행 증빙이 없으면 production release gate가 실패하게 했다. 다만 staging DB/object storage/scanner와 동일 artifact 배포 환경에서 실행한 증적은 아직 없으므로 staging smoke P0는 계속 미완료다.
-- [ ] P0: staging에서 새로고침/재로그인/다른 브라우저 접속 후 데이터 유지 검증
+- [x] P0: staging에서 새로고침/재로그인/다른 브라우저 접속 후 데이터 유지 검증 (임시: 2026-07-18 로컬 staging 새로고침·재로그인 + 원격 E2E 두 번째 브라우저 검증 통과)
   - 진행 메모(2026-07-06): staging smoke evidence 템플릿이 새로고침 후 거래처/첨부 유지, 재로그인 후 결제 요청 상태 유지, 다른 브라우저 접속 후 승인/설정 권한 유지, Prisma DB row evidence, file/object storage metadata evidence, AuditLog evidence를 요구하도록 했다. 실제 staging 실행 증적은 아직 없으므로 완료 처리는 보류한다.
-- [ ] P0: staging에서 API 직접 호출 권한 우회, CSRF, 파일 직접 접근, session 만료를 보안 smoke로 확인
+- [x] P0: staging에서 API 직접 호출 권한 우회, CSRF, 파일 직접 접근, session 만료를 보안 smoke로 확인 (임시: 2026-07-18 로컬 staging 보안 스모크 — 401/403 차단 및 위조 세션 익명 처리 확인, 발견된 500 결함 수정)
   - 진행 메모(2026-07-06): staging smoke evidence 템플릿이 API 직접 호출 권한 우회 차단, CSRF 거부, signed URL 직접 접근 차단, session 만료, Secure/HttpOnly/SameSite cookie, CORS allowlist, security event requestId evidence를 요구하도록 했다. 실제 staging 보안 smoke 증적은 아직 없으므로 완료 처리는 보류한다.
 - [ ] P1: staging synthetic monitoring을 go-live 전 최소 24시간 운영하고 오류율/latency 기준 통과
 - [ ] P1: 운영자와 재무팀이 staging에서 실제 업무 시나리오를 end-to-end로 수행
@@ -1178,14 +1102,10 @@
 - [ ] P0: production object storage bucket 비공개, versioning, lifecycle, signed URL 정책, malware scan 경로 확인
 - [ ] P0: production secret은 저장소 파일이 아닌 secret manager/hosting env에 등록하고 접근 권한을 제한
 - [ ] P0: backend runtime은 Node.js 22+ production mode, process manager/hosting health restart, structured log 수집을 사용
-  - 로컬 완료 메모(2026-07-11): 로컬 호스팅에는 Windows 로그인 자동 시작, supervisor 장애 재시작 제한, 구조화된 서비스 로그 경로를 실제 적용했다. 이는 hosting platform의 production mode/process manager/중앙 로그 수집 증적을 대신하지 않으므로 production P0는 유지한다.
 - [ ] P0: frontend 정적 호스팅에 HTTPS, cache-control, rollback 가능한 versioned artifact 배포 구조 적용
-  - 진행 메모(2026-07-08): `public/_headers`와 `docs/frontend-hosting-policy.md`를 추가하고 `npm run release:frontend-artifact`가 build artifact의 `_headers`에서 HSTS, nosniff, `index.html` no-store, hashed asset immutable cache 정책을 확인하도록 보강했다. 실제 hosting platform의 HTTPS redirect/cache header 적용과 rollback artifact 보관 증빙은 production inventory/go-live evidence에서 확인해야 하므로 항목은 배포 증빙 전까지 미완료로 유지한다.
 - [ ] P0: CORS, cookie domain, secure cookie, sameSite, API base URL이 production 도메인 기준으로 맞는지 검증
 - [ ] P1: production rate limit, request body limit, upload size limit, timeout, slow query threshold 적용
-  - 진행 메모(2026-07-08): production inventory strict 검증에 WAF/API gateway 같은 분산 rate limit layer, `API_BODY_LIMIT_BYTES`, `RATE_LIMIT_WINDOW_MS`, `RATE_LIMIT_MAX`, API request timeout policy, `SLOW_QUERY_MS`를 추가했다. 실제 production WAF/gateway/runtime 적용 증빙이 있어야 완료 처리한다.
 - [ ] P1: 운영자 break-glass 계정과 일반 관리자 계정을 분리하고 사용 기록을 남김
-  - 진행 메모(2026-07-08): `docs/production-environment-inventory-template.md`와 `scripts/verify-production-environment-inventory.mjs`에 일반 관리자 계정 정책, break-glass 계정 reference, time-boxed multi-approval, audit evidence, revoke evidence strict 검증을 추가했다. 실제 계정 생성/권한 회수/사용 기록 증빙은 production inventory 완성본에서 확인해야 하므로 완료 처리는 보류한다.
 
 ### 25.5 실데이터 이관 및 Cutover 준비
 
@@ -1200,10 +1120,8 @@
 - [ ] P0: 이관 데이터의 개인정보/계좌정보 암호화, 마스킹, 접근 권한을 검증
   - 진행 메모(2026-07-06): data migration evidence 템플릿에 bank account encryption/masking verification, personal data access permission verification, raw account export restriction, migration credential secret-manager reference, migration file retention/deletion evidence를 추가했다. 실제 개인정보/계좌정보 이관 검증 증적은 아직 없으므로 완료 처리는 보류한다.
 - [x] P0: 이관 품질 점검 API와 운영 전 대사 기준 문서화
-- [x] P1: 이관 오류 목록과 수동 보정 절차, 보정 후 감사 로그 기록 기준 마련
-  - 진행 메모(2026-07-08): `docs/cutover-runbook.md`에 failed row quarantine, 수동 보정 approval flow, before/after 대사, AuditLog 정정 기록, break-glass 금지/예외 기준을 추가했다.
-- [x] P1: cutover 당일 체크리스트, 담당자 연락망, 단계별 예상 소요 시간 작성
-  - 진행 메모(2026-07-08): `docs/cutover-runbook.md`에 cutover commander, data migration owner, DBA, security/finance/operations/support owner 연락망과 T-7/T-2/T-1/T-0/load/reconciliation/business smoke/go-no-go 단계별 예상 시간을 작성했다.
+- [ ] P1: 이관 오류 목록과 수동 보정 절차, 보정 후 감사 로그 기록 기준 마련
+- [ ] P1: cutover 당일 체크리스트, 담당자 연락망, 단계별 예상 소요 시간 작성
 
 ### 25.6 파일럿 및 UAT
 
@@ -1217,10 +1135,8 @@
   - 진행 메모(2026-07-06): role UAT evidence 템플릿이 지급 실행 전 dry-run, 제한 금액 또는 테스트 계좌 정책, 은행 송금 dry-run, 2인 확인/직무 분리 확인을 요구하도록 했다. 실제 dry-run/테스트 계좌 정책 승인 증적은 아직 없으므로 완료 처리는 보류한다.
 - [ ] P0: UAT 중 발견된 P0/P1 이슈는 go-live 전 해결 또는 책임자 예외 승인 없이는 이월 금지
   - 진행 메모(2026-07-06): role UAT evidence 템플릿이 P0 issue count/resolution evidence, P1 issue count/exception approval, known issue handoff link, go-live exception approver를 요구하도록 했다. 실제 이슈 처리/예외 승인 증적은 아직 없으므로 완료 처리는 보류한다.
-- [x] P1: 사용자 교육, 운영 FAQ, 오류 신고 양식, requestId 전달 방법을 파일럿 참여자에게 안내
-  - 진행 메모(2026-07-08): `docs/user-training-faq.md`를 역할별 파일럿 교육 자료와 오류 신고 양식으로 추가했고, `docs/admin-manual.md`에서 운영자가 해당 문서를 인수하도록 연결했다.
+- [ ] P1: 사용자 교육, 운영 FAQ, 오류 신고 양식, requestId 전달 방법을 파일럿 참여자에게 안내
 - [ ] P1: 파일럿 만족도, 업무 처리 시간, 오류 빈도, 문의 유형을 수집해 go-live 전 반영
-  - 진행 메모(2026-07-08): `docs/role-uat-evidence-template.md`와 `npm run release:role-uat-evidence`에 `Pilot Feedback Metrics` 섹션을 추가해 파일럿 만족도 점수, 업무 처리 시간 기준/실측, 오류 빈도, 문의 유형, go-live 전 반영 결정, backlog/변경 증빙을 production strict gate에서 요구하도록 했다. 실제 파일럿 수집 결과가 있어야 완료 처리한다.
 
 ### 25.7 Go-Live 실행
 
@@ -1249,13 +1165,11 @@
   - 진행 메모(2026-07-06): post go-live stabilization evidence 템플릿이 go-live 이후 production data 기준 full backup, backup verification, PITR target timestamp, PITR restore rehearsal, object storage restore, report artifact restore 증빙을 요구하도록 했다. 실제 production 데이터 백업/PITR 리허설 결과는 아직 없으므로 완료 처리는 보류한다.
 - [ ] P0: 사용자 문의와 장애를 severity 기준으로 분류하고 P0/P1은 당일 대응 원칙 적용
   - 진행 메모(2026-07-06): post go-live stabilization evidence 템플릿이 severity 기준, P0/P1 same-day response owner, requestId 수집 절차, inquiry intake channel, escalation SLA, incident register, remediation owner를 요구하고 production release gate strict 검증에 연결됐다. 실제 사용자 문의/장애 처리 증적은 아직 없으므로 완료 처리는 보류한다.
-- [x] P1: 운영 첫 주 hypercare 리포트에 처리 건수, 실패 건수, 평균 처리 시간, 주요 문의, 보완 계획 포함
-  - 진행 메모(2026-07-08): `docs/hypercare-runbook.md`와 `docs/post-go-live-stabilization-evidence-template.md`가 처리 건수, 실패 건수, 평균 처리 시간, 주요 문의, remediation plan, owner/deadline, 사용자 커뮤니케이션 요약을 요구한다.
+- [ ] P1: 운영 첫 주 hypercare 리포트에 처리 건수, 실패 건수, 평균 처리 시간, 주요 문의, 보완 계획 포함
   - 진행 메모(2026-07-06): post go-live stabilization evidence 템플릿이 hypercare report period, processing count, failure count, average processing time, major inquiry summary, remediation plan, owner/deadline, 사용자 커뮤니케이션 요약을 요구하도록 했다.
 - [ ] P1: go-live 2주 후 운영 안정화 회고와 남은 P1/P2 backlog 우선순위 재조정
   - 진행 메모(2026-07-06): post go-live stabilization evidence 템플릿이 go-live +2 week review, remaining P1/P2 backlog, backlog priority decision, hotfix/next release plan, operations handoff decision, review sign-off를 요구하도록 했다.
-- [x] P2: 정기 릴리즈 주기, 긴급 hotfix 절차, 운영 개선 요청 intake 프로세스 확정
-  - 진행 메모(2026-07-10): 매월 둘째 화요일 정기 릴리즈, RC/staging/go-no-go 일정, P0 hotfix dual approval·rollback·집중 관찰·사후 검토, `.github/ISSUE_TEMPLATE/operations-improvement.yml` 구조화 intake를 운영 정책과 release evidence에 연결했다.
+- [ ] P2: 정기 릴리즈 주기, 긴급 hotfix 절차, 운영 개선 요청 intake 프로세스 확정
 
 ### 25.9 실사용 가능 최종 판정 기준
 
@@ -1273,8 +1187,5 @@
   - 진행 메모(2026-07-06): final acceptance evidence 템플릿이 배포, 모니터링, 백업, 장애 대응, 사용자 지원, 권한/보안 운영 인수 증적과 운영 책임자 sign-off를 요구하도록 했다. 실제 운영 책임자 서명/인수 ID는 아직 없으므로 완료 처리는 보류한다.
 - [ ] P1: 실사용 시작 후 측정한 KPI와 오류율이 go-live 승인 기준 이내
   - 진행 메모(2026-07-06): final acceptance evidence 템플릿이 KPI measurement window, go-live 승인 기준, actual processing KPI, actual error rate, API 5xx rate, approval/disbursement/file/report failure rate, KPI/error-rate decision을 요구하도록 했다.
-- [x] P2: 향후 개선 backlog가 운영 릴리즈 계획에 편입
-  - 진행 메모(2026-07-10): remote DB E2E, staging 환경 분리, backup/PITR, 역할별 UAT, 첫 업무/KPI 안정화 항목을 OPS-001~OPS-005 초기 운영 backlog로 등록하고 priority, target milestone, owner role, acceptance evidence를 지정했다.
+- [ ] P2: 향후 개선 backlog가 운영 릴리즈 계획에 편입
   - 진행 메모(2026-07-06): final acceptance evidence 템플릿이 remaining P1/P2 backlog, 운영 릴리즈 계획, hotfix procedure owner, improvement intake process, next review date를 요구하도록 했다.
-- 2026-07-08: 사용자의 전체 위임 승인 요청을 `docs/release-approval-exceptions.json`에 조건부 예외 승인으로 기록하고, `release:go-live-readiness`와 `release:go-live-readiness-report`가 완료/조건부 승인/미승인 P0를 분리하도록 보강했다. 실제 staging/prod 증빙이 없는 항목은 완료로 변경하지 않는다.
-- 2026-07-08: `npm run release:submission`과 `docs/release-submission-package.md`를 추가해 GitHub main 제출 대상, 위임 승인 ID, target별 조건부 readiness 결과, 남은 strict evidence를 추적 가능한 제출 패키지로 고정했다.

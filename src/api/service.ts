@@ -1,5 +1,5 @@
 import type { ApiResponse, AuthUserDto, LoginRequestDto, NotificationDto, ReleaseIdentityDto } from "./contracts";
-import { ApiRequestError, errorFromApiResponse } from "./errors";
+import { errorFromApiResponse } from "./errors";
 import type { AuthUser, ListQuery, MockApiResponse, NotificationItem, PageKey, PaginatedRows, TableRow } from "../types";
 
 export type PageActionRequest = {
@@ -25,17 +25,6 @@ export type BudgetAdjustmentResult = {
   adjustment: TableRow;
   budget: TableRow;
   requiresApproval: boolean;
-};
-
-export type BudgetAdjustmentActionInput = {
-  reason?: string;
-  idempotencyKey?: string;
-};
-
-export type BudgetAdjustmentActionResult = {
-  adjustment: TableRow;
-  budget: TableRow | null;
-  rollbackPolicy: string;
 };
 
 export type FileOwnerType = "PAYMENT_REQUEST" | "VENDOR";
@@ -64,14 +53,6 @@ export type FileUploadInput = {
   idempotencyKey?: string;
 };
 
-export type FileUploadProgress = {
-  loaded: number;
-  total: number;
-  percent: number;
-};
-
-export type FileUploadProgressHandler = (progress: FileUploadProgress) => void;
-
 export type FileCompleteInput = {
   checksum?: string;
   idempotencyKey?: string;
@@ -79,11 +60,6 @@ export type FileCompleteInput = {
 
 export type FileDeleteInput = {
   idempotencyKey?: string;
-};
-
-export type FileDownloadInput = {
-  reason: string;
-  disposition?: "attachment" | "inline";
 };
 
 export type SignedFileUrl = {
@@ -151,295 +127,6 @@ export type SystemSettingHistoryRow = {
   tag: string;
 };
 
-export type AuditLogSearchQuery = {
-  search?: string;
-  entityType?: string;
-  action?: string;
-  requestId?: string;
-  actor?: string;
-  from?: string;
-  to?: string;
-  page?: number;
-  pageSize?: number;
-};
-
-export type AuditLogSearchRow = {
-  id: string;
-  time: string;
-  actor: string;
-  actorDepartment: string;
-  entityType: string;
-  entityId: string;
-  action: string;
-  reason: string;
-  requestId: string;
-  ipAddress: string;
-  userAgent: string;
-  summary: string;
-};
-
-export type AuditLogSearchResult = {
-  rows: AuditLogSearchRow[];
-  total: number;
-  page: number;
-  pageSize: number;
-  accessScope: string;
-  rawValuePolicy: string;
-  retention: {
-    retentionDays: number | null;
-    disposition: string;
-    immutable: boolean;
-    archiveAction: string;
-  };
-};
-
-export type OperationModeCapability = "business_mutations" | "payments" | "file_uploads";
-
-export type OperationModeStatus = {
-  mode: "normal" | "read_only" | "payments_paused" | "uploads_paused" | "maintenance";
-  label: string;
-  active: boolean;
-  readOnly: boolean;
-  disabledCapabilities: OperationModeCapability[];
-  restrictions: Array<{
-    capability: OperationModeCapability;
-    label: string;
-    summary: string;
-  }>;
-  source: {
-    operationMode: string;
-    disabledCapabilities: string;
-  };
-  generatedAt: string;
-};
-
-export type OperationalAlertRuleResult = {
-  id: string;
-  label: string;
-  ok: boolean;
-  count: number;
-  threshold: number;
-  eventTypes: string[];
-  severity: "warning" | "critical";
-  runbook: string;
-};
-
-export type OperationalAlertSummary = {
-  ok: boolean;
-  windowMinutes: number;
-  since: string;
-  until: string;
-  database: {
-    ok: boolean;
-    latencyMs: number;
-    error: string | null;
-  };
-  countsByEventType: Record<string, number>;
-  eventReadError: string | null;
-  rules: OperationalAlertRuleResult[];
-  triggered: OperationalAlertRuleResult[];
-  metrics: {
-    eventsReviewed: number;
-    ruleFailureRatePercent: number;
-    criticalTriggered: number;
-    warningTriggered: number;
-    p95LatencyMs: number | null;
-    p99LatencyMs: number | null;
-    maxLatencyMs: number | null;
-    latencySampleSize: number;
-    dbLatencyMs: number;
-    latencyTargets: {
-      p95TargetMs: number;
-      p99TargetMs: number;
-      currentP95Ms: number | null;
-      currentP99Ms: number | null;
-      p95Ok: boolean;
-      p99Ok: boolean;
-      sampleSize: number;
-      source: string;
-    };
-  };
-};
-
-export type BusinessFailureRecentEvent = {
-  id: string;
-  eventType: string;
-  errorCode: string;
-  message: string;
-  statusCode: number;
-  path: string | null;
-  requestId: string;
-  createdAt: string;
-};
-
-export type BusinessFailureRuleResult = {
-  id: string;
-  label: string;
-  ok: boolean;
-  count: number;
-  threshold: number;
-  pathPrefixes: string[];
-  eventTypes: string[];
-  severity: "warning" | "critical";
-  ownerPermission: string;
-  linkPath: string;
-  runbook: string;
-  recentEvents: BusinessFailureRecentEvent[];
-};
-
-export type BusinessFailureAlertSummary = {
-  ok: boolean;
-  windowMinutes: number;
-  since: string;
-  until: string;
-  eventsReviewed: number;
-  eventReadError: string | null;
-  rules: BusinessFailureRuleResult[];
-  triggered: BusinessFailureRuleResult[];
-};
-
-export type ReportJobPolicy = {
-  deliveryMode: string;
-  batchSize: number;
-  maxAttempts: number;
-  timeoutMs: number;
-  retryBaseSeconds: number;
-  retryMaxSeconds: number;
-  circuitBreakerFailureThreshold: number;
-  circuitBreakerWindowMinutes: number;
-  webhookConfigured: boolean;
-  webhookTokenConfigured: boolean;
-};
-
-export type ReportJobCircuitBreaker = {
-  open: boolean;
-  recentFailures: number;
-  threshold: number;
-  windowMinutes: number;
-  since: string;
-};
-
-export type ReportJobDueSchedule = {
-  id: string;
-  reportName: string;
-  owner: string;
-  nextRunAt: string | null;
-};
-
-export type ReportJobResult = {
-  scheduleId: string;
-  reportName: string;
-  status: "delivered" | "retry_scheduled" | "dead_letter";
-  attempt: number;
-  nextRunAt: string | null;
-  errorMessage: string;
-};
-
-export type ReportJobRunResult = {
-  ok: boolean;
-  dryRun: boolean;
-  generatedAt: string;
-  policy: ReportJobPolicy;
-  circuitBreaker: ReportJobCircuitBreaker;
-  summary: {
-    due: number;
-    processed: number;
-    delivered: number;
-    retryScheduled: number;
-    deadLetter: number;
-    skipped: number;
-  };
-  dueSchedules: ReportJobDueSchedule[];
-  results: ReportJobResult[];
-};
-
-export type ReportJobRunInput = {
-  dryRun?: boolean;
-  batchSize?: number;
-};
-
-export type PerformancePolicyStatus = {
-  ok: boolean;
-  generatedAt: string;
-  latency: {
-    p95TargetMs: number;
-    p99TargetMs: number;
-    currentP95Ms: number | null;
-    currentP99Ms: number | null;
-    p95Ok: boolean;
-    p99Ok: boolean;
-    sampleSize: number;
-    source: string;
-  };
-  reportJob: {
-    maxProcessingMs: number;
-    workerTimeoutMs: number;
-    batchSize: number;
-    maxAttempts: number;
-    source: string;
-  };
-  largeDownload: {
-    maxReportRows: number;
-    maxReportBytes: number;
-    source: string;
-  };
-};
-
-export type CapacityPlanningReport = {
-  ok: boolean;
-  actionRequired: boolean;
-  generatedAt: string;
-  baselineMonth: string;
-  source: string;
-  assumptions: {
-    forecastMonths: number;
-    transactionGrowthPercent: number;
-    auditGrowthPercent: number;
-    attachmentGrowthPercent: number;
-    databaseLimitBytes: number;
-    objectStorageLimitBytes: number;
-    averageBusinessRowBytes: number;
-    averageAuditRowBytes: number;
-    averageMetadataRowBytes: number;
-    warningPercent: number;
-    criticalPercent: number;
-  };
-  baseline: {
-    paymentRequests: number;
-    approvalSteps: number;
-    disbursements: number;
-    vendors: number;
-    notifications: number;
-    reportRuns: number;
-    dataQualityRuns: number;
-    auditLogs: number;
-    attachments: number;
-    attachmentBytes: number;
-    businessRows: number;
-    estimatedDatabaseBytes: number;
-  };
-  summary: {
-    firstWarningMonth: string | null;
-    firstCriticalMonth: string | null;
-    capacityHeadroomMonths: number;
-    peakDatabaseUtilizationPercent: number;
-    peakObjectStorageUtilizationPercent: number;
-    nextReviewMonth: string;
-  };
-  forecast: Array<{
-    month: string;
-    offset: number;
-    businessRows: number;
-    auditLogs: number;
-    attachments: number;
-    estimatedDatabaseBytes: number;
-    objectStorageBytes: number;
-    databaseUtilizationPercent: number;
-    objectStorageUtilizationPercent: number;
-    level: "normal" | "warning" | "critical";
-  }>;
-  recommendedActions: string[];
-};
 export type IntegrationTestResult = {
   integrationId: string;
   success: boolean;
@@ -471,528 +158,6 @@ export type ReleaseIdentityComparison = {
   issues: string[];
 };
 
-export type PasswordPolicySummary = {
-  minLength: number;
-  maxAgeDays: number;
-  requirements: string[];
-};
-
-export type PasswordChangeInput = {
-  currentPassword: string;
-  newPassword: string;
-};
-
-export type ExpiredPasswordChangeInput = PasswordChangeInput & {
-  email: string;
-};
-
-export type PasswordChangeResult = {
-  changedAt: string;
-  expiresAt: string;
-  sessionsRevoked: number;
-  policy: PasswordPolicySummary;
-};
-
-export type RetentionPolicyDto = {
-  entityType: string;
-  label: string;
-  retentionDays: number | null;
-  retentionLabel: string;
-  clockField: string;
-  immutable: boolean;
-  hardDeleteAllowed: boolean;
-  legalHoldSupported: boolean;
-  disposition: string;
-  protectedFields: string[];
-  operatorAction: string;
-  deletionPolicy: string;
-};
-
-export type RetentionPolicyCheck = {
-  id: string;
-  label: string;
-  ok: boolean;
-  severity: "info" | "warning" | "critical";
-  count: number;
-  detail: string;
-  action: string;
-};
-
-export type RetentionPolicySummary = {
-  ok: boolean;
-  actionRequired: boolean;
-  generatedAt: string;
-  policyVersion: string;
-  summary: {
-    auditLogs: number;
-    notifications: number;
-    attachments: number;
-    reportRuns: number;
-    immutablePolicies: number;
-    hardDeleteAllowedPolicies: number;
-    triggeredChecks: number;
-  };
-  policies: RetentionPolicyDto[];
-  checks: RetentionPolicyCheck[];
-  triggered: RetentionPolicyCheck[];
-};
-
-export type DataQualityCheck = {
-  id: string;
-  label: string;
-  ok: boolean;
-  severity: "warning" | "critical";
-  count: number;
-  detail: string;
-  sample?: string[];
-};
-
-export type DataQualitySummary = {
-  ok: boolean;
-  generatedAt: string;
-  summary: Record<string, unknown>;
-  checks: DataQualityCheck[];
-  criticalFailures: DataQualityCheck[];
-  warningFailures: DataQualityCheck[];
-};
-
-export type DataQualityJobPolicy = {
-  enabled: boolean;
-  intervalMinutes: number;
-  historyLimit: number;
-  runOnStart: boolean;
-  startDelayMs: number;
-};
-
-export type DataQualityRun = {
-  id: string;
-  status: "RUNNING" | "COMPLETED" | "FAILED";
-  source: string;
-  scheduleKey: string | null;
-  requestedBy: string | null;
-  requestId: string;
-  summary: DataQualitySummary | null;
-  criticalCount: number;
-  warningCount: number;
-  errorMessage: string | null;
-  startedAt: string;
-  completedAt: string | null;
-};
-
-export type DataQualityRunList = {
-  policy: DataQualityJobPolicy;
-  runs: DataQualityRun[];
-};
-
-export type DataQualityRunResult = {
-  policy: DataQualityJobPolicy;
-  deduplicated: boolean;
-  run: DataQualityRun;
-  summary: DataQualitySummary | null;
-  recipientCount: number;
-  notificationsCreated: number;
-};
-
-export type DataQualityReportArtifact = {
-  fileName: string;
-  contentType: string;
-  contentBase64: string;
-  generatedAt: string;
-  runId: string;
-};
-
-export type AccountLifecycleCandidate = {
-  id: string;
-  email: string;
-  name: string;
-  createdAt: string;
-  lastLoginAt: string | null;
-  reasons: string[];
-};
-
-export type AccountLifecycleSummary = {
-  ok: boolean;
-  actionRequired: boolean;
-  generatedAt: string;
-  dormantAccountDays: number;
-  dormantCutoff: string;
-  offboardingConfigured: boolean;
-  summary: {
-    dormantCount: number;
-    offboardingCount: number;
-    totalCandidates: number;
-  };
-  candidates: AccountLifecycleCandidate[];
-};
-
-export type AccountLifecycleDeactivateInput = {
-  scope: "dormant" | "offboarding" | "all";
-  reason: string;
-  idempotencyKey: string;
-};
-
-export type AccountLifecycleDeactivateResult = {
-  scope: string;
-  reason: string;
-  deactivatedCount: number;
-  sessionsRevoked: number;
-  dormantAccountDays: number;
-  dormantCutoff: string;
-  candidates: Array<Record<string, string>>;
-};
-
-export type FinancialReconciliationSeverity = "warning" | "critical";
-
-export type FinancialReconciliationCheck = {
-  id: string;
-  label: string;
-  ok: boolean;
-  severity: FinancialReconciliationSeverity;
-  count: number;
-  detail: string;
-  action: string;
-};
-
-export type FinancialReconciliationMismatch = {
-  id: string;
-  type: string;
-  severity: FinancialReconciliationSeverity;
-  label: string;
-  scope: string;
-  expected: number;
-  actual: number;
-  diff: number;
-  detail: string;
-  linkPath: string;
-};
-
-export type FinancialReconciliationBucket = {
-  period: string;
-  departmentId: string;
-  departmentName: string;
-  approvedPaymentCount: number;
-  approvedPaymentAmount: number;
-  completedDisbursementCount: number;
-  completedDisbursementAmount: number;
-  diff: number;
-};
-
-export type FinancialReconciliationSummary = {
-  ok: boolean;
-  actionRequired: boolean;
-  generatedAt: string;
-  toleranceWon: number;
-  summary: {
-    budgets: number;
-    budgetItems: number;
-    paymentRequests: number;
-    approvedPaymentRequests: number;
-    disbursements: number;
-    completedDisbursements: number;
-    reportRunsReviewed: number;
-    reportSnapshotsReviewed: number;
-    reportRowsReviewed: number;
-    totalBudgetAllocated: number;
-    totalBudgetUsed: number;
-    approvedPaymentAmount: number;
-    completedDisbursementAmount: number;
-    criticalMismatchCount: number;
-    warningMismatchCount: number;
-    mismatchCount: number;
-  };
-  checks: FinancialReconciliationCheck[];
-  triggered: FinancialReconciliationCheck[];
-  mismatches: FinancialReconciliationMismatch[];
-  mismatchesTruncated: boolean;
-  monthly: FinancialReconciliationBucket[];
-  daily: FinancialReconciliationBucket[];
-};
-
-export type FinancialReconciliationNotifyResult = {
-  summary: FinancialReconciliationSummary;
-  recipientCount: number;
-  notificationsCreated: number;
-};
-
-export type ManualRecoveryItem = {
-  id: string;
-  status: "pending" | "approved" | "rejected" | string;
-  targetType: string;
-  targetCode: string;
-  reviewerName: string;
-  approverName: string;
-  requestedAt: string;
-  reviewedAt: string;
-  reason: string;
-  approvalReason: string;
-  expectedRowVersion: number;
-  proposed: Record<string, unknown>;
-};
-
-export type ManualRecoverySummary = {
-  ok: boolean;
-  generatedAt: string;
-  summary: {
-    total: number;
-    pending: number;
-    approved: number;
-    rejected: number;
-  };
-  items: ManualRecoveryItem[];
-  pending: ManualRecoveryItem[];
-};
-
-export type ManualRecoveryRequestInput = {
-  targetType: "disbursement";
-  targetCode: string;
-  nextStatus: string;
-  accountStatus?: string;
-  scheduledDate?: string;
-  reason: string;
-  idempotencyKey: string;
-};
-
-export type ManualRecoveryReviewInput = {
-  reason: string;
-  idempotencyKey: string;
-};
-
-export type ManualRecoveryResult = {
-  idempotencyReplay: boolean;
-  recoveryId: string;
-  summary: ManualRecoverySummary;
-};
-
-export type FinancialControlException = {
-  id: string;
-  severity: "info" | "warning" | "critical";
-  label: string;
-  scope: string;
-  detail: string;
-  source: string;
-  linkPath: string;
-};
-
-export type MonthEndChecklistItem = {
-  id: string;
-  label: string;
-  ok: boolean;
-  owner: string;
-  detail: string;
-  evidence: string;
-};
-
-export type FinancialControlReport = {
-  ok: boolean;
-  generatedAt: string;
-  period: {
-    month: string;
-    start: string;
-    endExclusive: string;
-  };
-  summary: {
-    exceptions: number;
-    criticalExceptions: number;
-    warningExceptions: number;
-    manualRecoveryPending: number;
-    manualRecoveryClosed: number;
-    bankReconcileCount: number;
-    disbursementAuditCount: number;
-    checklistPassed: number;
-    checklistTotal: number;
-  };
-  exceptions: FinancialControlException[];
-  checklist: MonthEndChecklistItem[];
-};
-
-export type PermissionReviewException = {
-  id: string;
-  severity: "info" | "warning" | "critical";
-  status: "expiry_missing" | "expired" | "expiring" | "current";
-  userId: string;
-  userName: string;
-  departmentName: string;
-  roleId: string;
-  roleName: string;
-  permission: string;
-  expiresAt: string | null;
-  daysUntilExpiry: number | null;
-  action: string;
-  evidence: string;
-};
-
-export type PermissionReviewPrivilegedUser = {
-  userId: string;
-  userName: string;
-  departmentName: string;
-  active: boolean;
-  lastLoginAt: string | null;
-  roles: string[];
-  highRiskPermissions: string[];
-  missingExpiryCount: number;
-  expiredExceptionCount: number;
-  expiringExceptionCount: number;
-  reviewStatus: "ok" | "review" | "blocked";
-};
-
-export type PermissionReviewChecklistItem = {
-  id: string;
-  label: string;
-  ok: boolean;
-  owner: string;
-  detail: string;
-  evidence: string;
-};
-
-export type PermissionReviewReport = {
-  ok: boolean;
-  generatedAt: string;
-  period: {
-    month: string;
-    start: string;
-    endExclusive: string;
-    reviewDueAt: string;
-    expiringThresholdDays: number;
-  };
-  summary: {
-    totalUsers: number;
-    activeUsers: number;
-    privilegedUsers: number;
-    inactivePrivilegedUsers: number;
-    exceptions: number;
-    expiredExceptions: number;
-    expiringExceptions: number;
-    missingExpiryExceptions: number;
-    reviewLogs: number;
-    checklistPassed: number;
-    checklistTotal: number;
-  };
-  privilegedUsers: PermissionReviewPrivilegedUser[];
-  exceptions: PermissionReviewException[];
-  checklist: PermissionReviewChecklistItem[];
-};
-export type PrivacyInventoryItem = {
-  id: string;
-  label: string;
-  count: number;
-  storage: string;
-  protection: string;
-  retention: string;
-  accessControl: string;
-};
-
-export type PrivacyAccessEvent = {
-  id: string;
-  time: string;
-  actorName: string;
-  actorDepartment: string;
-  entityType: string;
-  entityId: string;
-  action: string;
-  reason: string;
-  requestId: string;
-  scope: "file_download" | "external_auditor" | "privacy_review";
-  rawValuePolicy: string;
-};
-
-export type PrivacyAccessChecklistItem = {
-  id: string;
-  label: string;
-  ok: boolean;
-  owner: string;
-  detail: string;
-  evidence: string;
-};
-
-export type PrivacyAccessReport = {
-  ok: boolean;
-  generatedAt: string;
-  period: {
-    month: string;
-    start: string;
-    endExclusive: string;
-  };
-  summary: {
-    inventoryItems: number;
-    activeUsers: number;
-    inactiveUsers: number;
-    vendors: number;
-    encryptedVendors: number;
-    attachments: number;
-    reportRuns: number;
-    downloadAccessEvents: number;
-    externalAuditorEvents: number;
-    missingDownloadReasons: number;
-    checklistPassed: number;
-    checklistTotal: number;
-  };
-  inventory: PrivacyInventoryItem[];
-  accessEvents: PrivacyAccessEvent[];
-  externalAuditorEvents: PrivacyAccessEvent[];
-  checklist: PrivacyAccessChecklistItem[];
-  rawValuePolicy: string;
-};
-export type AuditIntegritySeverity = "info" | "warning" | "critical";
-
-export type AuditIntegrityCheckpoint = {
-  id: string;
-  label: string;
-  ok: boolean;
-  severity: AuditIntegritySeverity;
-  owner: string;
-  detail: string;
-  evidence: string;
-};
-
-export type AuditIntegrityHashLink = {
-  id: string;
-  position: number;
-  time: string;
-  entityType: string;
-  entityId: string;
-  action: string;
-  actorId: string;
-  requestId: string;
-  payloadHash: string;
-  previousHash: string;
-  recordHash: string;
-};
-
-export type AuditArchiveStatus = {
-  configured: boolean;
-  mode: string;
-  target: string;
-  evidence: string;
-  action: string;
-};
-
-export type AuditIntegrityReport = {
-  ok: boolean;
-  generatedAt: string;
-  algorithm: string;
-  version: string;
-  payloadFields: string[];
-  period: {
-    month: string;
-    start: string;
-    endExclusive: string;
-  };
-  summary: {
-    totalAuditLogs: number;
-    auditLogsReviewed: number;
-    chainLength: number;
-    truncated: boolean;
-    checkpointsPassed: number;
-    checkpointsTotal: number;
-    headHash: string;
-    tailHash: string;
-    externalArchiveConfigured: boolean;
-  };
-  externalArchive: AuditArchiveStatus;
-  checkpoints: AuditIntegrityCheckpoint[];
-  sampledLinks: AuditIntegrityHashLink[];
-  rawValuePolicy: string;
-};
 export type PaymentMasterVendor = {
   id?: string;
   name: string;
@@ -1068,15 +233,6 @@ export type ReportDownload = {
   contentType: string;
   contentBase64: string;
   generatedAt: string;
-  limits?: {
-    rowCount: number;
-    contentBytes: number;
-  };
-  artifact?: {
-    storageKey: string;
-    storedAt: string;
-    source: string;
-  };
   report: TableRow;
 };
 
@@ -1132,12 +288,9 @@ export type BankResultReconcileSummary = {
 };
 
 export type ErpApiService = {
-  getCurrentUser(): Promise<MockApiResponse<AuthUser>>;
+  getCurrentUser(): Promise<MockApiResponse<AuthUser | null>>;
   login(input: LoginRequestDto): Promise<MockApiResponse<AuthUser>>;
   logout(): Promise<MockApiResponse<{ ok: true }>>;
-  getPasswordPolicy(): Promise<MockApiResponse<PasswordPolicySummary>>;
-  changePassword(input: PasswordChangeInput): Promise<MockApiResponse<PasswordChangeResult>>;
-  changeExpiredPassword(input: ExpiredPasswordChangeInput): Promise<MockApiResponse<PasswordChangeResult>>;
   listNotifications(): Promise<MockApiResponse<NotificationItem[]>>;
   markNotificationRead(notificationId: string): Promise<MockApiResponse<NotificationItem | null>>;
   markAllNotificationsRead(): Promise<MockApiResponse<NotificationItem[]>>;
@@ -1150,7 +303,6 @@ export type ErpApiService = {
   executePageAction(pageKey: PageKey, rowId: string, action: string, input?: PageActionRequest): Promise<MockApiResponse<TableRow | null>>;
   listBudgetAdjustments(departmentName: string): Promise<MockApiResponse<TableRow[]>>;
   createBudgetAdjustment(departmentName: string, input: BudgetAdjustmentInput): Promise<MockApiResponse<BudgetAdjustmentResult>>;
-  updateBudgetAdjustment(departmentName: string, adjustmentId: string, action: "cancel" | "reject", input?: BudgetAdjustmentActionInput): Promise<MockApiResponse<BudgetAdjustmentActionResult>>;
   downloadReport(reportName: string, format: ReportDownloadFormat): Promise<MockApiResponse<ReportDownload>>;
   listReportSchedules(): Promise<MockApiResponse<ReportScheduleDto[]>>;
   createReportSchedule(input: ReportScheduleInput): Promise<MockApiResponse<ReportScheduleDto>>;
@@ -1159,10 +311,10 @@ export type ErpApiService = {
   exportDisbursementBankTransfer(query?: ListQuery): Promise<MockApiResponse<BankTransferExport>>;
   reconcileDisbursementBankResults(input: { idempotencyKey: string; rows: BankResultReconcileRow[] }): Promise<MockApiResponse<BankResultReconcileSummary>>;
   presignFileUpload(input: FileUploadInput): Promise<MockApiResponse<FileUploadTicket>>;
-  uploadFileContent(uploadUrl: string, file: File, onProgress?: FileUploadProgressHandler): Promise<MockApiResponse<FileDto>>;
+  uploadFileContent(uploadUrl: string, file: File): Promise<MockApiResponse<FileDto>>;
   completeFileUpload(fileId: string, input?: FileCompleteInput): Promise<MockApiResponse<FileDto>>;
   listFiles(ownerType: FileOwnerType, ownerId: string): Promise<MockApiResponse<FileDto[]>>;
-  getFileDownload(fileId: string, input: FileDownloadInput): Promise<MockApiResponse<FileDownloadTicket>>;
+  getFileDownload(fileId: string): Promise<MockApiResponse<FileDownloadTicket>>;
   deleteFile(fileId: string, input?: FileDeleteInput): Promise<MockApiResponse<FileDto | null>>;
   listRoleSettings(): Promise<MockApiResponse<RoleSettingsDto[]>>;
   createRoleSettings(input: RoleSettingsInput): Promise<MockApiResponse<RoleSettingsDto>>;
@@ -1170,32 +322,8 @@ export type ErpApiService = {
   deleteRoleSettings(roleId: string, input?: RoleSettingsDeleteInput): Promise<MockApiResponse<RoleSettingsDto | null>>;
   getSystemSettings(): Promise<MockApiResponse<SystemSettingsSnapshot>>;
   listSystemSettingHistory(): Promise<MockApiResponse<SystemSettingHistoryRow[]>>;
-  listAuditLogs(query?: AuditLogSearchQuery): Promise<MockApiResponse<AuditLogSearchResult>>;
-  getOperationMode(): Promise<MockApiResponse<OperationModeStatus>>;
-  getOperationalAlerts(): Promise<MockApiResponse<OperationalAlertSummary>>;
-  getBusinessFailureAlerts(): Promise<MockApiResponse<BusinessFailureAlertSummary>>;
-  getReportJobStatus(): Promise<MockApiResponse<ReportJobRunResult>>;
-  runReportJobs(input?: ReportJobRunInput): Promise<MockApiResponse<ReportJobRunResult>>;
-  getPerformancePolicy(): Promise<MockApiResponse<PerformancePolicyStatus>>;
-  getCapacityPlanningReport(): Promise<MockApiResponse<CapacityPlanningReport>>;
-  listDataQualityRuns(limit?: number): Promise<MockApiResponse<DataQualityRunList>>;
-  runDataQualityJob(): Promise<MockApiResponse<DataQualityRunResult>>;
-  downloadDataQualityRun(runId: string): Promise<MockApiResponse<DataQualityReportArtifact>>;
   saveSystemSetting(key: SystemSettingKey, value: unknown, input?: SystemSettingSaveInput): Promise<MockApiResponse<unknown>>;
   testIntegrationSetting(integrationId: string, input?: IntegrationTestInput): Promise<MockApiResponse<IntegrationTestResult>>;
-  getRetentionPolicySummary(): Promise<MockApiResponse<RetentionPolicySummary>>;
-  getAccountLifecycleSummary(): Promise<MockApiResponse<AccountLifecycleSummary>>;
-  deactivateAccountLifecycle(input: AccountLifecycleDeactivateInput): Promise<MockApiResponse<AccountLifecycleDeactivateResult>>;
-  getFinancialReconciliationSummary(): Promise<MockApiResponse<FinancialReconciliationSummary>>;
-  notifyFinancialReconciliation(): Promise<MockApiResponse<FinancialReconciliationNotifyResult>>;
-  listManualRecoveries(): Promise<MockApiResponse<ManualRecoverySummary>>;
-  requestManualRecovery(input: ManualRecoveryRequestInput): Promise<MockApiResponse<ManualRecoveryResult>>;
-  approveManualRecovery(recoveryId: string, input: ManualRecoveryReviewInput): Promise<MockApiResponse<ManualRecoveryResult>>;
-  rejectManualRecovery(recoveryId: string, input: ManualRecoveryReviewInput): Promise<MockApiResponse<ManualRecoveryResult>>;
-  getFinancialControlReport(): Promise<MockApiResponse<FinancialControlReport>>;
-  getPermissionReviewReport(): Promise<MockApiResponse<PermissionReviewReport>>;
-  getPrivacyAccessReport(): Promise<MockApiResponse<PrivacyAccessReport>>;
-  getAuditIntegrityReport(): Promise<MockApiResponse<AuditIntegrityReport>>;
 };
 
 const resourcePathByPage: Record<PageKey, string> = {
@@ -1275,13 +403,12 @@ function normalizeApiUrl(pathOrUrl: string) {
   return `${getApiBaseUrl()}${pathOrUrl.startsWith("/") ? "" : "/"}${pathOrUrl}`;
 }
 
-function toQueryString(query: Record<string, unknown> & { filters?: Partial<Record<string, string>> } = {}) {
+function toQueryString(query: ListQuery = {}) {
   const params = new URLSearchParams();
-  Object.entries(query).forEach(([key, value]) => {
-    if (key === "filters") return;
-    if (value === undefined || value === null || value === "") return;
-    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") params.set(key, String(value));
-  });
+  if (query.search) params.set("search", query.search);
+  if (query.page) params.set("page", String(query.page));
+  if (query.pageSize) params.set("pageSize", String(query.pageSize));
+  if (query.sort) params.set("sort", query.sort);
   Object.entries(query.filters ?? {}).forEach(([key, value]) => {
     if (value) params.set(`filter.${key}`, value);
   });
@@ -1300,7 +427,8 @@ function getCookieValue(name: string) {
 
 function addDefaultRemoteHeaders(init?: RequestInit) {
   const headers = new Headers(init?.headers);
-  if (init?.body != null && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+  // body 없는 요청에 JSON content-type을 붙이면 서버 JSON 파서가 빈 본문을 거부한다.
+  if (!headers.has("Content-Type") && init?.body != null) headers.set("Content-Type", "application/json");
   const method = init?.method?.toUpperCase() ?? "GET";
   if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
     const token = getCookieValue("erp_csrf");
@@ -1309,121 +437,18 @@ function addDefaultRemoteHeaders(init?: RequestInit) {
   return headers;
 }
 
-const remoteRequestTimeoutMs = 15_000;
-const remoteRetryDelayMs = 350;
-const retryableRemoteStatuses = new Set([408, 429, 502, 503, 504]);
-
-function remoteRequestMethod(init?: RequestInit) {
-  return init?.method?.toUpperCase() ?? "GET";
-}
-
-function canRetryRemoteRequest(init?: RequestInit) {
-  return ["GET", "HEAD", "OPTIONS"].includes(remoteRequestMethod(init));
-}
-
-function wait(ms: number) {
-  return new Promise((resolve) => {
-    globalThis.setTimeout(resolve, ms);
-  });
-}
-
-function apiErrorCodeForStatus(status: number) {
-  if (status === 401) return "UNAUTHORIZED";
-  if (status === 403) return "FORBIDDEN";
-  if (status === 404) return "NOT_FOUND";
-  if (status === 409) return "CONFLICT";
-  if (status === 429) return "RATE_LIMITED";
-  return "SERVER_ERROR";
-}
-
-function apiErrorMessageForStatus(status: number) {
-  if (status === 429) return "요청이 너무 많습니다. 잠시 후 다시 시도하세요.";
-  if (status >= 500) return "서버 오류가 발생했습니다. 잠시 후 다시 시도하세요.";
-  return "서버 응답을 처리하지 못했습니다.";
-}
-
-async function fetchRemoteWithTimeout(url: string, init: RequestInit) {
-  const controller = new AbortController();
-  let timeoutHit = false;
-  const timeoutId = globalThis.setTimeout(() => {
-    timeoutHit = true;
-    controller.abort();
-  }, remoteRequestTimeoutMs);
-  const externalSignal = init.signal;
-  const abortFromExternalSignal = () => controller.abort();
-  if (externalSignal?.aborted) controller.abort();
-  externalSignal?.addEventListener("abort", abortFromExternalSignal, { once: true });
-
-  try {
-    return await fetch(url, { ...init, signal: controller.signal });
-  } catch (error) {
-    const errorName = error && typeof error === "object" && "name" in error ? String((error as { name?: unknown }).name) : "";
-    if (errorName === "AbortError") {
-      throw new ApiRequestError(
-        timeoutHit ? "NETWORK_TIMEOUT" : "REQUEST_ABORTED",
-        timeoutHit ? "요청 시간이 초과되었습니다. 네트워크 상태를 확인한 뒤 다시 시도하세요." : "요청이 중단되었습니다.",
-      );
-    }
-    throw new ApiRequestError("NETWORK_ERROR", "네트워크 연결 오류가 발생했습니다. 연결 상태를 확인한 뒤 다시 시도하세요.");
-  } finally {
-    globalThis.clearTimeout(timeoutId);
-    externalSignal?.removeEventListener("abort", abortFromExternalSignal);
-  }
-}
-
-async function readRemoteApiPayload<T>(response: Response): Promise<Extract<ApiResponse<T>, { status: "success" }>> {
-  const text = await response.text();
-  if (!text.trim()) {
-    throw new ApiRequestError(apiErrorCodeForStatus(response.status), apiErrorMessageForStatus(response.status));
-  }
-
-  let payload: ApiResponse<T>;
-  try {
-    payload = JSON.parse(text) as ApiResponse<T>;
-  } catch {
-    throw new ApiRequestError(apiErrorCodeForStatus(response.status), apiErrorMessageForStatus(response.status));
-  }
-
-  if (payload.status === "error") {
-    const error = errorFromApiResponse(payload);
-    if (error) throw error;
-    throw new ApiRequestError(apiErrorCodeForStatus(response.status), payload.error.message);
-  }
-  return payload;
-}
-
 async function requestRemoteEnvelope<T>(path: string, init?: RequestInit): Promise<Extract<ApiResponse<T>, { status: "success" }>> {
-  const url = `${getApiBaseUrl()}${path}`;
-  const requestInit: RequestInit = {
+  const response = await fetch(`${getApiBaseUrl()}${path}`, {
     ...(init ?? {}),
     credentials: "include",
     headers: addDefaultRemoteHeaders(init),
-  };
-  const maxAttempts = canRetryRemoteRequest(init) ? 2 : 1;
-  let lastError: unknown = null;
+  });
 
-  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-    try {
-      const response = await fetchRemoteWithTimeout(url, requestInit);
-      if (attempt + 1 < maxAttempts && retryableRemoteStatuses.has(response.status)) {
-        await response.text().catch(() => "");
-        await wait(remoteRetryDelayMs * (attempt + 1));
-        continue;
-      }
-      return await readRemoteApiPayload<T>(response);
-    } catch (error) {
-      lastError = error;
-      const retryableError = error instanceof ApiRequestError && ["NETWORK_ERROR", "NETWORK_TIMEOUT"].includes(error.code);
-      if (attempt + 1 < maxAttempts && retryableError) {
-        await wait(remoteRetryDelayMs * (attempt + 1));
-        continue;
-      }
-      throw error;
-    }
+  const payload = (await response.json()) as ApiResponse<T>;
+  if (payload.status === "error") {
+    throw errorFromApiResponse(payload);
   }
-
-  if (lastError instanceof Error) throw lastError;
-  throw new ApiRequestError("NETWORK_ERROR", "요청을 처리하지 못했습니다.");
+  return payload;
 }
 
 async function requestRemote<T>(path: string, init?: RequestInit): Promise<T> {
@@ -1431,67 +456,21 @@ async function requestRemote<T>(path: string, init?: RequestInit): Promise<T> {
   return payload.data;
 }
 
-function uploadProgressFromEvent(event: ProgressEvent, fallbackTotal: number): FileUploadProgress {
-  const total = event.lengthComputable && event.total > 0 ? event.total : fallbackTotal;
-  const loaded = Math.min(event.loaded, total);
-  return {
-    loaded,
-    total,
-    percent: total > 0 ? Math.max(0, Math.min(100, Math.round((loaded / total) * 100))) : 0,
-  };
-}
+async function requestRemoteUrl<T>(url: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(normalizeApiUrl(url), {
+    credentials: "include",
+    ...(init ?? {}),
+  });
 
-function parseRemotePayload<T>(responseText: string, status = 200): T {
-  if (!responseText.trim()) {
-    throw new ApiRequestError(apiErrorCodeForStatus(status), apiErrorMessageForStatus(status));
-  }
-  let payload: ApiResponse<T>;
-  try {
-    payload = JSON.parse(responseText) as ApiResponse<T>;
-  } catch {
-    throw new ApiRequestError(apiErrorCodeForStatus(status), apiErrorMessageForStatus(status));
-  }
+  const payload = (await response.json()) as ApiResponse<T>;
   if (payload.status === "error") {
-    const error = errorFromApiResponse(payload);
-    if (error) throw error;
-    throw new ApiRequestError(apiErrorCodeForStatus(status), payload.error.message);
+    throw errorFromApiResponse(payload);
   }
   return payload.data;
 }
 
-async function uploadRemoteFileContent<T>(url: string, file: File, onProgress?: FileUploadProgressHandler): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open("PUT", normalizeApiUrl(url));
-    xhr.withCredentials = true;
-    xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
-    xhr.upload.onprogress = (event) => onProgress?.(uploadProgressFromEvent(event, file.size));
-    xhr.onerror = () => reject(new ApiRequestError("NETWORK_ERROR", "파일 업로드 중 네트워크 오류가 발생했습니다."));
-    xhr.onabort = () => reject(new ApiRequestError("UPLOAD_ABORTED", "파일 업로드가 중단되었습니다."));
-    xhr.onload = () => {
-      try {
-        const data = parseRemotePayload<T>(xhr.responseText, xhr.status);
-        onProgress?.({ loaded: file.size, total: file.size, percent: 100 });
-        resolve(data);
-      } catch (error) {
-        reject(error);
-      }
-    };
-    onProgress?.({ loaded: 0, total: file.size, percent: 0 });
-    xhr.send(file);
-  });
-}
-
 function remoteResponse<T>(data: T, meta?: MockApiResponse<T>["meta"]): MockApiResponse<T> {
   return { ok: true, data, meta };
-}
-
-function primitiveApiMeta(meta: unknown) {
-  if (!meta || typeof meta !== "object" || Array.isArray(meta)) return {};
-  return Object.entries(meta).reduce<Record<string, string | number | boolean>>((acc, [key, value]) => {
-    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") acc[key] = value;
-    return acc;
-  }, {});
 }
 
 const remoteService: ErpApiService = {
@@ -1511,24 +490,6 @@ const remoteService: ErpApiService = {
       method: "POST",
     });
     return remoteResponse(data);
-  },
-  async getPasswordPolicy() {
-    const data = await requestRemote<PasswordPolicySummary>("/auth/password-policy");
-    return remoteResponse(data);
-  },
-  async changePassword(input) {
-    const data = await requestRemote<PasswordChangeResult>("/auth/password/change", {
-      method: "POST",
-      body: JSON.stringify(input),
-    });
-    return remoteResponse(data, { sessionsRevoked: data.sessionsRevoked });
-  },
-  async changeExpiredPassword(input) {
-    const data = await requestRemote<PasswordChangeResult>("/auth/password/change-expired", {
-      method: "POST",
-      body: JSON.stringify(input),
-    });
-    return remoteResponse(data, { sessionsRevoked: data.sessionsRevoked });
   },
   async listNotifications() {
     const data = await requestRemote<NotificationDto[]>("/notifications");
@@ -1566,11 +527,11 @@ const remoteService: ErpApiService = {
     return remoteResponse(data, { pageKey, created: true });
   },
   async updatePageRow(pageKey, rowId, patch) {
-    const payload = await requestRemoteEnvelope<TableRow | null>(`${resourcePathByPage[pageKey]}/${encodeURIComponent(rowId)}`, {
+    const data = await requestRemote<TableRow | null>(`${resourcePathByPage[pageKey]}/${encodeURIComponent(rowId)}`, {
       method: "PATCH",
       body: JSON.stringify(patch),
     });
-    return remoteResponse(payload.data, { ...primitiveApiMeta(payload.meta), pageKey, rowId, found: Boolean(payload.data) });
+    return remoteResponse(data, { pageKey, rowId, found: Boolean(data) });
   },
   async deletePageRow(pageKey, rowId, input = {}) {
     const data = await requestRemote<TableRow | null>(`${resourcePathByPage[pageKey]}/${encodeURIComponent(rowId)}`, {
@@ -1596,13 +557,6 @@ const remoteService: ErpApiService = {
       body: JSON.stringify(input),
     });
     return remoteResponse(data, { departmentName, requiresApproval: data.requiresApproval });
-  },
-  async updateBudgetAdjustment(departmentName, adjustmentId, action, input = {}) {
-    const data = await requestRemote<BudgetAdjustmentActionResult>(`/budgets/${encodeURIComponent(departmentName)}/adjustments/${encodeURIComponent(adjustmentId)}/${encodeURIComponent(action)}`, {
-      method: "POST",
-      body: JSON.stringify(input),
-    });
-    return remoteResponse(data, { departmentName, adjustmentId, action });
   },
   async downloadReport(reportName, format) {
     const params = new URLSearchParams({ format });
@@ -1652,8 +606,14 @@ const remoteService: ErpApiService = {
     });
     return remoteResponse(data, { fileId: data.file.id });
   },
-  async uploadFileContent(uploadUrl, file, onProgress) {
-    const data = await uploadRemoteFileContent<FileDto>(uploadUrl, file, onProgress);
+  async uploadFileContent(uploadUrl, file) {
+    const data = await requestRemoteUrl<FileDto>(uploadUrl, {
+      method: "PUT",
+      headers: {
+        "Content-Type": file.type || "application/octet-stream",
+      },
+      body: file,
+    });
     return remoteResponse(data, { fileId: data.id });
   },
   async completeFileUpload(fileId, input = {}) {
@@ -1668,11 +628,9 @@ const remoteService: ErpApiService = {
     const data = await requestRemote<FileDto[]>(`/files?${params.toString()}`);
     return remoteResponse(data, { ownerType, ownerId, total: data.length });
   },
-  async getFileDownload(fileId, input) {
-    const params = new URLSearchParams({ reason: input.reason });
-    if (input.disposition) params.set("disposition", input.disposition);
-    const data = await requestRemote<FileDownloadTicket>(`/files/${encodeURIComponent(fileId)}/download?${params.toString()}`);
-    return remoteResponse({ ...data, download: { ...data.download, url: normalizeApiUrl(data.download.url) } }, { fileId, downloadReasonLogged: true });
+  async getFileDownload(fileId) {
+    const data = await requestRemote<FileDownloadTicket>(`/files/${encodeURIComponent(fileId)}/download`);
+    return remoteResponse({ ...data, download: { ...data.download, url: normalizeApiUrl(data.download.url) } }, { fileId });
   },
   async deleteFile(fileId, input = {}) {
     const data = await requestRemote<FileDto | null>(`/files/${encodeURIComponent(fileId)}`, {
@@ -1693,11 +651,11 @@ const remoteService: ErpApiService = {
     return remoteResponse(data, { created: true });
   },
   async updateRoleSettings(roleId, patch) {
-    const payload = await requestRemoteEnvelope<RoleSettingsDto | null>(`/settings/roles/${encodeURIComponent(roleId)}`, {
+    const data = await requestRemote<RoleSettingsDto | null>(`/settings/roles/${encodeURIComponent(roleId)}`, {
       method: "PATCH",
       body: JSON.stringify(patch),
     });
-    return remoteResponse(payload.data, { ...primitiveApiMeta(payload.meta), roleId, found: Boolean(payload.data) });
+    return remoteResponse(data, { roleId, found: Boolean(data) });
   },
   async deleteRoleSettings(roleId, input) {
     const data = await requestRemote<RoleSettingsDto | null>(`/settings/roles/${encodeURIComponent(roleId)}`, {
@@ -1713,61 +671,6 @@ const remoteService: ErpApiService = {
   async listSystemSettingHistory() {
     const data = await requestRemote<SystemSettingHistoryRow[]>("/settings/history");
     return remoteResponse(data, { total: data.length });
-  },
-  async listAuditLogs(query = {}) {
-    const data = await requestRemote<AuditLogSearchResult>(`/operations/audit-logs${toQueryString(query)}`);
-    return remoteResponse(data, { total: data.total, page: data.page, pageSize: data.pageSize });
-  },
-  async getOperationMode() {
-    const data = await requestRemote<OperationModeStatus>("/operations/mode");
-    return remoteResponse(data, { mode: data.mode, active: data.active });
-  },
-  async getOperationalAlerts() {
-    const data = await requestRemote<OperationalAlertSummary>("/operations/alerts");
-    return remoteResponse(data, { ok: data.ok, triggered: data.triggered.length });
-  },
-  async getBusinessFailureAlerts() {
-    const data = await requestRemote<BusinessFailureAlertSummary>("/operations/business-failure-alerts");
-    return remoteResponse(data, { ok: data.ok, triggered: data.triggered.length });
-  },
-  async getReportJobStatus() {
-    const data = await requestRemote<ReportJobRunResult>("/operations/report-jobs");
-    return remoteResponse(data, { ok: data.ok, due: data.summary.due, circuitOpen: data.circuitBreaker.open });
-  },
-  async runReportJobs(input = {}) {
-    const data = await requestRemote<ReportJobRunResult>("/operations/report-jobs/run", {
-      method: "POST",
-      body: JSON.stringify(input),
-    });
-    return remoteResponse(data, { ok: data.ok, processed: data.summary.processed, delivered: data.summary.delivered });
-  },
-  async getPerformancePolicy() {
-    const data = await requestRemote<PerformancePolicyStatus>("/operations/performance-policy");
-    return remoteResponse(data, { ok: data.ok, p95TargetMs: data.latency.p95TargetMs, maxReportRows: data.largeDownload.maxReportRows });
-  },
-  async getCapacityPlanningReport() {
-    const data = await requestRemote<CapacityPlanningReport>("/operations/capacity-planning");
-    return remoteResponse(data, {
-      ok: data.ok,
-      actionRequired: data.actionRequired,
-      firstWarningMonth: data.summary.firstWarningMonth ?? "",
-    });
-  },
-  async listDataQualityRuns(limit = 30) {
-    const params = new URLSearchParams({ limit: String(limit) });
-    const data = await requestRemote<DataQualityRunList>("/operations/data-quality/runs?" + params.toString());
-    return remoteResponse(data, { total: data.runs.length, enabled: data.policy.enabled });
-  },
-  async runDataQualityJob() {
-    const data = await requestRemote<DataQualityRunResult>("/operations/data-quality/run", {
-      method: "POST",
-      body: JSON.stringify({}),
-    });
-    return remoteResponse(data, { runId: data.run.id, criticalCount: data.run.criticalCount, warningCount: data.run.warningCount });
-  },
-  async downloadDataQualityRun(runId) {
-    const data = await requestRemote<DataQualityReportArtifact>("/operations/data-quality/runs/" + encodeURIComponent(runId) + "/download");
-    return remoteResponse(data, { runId, generatedAt: data.generatedAt });
   },
   async saveSystemSetting(key, value, input = {}) {
     const payload = await requestRemoteEnvelope<unknown>(`/settings/config/${encodeURIComponent(key)}`, {
@@ -1787,73 +690,6 @@ const remoteService: ErpApiService = {
       body: JSON.stringify(input),
     });
     return remoteResponse(data, { integrationId, success: data.success });
-  },
-  async getRetentionPolicySummary() {
-    const data = await requestRemote<RetentionPolicySummary>("/operations/retention-policy");
-    return remoteResponse(data, { actionRequired: data.actionRequired, triggeredChecks: data.summary.triggeredChecks });
-  },
-  async getAccountLifecycleSummary() {
-    const data = await requestRemote<AccountLifecycleSummary>("/operations/account-lifecycle");
-    return remoteResponse(data, { actionRequired: data.actionRequired, totalCandidates: data.summary.totalCandidates });
-  },
-  async deactivateAccountLifecycle(input) {
-    const data = await requestRemote<AccountLifecycleDeactivateResult>("/operations/account-lifecycle/deactivate", {
-      method: "POST",
-      body: JSON.stringify(input),
-    });
-    return remoteResponse(data, { deactivatedCount: data.deactivatedCount, sessionsRevoked: data.sessionsRevoked });
-  },
-  async getFinancialReconciliationSummary() {
-    const data = await requestRemote<FinancialReconciliationSummary>("/operations/financial-reconciliation");
-    return remoteResponse(data, { actionRequired: data.actionRequired, mismatchCount: data.summary.mismatchCount });
-  },
-  async notifyFinancialReconciliation() {
-    const data = await requestRemote<FinancialReconciliationNotifyResult>("/operations/financial-reconciliation/notify", {
-      method: "POST",
-      body: JSON.stringify({}),
-    });
-    return remoteResponse(data, { recipientCount: data.recipientCount, notificationsCreated: data.notificationsCreated });
-  },
-  async listManualRecoveries() {
-    const data = await requestRemote<ManualRecoverySummary>("/operations/manual-recoveries");
-    return remoteResponse(data, { pending: data.summary.pending });
-  },
-  async requestManualRecovery(input) {
-    const data = await requestRemote<ManualRecoveryResult>("/operations/manual-recoveries", {
-      method: "POST",
-      body: JSON.stringify(input),
-    });
-    return remoteResponse(data, { recoveryId: data.recoveryId, idempotencyReplay: data.idempotencyReplay });
-  },
-  async approveManualRecovery(recoveryId, input) {
-    const data = await requestRemote<ManualRecoveryResult>(`/operations/manual-recoveries/${encodeURIComponent(recoveryId)}/approve`, {
-      method: "POST",
-      body: JSON.stringify(input),
-    });
-    return remoteResponse(data, { recoveryId: data.recoveryId, idempotencyReplay: data.idempotencyReplay });
-  },
-  async rejectManualRecovery(recoveryId, input) {
-    const data = await requestRemote<ManualRecoveryResult>(`/operations/manual-recoveries/${encodeURIComponent(recoveryId)}/reject`, {
-      method: "POST",
-      body: JSON.stringify(input),
-    });
-    return remoteResponse(data, { recoveryId: data.recoveryId, idempotencyReplay: data.idempotencyReplay });
-  },
-  async getFinancialControlReport() {
-    const data = await requestRemote<FinancialControlReport>("/operations/financial-control-report");
-    return remoteResponse(data, { ok: data.ok, exceptions: data.summary.exceptions });
-  },
-  async getPermissionReviewReport() {
-    const data = await requestRemote<PermissionReviewReport>("/operations/permission-review");
-    return remoteResponse(data, { ok: data.ok, exceptions: data.summary.exceptions, privilegedUsers: data.summary.privilegedUsers });
-  },
-  async getPrivacyAccessReport() {
-    const data = await requestRemote<PrivacyAccessReport>("/operations/privacy-access-report");
-    return remoteResponse(data, { ok: data.ok, downloadAccessEvents: data.summary.downloadAccessEvents, externalAuditorEvents: data.summary.externalAuditorEvents });
-  },
-  async getAuditIntegrityReport() {
-    const data = await requestRemote<AuditIntegrityReport>("/operations/audit-integrity-report");
-    return remoteResponse(data, { ok: data.ok, chainLength: data.summary.chainLength, tailHash: data.summary.tailHash });
   },
 };
 
@@ -1881,9 +717,6 @@ export const erpApi: ErpApiService = {
   getCurrentUser: () => callService("getCurrentUser"),
   login: (input) => callService("login", input),
   logout: () => callService("logout"),
-  getPasswordPolicy: () => callService("getPasswordPolicy"),
-  changePassword: (input) => callService("changePassword", input),
-  changeExpiredPassword: (input) => callService("changeExpiredPassword", input),
   listNotifications: () => callService("listNotifications"),
   markNotificationRead: (notificationId) => callService("markNotificationRead", notificationId),
   markAllNotificationsRead: () => callService("markAllNotificationsRead"),
@@ -1896,7 +729,6 @@ export const erpApi: ErpApiService = {
   executePageAction: (pageKey, rowId, action, input) => callService("executePageAction", pageKey, rowId, action, input),
   listBudgetAdjustments: (departmentName) => callService("listBudgetAdjustments", departmentName),
   createBudgetAdjustment: (departmentName, input) => callService("createBudgetAdjustment", departmentName, input),
-  updateBudgetAdjustment: (departmentName, adjustmentId, action, input) => callService("updateBudgetAdjustment", departmentName, adjustmentId, action, input),
   downloadReport: (reportName, format) => callService("downloadReport", reportName, format),
   listReportSchedules: () => callService("listReportSchedules"),
   createReportSchedule: (input) => callService("createReportSchedule", input),
@@ -1905,10 +737,10 @@ export const erpApi: ErpApiService = {
   exportDisbursementBankTransfer: (query) => callService("exportDisbursementBankTransfer", query),
   reconcileDisbursementBankResults: (input) => callService("reconcileDisbursementBankResults", input),
   presignFileUpload: (input) => callService("presignFileUpload", input),
-  uploadFileContent: (uploadUrl, file, onProgress) => callService("uploadFileContent", uploadUrl, file, onProgress),
+  uploadFileContent: (uploadUrl, file) => callService("uploadFileContent", uploadUrl, file),
   completeFileUpload: (fileId, input) => callService("completeFileUpload", fileId, input),
   listFiles: (ownerType, ownerId) => callService("listFiles", ownerType, ownerId),
-  getFileDownload: (fileId, input) => callService("getFileDownload", fileId, input),
+  getFileDownload: (fileId) => callService("getFileDownload", fileId),
   deleteFile: (fileId, input) => callService("deleteFile", fileId, input),
   listRoleSettings: () => callService("listRoleSettings"),
   createRoleSettings: (input) => callService("createRoleSettings", input),
@@ -1916,30 +748,6 @@ export const erpApi: ErpApiService = {
   deleteRoleSettings: (roleId, input) => callService("deleteRoleSettings", roleId, input),
   getSystemSettings: () => callService("getSystemSettings"),
   listSystemSettingHistory: () => callService("listSystemSettingHistory"),
-  listAuditLogs: (query) => callService("listAuditLogs", query),
-  getOperationMode: () => callService("getOperationMode"),
-  getOperationalAlerts: () => callService("getOperationalAlerts"),
-  getBusinessFailureAlerts: () => callService("getBusinessFailureAlerts"),
-  getReportJobStatus: () => callService("getReportJobStatus"),
-  runReportJobs: (input) => callService("runReportJobs", input),
-  getPerformancePolicy: () => callService("getPerformancePolicy"),
-  getCapacityPlanningReport: () => callService("getCapacityPlanningReport"),
-  listDataQualityRuns: (limit) => callService("listDataQualityRuns", limit),
-  runDataQualityJob: () => callService("runDataQualityJob"),
-  downloadDataQualityRun: (runId) => callService("downloadDataQualityRun", runId),
   saveSystemSetting: (key, value, input) => callService("saveSystemSetting", key, value, input),
   testIntegrationSetting: (integrationId, input) => callService("testIntegrationSetting", integrationId, input),
-  getRetentionPolicySummary: () => callService("getRetentionPolicySummary"),
-  getAccountLifecycleSummary: () => callService("getAccountLifecycleSummary"),
-  deactivateAccountLifecycle: (input) => callService("deactivateAccountLifecycle", input),
-  getFinancialReconciliationSummary: () => callService("getFinancialReconciliationSummary"),
-  notifyFinancialReconciliation: () => callService("notifyFinancialReconciliation"),
-  listManualRecoveries: () => callService("listManualRecoveries"),
-  requestManualRecovery: (input) => callService("requestManualRecovery", input),
-  approveManualRecovery: (recoveryId, input) => callService("approveManualRecovery", recoveryId, input),
-  rejectManualRecovery: (recoveryId, input) => callService("rejectManualRecovery", recoveryId, input),
-  getFinancialControlReport: () => callService("getFinancialControlReport"),
-  getPermissionReviewReport: () => callService("getPermissionReviewReport"),
-  getPrivacyAccessReport: () => callService("getPrivacyAccessReport"),
-  getAuditIntegrityReport: () => callService("getAuditIntegrityReport"),
 };

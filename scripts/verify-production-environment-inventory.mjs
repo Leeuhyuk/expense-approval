@@ -40,10 +40,6 @@ const requiredTerms = [
   "secret manager",
   "monitoring",
   "structured logs",
-  "APM",
-  "trace redaction",
-  "Sensitive data masking",
-  "SLOW_QUERY_MS",
   "alerting",
   "backup",
   "PITR",
@@ -57,10 +53,6 @@ const requiredTerms = [
   "branch protection",
   "CDN",
   "WAF",
-  "break-glass",
-  "General administrator",
-  "time-boxed",
-  "revoke",
 ];
 
 const unresolvedPatterns = [
@@ -138,16 +130,6 @@ function isSecretReference(value) {
   return /(secret|vault|kms|key[-_ ]?vault|secretsmanager|parameter[-_ ]?store)/i.test(trimmed);
 }
 
-function isResolvedValueForInventory(value) {
-  const trimmed = value.trim();
-  return trimmed.length > 0 && !unresolvedPatterns.some((pattern) => pattern.test(trimmed));
-}
-function isEvidenceReference(value) {
-  const trimmed = value.trim();
-  if (!trimmed) return false;
-  if (unresolvedPatterns.some((pattern) => pattern.test(trimmed))) return false;
-  return /(https:\/\/|[A-Z]+-[A-Z0-9-]+|docs\/|artifact:|run:|ticket:|change:|incident:|secret:|vault:|kms:|ssm:)/i.test(trimmed);
-}
 function isValidBucketName(value) {
   return /^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(value.trim()) && !localHostPattern.test(value);
 }
@@ -188,18 +170,6 @@ function validateStructuredInventoryFields(source, strict) {
   const rateLimitMax = table.get("RATE_LIMIT_MAX") ?? "";
   const fileScanMode = table.get("FILE_SCAN_MODE") ?? "";
   const malwareEndpoint = table.get("MALWARE_SCAN_ENDPOINT") ?? "";
-  const apmTraceTool = table.get("APM/trace tool") ?? "";
-  const traceRedactionEvidence = table.get("Trace redaction rule evidence") ?? "";
-  const apmTraceMaskingVerification = table.get("APM trace masking verification") ?? "";
-  const sensitiveDataMaskingVerification = table.get("Sensitive data masking verification") ?? "";
-  const rateLimitLayer = table.get("Rate limit layer") ?? "";
-  const requestTimeoutPolicy = table.get("API request timeout policy") ?? "";
-  const slowQueryMs = table.get("SLOW_QUERY_MS") ?? "";
-  const generalAdminPolicy = table.get("General administrator account policy") ?? "";
-  const breakGlassAccount = table.get("Break-glass account reference") ?? "";
-  const breakGlassApproval = table.get("Break-glass approval workflow") ?? "";
-  const breakGlassAudit = table.get("Break-glass audit evidence") ?? "";
-  const breakGlassRevoke = table.get("Break-glass revoke evidence") ?? "";
   const frontendHost = parseProductionHost(frontendDomain);
   const apiHost = parseProductionHost(apiDomain);
   const parsedApiBaseUrl = parseHttpsUrl(apiBaseUrl);
@@ -295,16 +265,6 @@ function validateStructuredInventoryFields(source, strict) {
       detail: "FILE_URL_SECRET, CSRF_SECRET, BANK_ACCOUNT_SECRET, S3, and malware scan token references",
     },
     {
-      label: "production environment inventory records APM trace redaction evidence",
-      ok: isResolvedValueForInventory(apmTraceTool) && isEvidenceReference(traceRedactionEvidence) && isEvidenceReference(apmTraceMaskingVerification) && isEvidenceReference(sensitiveDataMaskingVerification),
-      detail: `${apmTraceTool || "missing APM/trace tool"} / ${traceRedactionEvidence || "missing trace redaction"} / ${apmTraceMaskingVerification || "missing APM masking"} / ${sensitiveDataMaskingVerification || "missing sensitive masking"}`,
-    },
-    {
-      label: "production environment inventory uses distributed rate limit, timeout, and slow query controls",
-      ok: /(WAF|gateway|load balancer|edge|distributed)/i.test(rateLimitLayer) && /(timeout|15s|ms|second|gateway|server)/i.test(requestTimeoutPolicy) && isPositiveInteger(slowQueryMs),
-      detail: `${rateLimitLayer || "missing rate limit layer"} / ${requestTimeoutPolicy || "missing timeout policy"} / ${slowQueryMs || "missing SLOW_QUERY_MS"}`,
-    },
-    {
       label: "production environment inventory has production runtime scaling",
       ok: isScalingReady(backendInstanceCount),
       detail: backendInstanceCount || "missing Backend instance count",
@@ -318,16 +278,6 @@ function validateStructuredInventoryFields(source, strict) {
       label: "production environment inventory keeps rate limits enabled",
       ok: isPositiveInteger(rateLimitWindow) && isPositiveInteger(rateLimitMax),
       detail: `${rateLimitWindow || "missing"} / ${rateLimitMax || "missing"}`,
-    },
-    {
-      label: "production environment inventory separates general admin and break-glass accounts",
-      ok: isEvidenceReference(generalAdminPolicy) && isEvidenceReference(breakGlassAccount) && !valueEquals(generalAdminPolicy, breakGlassAccount) && !/(same|shared|공유|동일)/i.test(breakGlassAccount),
-      detail: `${generalAdminPolicy || "missing general admin policy"} / ${breakGlassAccount || "missing break-glass account reference"}`,
-    },
-    {
-      label: "production environment inventory records break-glass approval, audit, and revoke evidence",
-      ok: [breakGlassApproval, breakGlassAudit, breakGlassRevoke].every(isEvidenceReference) && /(revoke|회수|폐기|disabled|revoked)/i.test(breakGlassRevoke),
-      detail: `${breakGlassApproval || "missing approval"} / ${breakGlassAudit || "missing audit"} / ${breakGlassRevoke || "missing revoke"}`,
     },
     {
       label: "production environment inventory uses external malware scanning",

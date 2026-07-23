@@ -40,14 +40,4 @@ describe("frontend favorites remote persistence", () => {
     assert.match(source, /readFavoriteRouteState\("vendors"\)/, "vendor filters must restore from favorite state");
     assert.doesNotMatch(source, /selectedFavorite\.iconKey === "report"[\s\S]*selectedFavorite\.iconKey === "approval"/, "favorite open must not infer the route only from the icon");
   });
-  it("falls back when inactive, unauthorized, or deleted favorite filters are opened", () => {
-    const source = mainSource();
-    assert.match(source, /favoriteFilterFieldsByPage: Record<PageKey, Set<string>>/, "favorite filters must be validated against the current target screen fields");
-    assert.match(source, /isFavoriteFilterFieldSupported\(pageKey, normalizedField\)/, "deleted or unsupported filter fields must be dropped before route state is persisted");
-    assert.match(source, /favoriteUnsupportedFilterFields\(selectedFavorite\)/, "favorite open must identify deleted filter references for user feedback");
-    assert.match(source, /if \(!canAccessPage\(currentUser, route\)\) \{[\s\S]*goToPage\(fallbackPage\)/, "favorites must route to a safe fallback when target page permission is revoked");
-    assert.match(source, /비활성 메뉴는 열기와 신규 바로가기 추가를 차단하고 조회와 삭제만 허용합니다/, "inactive favorites must block opening and creation from the selected item");
-    assert.match(source, /<button disabled=\{favorite\.status === "비활성"\} onClick=\{onAddShortcut\}/, "inactive favorite detail actions must disable shortcut creation");
-    assert.match(source, /삭제되었거나 현재 화면에서 지원하지 않는 필터/, "favorite open feedback must name deleted filter fallback behavior");
-  });
 });

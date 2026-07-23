@@ -86,7 +86,7 @@ describe("backend data persistence integration", () => {
     const roleCode = "INTEGRATION_TEST_ADMIN";
     let createdVendorId = "";
 
-    const app = await buildApp({ logger: false });
+    const app = await buildApp({ logger: process.env.ERP_TEST_DEBUG === "1" ? true : false });
     try {
       let department = await prisma.department.findFirst({ where: { name: departmentName } });
       department ??= await prisma.department.create({ data: { name: departmentName } });

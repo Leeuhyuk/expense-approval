@@ -1,7 +1,6 @@
 import type { FastifyPluginAsync } from "fastify";
 import { prisma } from "../db/prisma.js";
 import { activeScanMode } from "../security/malwareScan.js";
-import { reportJobPolicy } from "../operations/reportJobWorker.js";
 import { checkStorageHealth } from "../storage/attachmentStorage.js";
 import { success } from "../utils/response.js";
 
@@ -114,9 +113,7 @@ function integrationIssue(setting: IntegrationHealthSetting, env: NodeJS.Process
 
 async function reportJobHealth(env: NodeJS.ProcessEnv = process.env) {
   const now = new Date();
-  const policy = reportJobPolicy(env);
-  const since24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-  const [activeSchedules, dueSchedules, latestRun, failedRuns24h, deadLetters24h] = await Promise.all([
+  const [activeSchedules, dueSchedules, latestRun, failedRuns24h] = await Promise.all([
     prisma.reportSchedule.count({ where: { isActive: true } }),
     prisma.reportSchedule.count({ where: { isActive: true, nextRunAt: { lte: now } } }),
     prisma.reportRun.findFirst({
@@ -126,19 +123,12 @@ async function reportJobHealth(env: NodeJS.ProcessEnv = process.env) {
     prisma.reportRun.count({
       where: {
         status: "FAILED",
-        createdAt: { gte: since24h },
-      },
-    }),
-    prisma.auditLog.count({
-      where: {
-        entityType: "report_schedule",
-        action: "report_schedule_dead_letter",
-        createdAt: { gte: since24h },
+        createdAt: { gte: new Date(now.getTime() - 24 * 60 * 60 * 1000) },
       },
     }),
   ]);
   const workerConfigured = truthyFlag(env.REPORT_JOB_WORKER_ENABLED) || hasEnvValue(env.REPORT_QUEUE_URL) || hasEnvValue(env.REPORT_WORKER_URL);
-  const ok = activeSchedules === 0 || (workerConfigured && failedRuns24h === 0 && deadLetters24h === 0 && dueSchedules === 0);
+  const ok = activeSchedules === 0 || (workerConfigured && failedRuns24h === 0 && dueSchedules === 0);
 
   return {
     ok,
@@ -147,21 +137,9 @@ async function reportJobHealth(env: NodeJS.ProcessEnv = process.env) {
       driver: env.REPORT_QUEUE_DRIVER?.trim() || "database-schedule",
       configured: workerConfigured,
     },
-    policy: {
-      deliveryMode: policy.deliveryMode,
-      batchSize: policy.batchSize,
-      maxAttempts: policy.maxAttempts,
-      timeoutMs: policy.timeoutMs,
-      retryBaseSeconds: policy.retryBaseSeconds,
-      retryMaxSeconds: policy.retryMaxSeconds,
-      circuitBreakerFailureThreshold: policy.circuitBreakerFailureThreshold,
-      circuitBreakerWindowMinutes: policy.circuitBreakerWindowMinutes,
-      webhookConfigured: Boolean(policy.webhookUrl),
-    },
     activeSchedules,
     dueSchedules,
     failedRuns24h,
-    deadLetters24h,
     latestRun: latestRun
       ? {
           id: latestRun.id,

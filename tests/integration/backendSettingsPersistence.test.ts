@@ -85,7 +85,7 @@ describe("backend settings persistence integration", () => {
     let createdRoleId = "";
     let createdUserId = "";
 
-    const app = await buildApp({ logger: false });
+    const app = await buildApp({ logger: process.env.ERP_TEST_DEBUG === "1" ? true : false });
     try {
       const department = await prisma.department.create({ data: { name: departmentName } });
       const adminRole = await prisma.role.upsert({

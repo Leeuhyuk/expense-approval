@@ -74,7 +74,6 @@ export function securityEventTypeForFailure(errorCode: string, statusCode: numbe
   if (errorCode === "FORBIDDEN") return "access_denied";
   if (errorCode === "VALIDATION_ERROR") return "validation_rejected";
   if (errorCode === "PARTIAL_FAILURE") return "partial_failure";
-  if (errorCode === "OPERATION_MODE_RESTRICTED") return "workflow_blocked";
   if (errorCode === "IDEMPOTENCY_CONFLICT" || errorCode === "IDEMPOTENCY_REPLAY") return "duplicate_request_blocked";
   if (errorCode === "CONFLICT" || errorCode === "WORKFLOW_LOCKED" || errorCode.endsWith("_CONTROL_FAILED")) return "workflow_blocked";
   if (statusCode >= 500) return "server_failure";

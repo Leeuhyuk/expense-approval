@@ -5,7 +5,6 @@ import { resolve } from "node:path";
 
 const requiredHarnessFiles = [
   "tests/integration/backendDataPersistence.test.ts",
-  "tests/integration/backendListQueryConsistency.test.ts",
   "tests/integration/backendSettingsPersistence.test.ts",
   "tests/integration/backendPaymentRequestFlow.test.ts",
   "tests/integration/backendNotificationOperationsFlow.test.ts",

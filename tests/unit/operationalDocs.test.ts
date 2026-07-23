@@ -20,10 +20,8 @@ describe("operational documentation release gate", () => {
 
     assert.match(packageJson, /"release:operational-docs":\s*"node scripts\/verify-operational-docs\.mjs"/);
     assert.match(manifestScript, /"scripts\/verify-operational-docs\.mjs"/);
-    assert.match(manifestScript, /"docs\/disaster-recovery-failover-runbook\.md"/);
     assert.match(ciSource, /Verify Operational Documentation[\s\S]*npm run release:operational-docs/);
     assert.match(deploymentRunbook, /npm run release:operational-docs/);
     assert.match(deploymentRunbook, /docs\/incident-response\.md/);
-    assert.match(deploymentRunbook, /docs\/disaster-recovery-failover-runbook\.md/);
   });
 });

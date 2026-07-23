@@ -6,7 +6,7 @@ import { validatePaymentSubmitFinancialClose } from "../controls/financialClose.
 import { notificationExpiresAt } from "../domain/notificationRetention.js";
 import { prisma } from "../db/prisma.js";
 import { fail, success } from "../utils/response.js";
-import { auditRequestContext, definedCookies, forwardedInjectHeaders, formatDate, formatWon, jsonRow, parseWon, readStringPatch, type TableRow } from "./rowUtils.js";
+import { auditRequestContext, definedCookies, formatDate, formatWon, forwardableHeaders, jsonRow, parseWon, readStringPatch, type TableRow } from "./rowUtils.js";
 
 const listQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
@@ -176,15 +176,16 @@ async function ensurePendingApprovalSteps(
     orderBy: { name: "asc" },
   });
   const requiredApproverCount = await approvalStepCount(tx, item.amount);
-  const candidates = users
-    .flatMap((candidate) => {
-      const mapped = toApprovalCandidate(candidate, item.requesterId);
-      return mapped ? [mapped] : [];
-    })
-    .slice(0, requiredApproverCount);
+  const eligibleCandidates = users.flatMap((candidate) => {
+    const mapped = toApprovalCandidate(candidate, item.requesterId);
+    return mapped ? [mapped] : [];
+  });
 
-  if (candidates.length === 0) throw new Error("APPROVAL_CANDIDATES_NOT_FOUND");
-  if (candidates.length < requiredApproverCount) throw new Error("APPROVAL_CANDIDATES_NOT_FOUND");
+  // 결재선 후보가 아예 없으면 승인 자체가 불가능하므로 막는다.
+  if (eligibleCandidates.length === 0) throw new Error("APPROVAL_CANDIDATES_NOT_FOUND");
+  // 정책상 필요한 결재 인원보다 후보가 적으면(예: 요청자가 유일한 승인자와 겹치는 경우)
+  // 제출이 영구히 막히지 않도록 확보 가능한 후보 수만큼으로 단계를 구성한다.
+  const candidates = eligibleCandidates.slice(0, Math.max(1, Math.min(requiredApproverCount, eligibleCandidates.length)));
 
   await tx.approvalStep.createMany({
     data: candidates.map((candidate, index) => ({
@@ -455,6 +456,18 @@ function canUpdatePaymentRequest(user: NonNullable<Awaited<ReturnType<typeof req
   return hasPermission(user, "payment_request:read_all") || (hasPermission(user, "payment_request:update_own") && item.requesterId === user.id);
 }
 
+// 삭제 규칙: 관리자(system:manage)는 상태와 무관하게 삭제할 수 있고,
+// 그 외에는 본인이 작성한 임시 저장 건만 삭제할 수 있다. (제출 이후 건은 감사 추적 대상)
+function canDeletePaymentRequest(
+  user: NonNullable<Awaited<ReturnType<typeof requireAuth>>>,
+  item: { requesterId: string; status: PaymentRequestStatus },
+) {
+  if (hasPermission(user, "system:manage")) return true;
+  return item.status === PaymentRequestStatus.DRAFT
+    && item.requesterId === user.id
+    && hasPermission(user, "payment_request:update_own");
+}
+
 export const paymentRequestRoutes: FastifyPluginAsync = async (app) => {
   app.get("/payment-requests", async (request, reply) => {
     const user = await requireAuth(request, reply);
@@ -467,7 +480,8 @@ export const paymentRequestRoutes: FastifyPluginAsync = async (app) => {
     const canReadAll = hasPermission(user, "payment_request:read_all");
     const canReadAssigned = hasPermission(user, "approval:read_assigned");
     const query = listQuerySchema.parse(request.query);
-    const whereItems: Prisma.PaymentRequestWhereInput[] = [];
+    // 소프트 삭제된 요청은 목록에서 제외한다.
+    const whereItems: Prisma.PaymentRequestWhereInput[] = [{ deletedAt: null }];
 
     if (query.search) {
       whereItems.push({
@@ -723,7 +737,7 @@ export const paymentRequestRoutes: FastifyPluginAsync = async (app) => {
         vendor: true,
       },
     });
-    if (!item) return reply.send(success(request, null));
+    if (!item || item.deletedAt) return reply.send(success(request, null));
 
     const canReadAll = hasPermission(user, "payment_request:read_all");
     const canReadAssigned = hasPermission(user, "approval:read_assigned");
@@ -826,6 +840,68 @@ export const paymentRequestRoutes: FastifyPluginAsync = async (app) => {
     return reply.send(success(request, toPaymentRequestRow(updated), { rowVersion: updated.rowVersion }));
   });
 
+  // 결제 요청 소프트 삭제. 행은 보존하고 deletedAt만 채워 목록/조회에서 제외하며, 감사 로그를 남긴다.
+  app.delete("/payment-requests/:requestCode", async (request, reply) => {
+    const user = await requireAuth(request, reply);
+    if (!user) return;
+
+    const params = request.params as { requestCode: string };
+    const before = await prisma.paymentRequest.findUnique({
+      where: { requestCode: params.requestCode },
+      include: {
+        department: true,
+        requester: true,
+        vendor: true,
+      },
+    });
+    if (!before) return reply.send(success(request, null));
+    // 이미 삭제된 건은 멱등하게 성공 처리한다.
+    if (before.deletedAt) return reply.send(success(request, toPaymentRequestRow(before), { idempotencyReplay: true }));
+    if (!canDeletePaymentRequest(user, before)) {
+      return fail(reply, "FORBIDDEN", "결제 요청 삭제 권한이 없습니다. 임시 저장 건은 작성자만, 진행 중 건은 관리자만 삭제할 수 있습니다.", 403);
+    }
+
+    const body = request.body && typeof request.body === "object" ? (request.body as { reason?: unknown; idempotencyKey?: unknown }) : {};
+    const reason = typeof body.reason === "string" && body.reason.trim() ? body.reason.trim() : "결제 요청 삭제";
+    const idempotencyKey = typeof body.idempotencyKey === "string" && body.idempotencyKey ? body.idempotencyKey : undefined;
+
+    let deleted: PaymentRequestWithRelations;
+    try {
+      deleted = await prisma.$transaction(async (tx) => {
+        const item = await tx.paymentRequest.update({
+          where: { id: before.id, rowVersion: before.rowVersion } as Prisma.PaymentRequestWhereUniqueInput,
+          data: { deletedAt: new Date(), deletedById: user.id, deleteReason: reason },
+          include: {
+            department: true,
+            requester: true,
+            vendor: true,
+          },
+        });
+        await tx.auditLog.create({
+          data: {
+            entityType: "payment_request",
+            entityId: before.id,
+            actorId: user.id,
+            action: "delete",
+            beforeValue: jsonRow(toPaymentRequestRow(before)),
+            afterValue: jsonRow({ ...toPaymentRequestRow(item), 삭제: "삭제됨" }),
+            reason,
+            idempotencyKey,
+            ...auditRequestContext(request),
+          },
+        });
+        return item;
+      });
+    } catch (error) {
+      if (isPrismaCode(error, "P2025")) return fail(reply, "CONFLICT", "결제 요청 정보가 이미 변경되었습니다. 목록을 새로고침한 뒤 다시 시도해주세요.", 409);
+      if (isPrismaCode(error, "P2002") && idempotencyKey) return fail(reply, "IDEMPOTENCY_CONFLICT", "이미 다른 처리에 사용된 idempotencyKey입니다.", 409);
+      const code = error instanceof Error ? error.message : "VALIDATION_ERROR";
+      return fail(reply, "VALIDATION_ERROR", validationMessage(code), 400);
+    }
+
+    return reply.send(success(request, toPaymentRequestRow(deleted), { deleted: true }));
+  });
+
   app.post("/payment-requests/:requestCode/:action", async (request, reply) => {
     const user = await requireAuth(request, reply);
     if (!user) return;
@@ -861,7 +937,7 @@ export const paymentRequestRoutes: FastifyPluginAsync = async (app) => {
     return app.inject({
       method: "PATCH",
       url: `/api/payment-requests/${encodeURIComponent(params.requestCode)}`,
-      headers: forwardedInjectHeaders(request.headers),
+      headers: forwardableHeaders(request.headers),
       cookies: definedCookies(request.cookies),
       payload,
     }).then((response) => {

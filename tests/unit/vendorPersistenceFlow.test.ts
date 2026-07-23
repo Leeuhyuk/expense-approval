@@ -53,10 +53,6 @@ describe("vendor persistence flow", () => {
     assert.match(mainSource, /idempotencyKey: vendorMutationKey\("verify"/, "vendor account verification must include idempotency keys");
     assert.match(mainSource, /setVendorRefreshVersion\(\(current\) => current \+ 1\)/, "vendor mutations must trigger a fresh API reload");
     assert.match(mainSource, /window\.dispatchEvent\(new CustomEvent\("erp:vendor-saved"/, "saved vendors must notify dependent forms to refresh master data");
-    assert.match(mainSource, /setVendorSummary\(\{[\s\S]*registered: registered\.data\.total[\s\S]*pending: pending\.data\.total[\s\S]*verified: verified\.data\.total[\s\S]*inactive: inactive\.data\.total/, "vendor KPI cards must use server total counts");
-    assert.match(mainSource, /const vendorKpis = page\.kpis\.map/, "vendor KPI cards must render the DB summary instead of static zero values");
-    assert.match(mainSource, /isPending \? "등록" : "수정"/, "new vendor forms must label the save action as registration");
-    assert.match(mainSource, /disabled=\{isEmpty \|\| isPending \|\| selected\.상태 === "비활성"\}/, "unsaved vendors must not expose deactivation");
   });
 
   it("shows deactivation impact from the API response instead of local fixtures", () => {

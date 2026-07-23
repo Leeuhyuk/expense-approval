@@ -2,21 +2,10 @@ import { pageOrder, pages } from "../mockData";
 import { compareTableRows, decodeSort } from "../domain/formatters";
 import type { ListQuery, MockApiResponse, PageDefinition, PageKey, PaginatedRows, TableRow } from "../types";
 
-function mockVendorBusinessType(vendorName = "") {
-  if (vendorName.includes("(주)") || vendorName.includes("무역")) return "법인";
-  if (vendorName.includes("오피스") || vendorName.includes("콘텐츠")) return "개인/소상공";
-  return "일반";
-}
-
-function normalizeMockRow(pageKey: PageKey, row: TableRow): TableRow {
-  if (pageKey !== "vendors" || row.구분) return { ...row };
-  return { ...row, 구분: mockVendorBusinessType(row.거래처명) };
-}
-
 const DEFAULT_PAGE_SIZE = 10;
 const rowsByPage = pageOrder.reduce(
   (acc, pageKey) => {
-    acc[pageKey] = pages[pageKey].tableRows.map((row) => normalizeMockRow(pageKey, row));
+    acc[pageKey] = pages[pageKey].tableRows.map((row) => ({ ...row }));
     return acc;
   },
   {} as Record<PageKey, TableRow[]>,
@@ -30,42 +19,13 @@ function normalize(value: string) {
   return value.trim().toLowerCase();
 }
 
-function comparable(value: string) {
-  const numeric = Number(value.replace(/[^\d.-]/g, ""));
-  if (Number.isFinite(numeric) && /\d/.test(value)) return numeric;
-  const dateValue = new Date(value).getTime();
-  if (Number.isFinite(dateValue) && /\d{4}-\d{2}-\d{2}/.test(value)) return dateValue;
-  return normalize(value);
-}
-
-function compareFilterValue(a: string, b: string) {
-  const comparableA = comparable(a);
-  const comparableB = comparable(b);
-  if (typeof comparableA === "number" && typeof comparableB === "number") return comparableA - comparableB;
-  return String(comparableA).localeCompare(String(comparableB), "ko-KR");
-}
-
-function matchesFilter(row: TableRow, field: string, value = "") {
-  const [rawField, operator] = field.split("__");
-  const rowValue = row[rawField] ?? "";
-  if (operator === "in") {
-    return value.split(/[|,]/).map((item) => normalize(item)).filter(Boolean).some((item) => normalize(rowValue) === item);
-  }
-  const result = compareFilterValue(rowValue, value);
-  if (operator === "lte") return result <= 0;
-  if (operator === "lt") return result < 0;
-  if (operator === "gte") return result >= 0;
-  if (operator === "gt") return result > 0;
-  return normalize(rowValue).includes(normalize(value));
-}
-
 function applyQuery(rows: TableRow[], query: ListQuery = {}) {
   const search = normalize(query.search ?? "");
   const filters = Object.entries(query.filters ?? {}).filter(([, value]) => value);
 
   return rows.filter((row) => {
     const matchesSearch = search.length === 0 || Object.values(row).some((value) => normalize(value).includes(search));
-    const matchesFilters = filters.every(([field, value]) => matchesFilter(row, field, value));
+    const matchesFilters = filters.every(([field, value]) => normalize(row[field] ?? "").includes(normalize(value ?? "")));
     return matchesSearch && matchesFilters;
   });
 }

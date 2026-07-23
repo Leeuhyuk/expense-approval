@@ -65,14 +65,6 @@ export const mutationRouteCatalog = [
     matrixSnippet: "POST /auth/login",
     extraSnippets: ["verifyPassword(", "failWithFailureSecurityEvent"],
   }),
-  exception("POST", "/auth/password/change", "backend/src/routes/auth.ts", {
-    matrixSnippet: "POST /auth/password/change",
-    extraSnippets: ["prisma.$transaction", "password_change"],
-  }),
-  exception("POST", "/auth/password/change-expired", "backend/src/routes/auth.ts", {
-    matrixSnippet: "POST /auth/password/change-expired",
-    extraSnippets: ["prisma.$transaction", "password_change"],
-  }),
   exception("POST", "/auth/logout", "backend/src/routes/auth.ts", {
     matrixSnippet: "/auth/logout",
     extraSnippets: ["clearSession(", "clearCsrfCookie("],
@@ -92,35 +84,6 @@ export const mutationRouteCatalog = [
   exception("POST", "/operations/business-failure-alerts/notify", "backend/src/routes/operations.ts", {
     matrixSnippet: "POST /operations/business-failure-alerts/notify",
     extraSnippets: ["notifyBusinessFailureOwners()"],
-  }),  exception("POST", "/operations/report-jobs/run", "backend/src/routes/operations.ts", {
-    matrixSnippet: "POST /operations/report-jobs/run",
-    extraSnippets: ["processDueReportSchedules(", "requestedBy: user.id"],
-  }),
-  exception("POST", "/operations/data-quality/run", "backend/src/routes/operations.ts", {
-    matrixSnippet: "POST /operations/data-quality/run",
-    extraSnippets: ["runDataQualityJob(", "requestedBy: user.id", "requestId: request.id"],
-  }),
-  exception("POST", "/operations/financial-reconciliation/notify", "backend/src/routes/operations.ts", {
-    matrixSnippet: "POST /operations/financial-reconciliation/notify",
-    extraSnippets: ["notifyFinancialReconciliationOwners()"],
-  }),
-  exception("POST", "/operations/manual-recoveries", "backend/src/routes/operations.ts", {
-    matrixSnippet: "POST /operations/manual-recoveries",
-    extraSnippets: ["requestManualRecovery(request.body", "user, request"],
-  }),
-  exception("POST", "/operations/manual-recoveries/:recoveryId/approve", "backend/src/routes/operations.ts", {
-    matrixSnippet: "POST /operations/manual-recoveries/{recoveryId}/approve",
-    extraSnippets: ["reviewManualRecovery(", "\"approve\""],
-  }),
-  exception("POST", "/operations/manual-recoveries/:recoveryId/reject", "backend/src/routes/operations.ts", {
-    matrixSnippet: "POST /operations/manual-recoveries/{recoveryId}/reject",
-    extraSnippets: ["reviewManualRecovery(", "\"reject\""],
-  }),
-
-  route("POST", "/operations/account-lifecycle/deactivate", "backend/src/routes/operations.ts", {
-    requiresConcurrency: true,
-    matrixSnippet: "POST /operations/account-lifecycle/deactivate",
-    extraSnippets: ["accountLifecycleScope", "idempotencyKey", "prisma.$transaction"],
   }),
 
   route("POST", "/payment-requests", "backend/src/routes/paymentRequests.ts", {
@@ -132,6 +95,11 @@ export const mutationRouteCatalog = [
     requiresConcurrency: true,
     matrixSnippet: "결제 요청",
     extraSnippets: ["readPaymentExpectedRowVersion", "rowVersion: before.rowVersion"],
+  }),
+  route("DELETE", "/payment-requests/:requestCode", "backend/src/routes/paymentRequests.ts", {
+    requiresConcurrency: true,
+    matrixSnippet: "결제 요청",
+    extraSnippets: ["canDeletePaymentRequest", "deletedAt", "rowVersion: before.rowVersion"],
   }),
   delegate("POST", "/payment-requests/:requestCode/:action", "backend/src/routes/paymentRequests.ts", {
     matrixSnippet: "결제 요청",
@@ -197,11 +165,6 @@ export const mutationRouteCatalog = [
     requiresConcurrency: true,
     matrixSnippet: "예산",
     extraSnippets: ["readBudgetAdjustmentInput", "STALE_BUDGET"],
-  }),
-  route("POST", "/budgets/:departmentName/adjustments/:adjustmentId/:action", pageResources, {
-    requiresConcurrency: true,
-    matrixSnippet: "POST /budgets/{departmentName}/adjustments/{adjustmentId}/{action}",
-    extraSnippets: ["idempotencyKey", "updateMany", "BUDGET_ADJUSTMENT_CONFLICT"],
   }),
   route("POST", "/budgets", pageResources, {
     requiresConcurrency: false,

@@ -79,8 +79,6 @@ const publicRoutePatterns: Array<[RegExp, RegExp]> = [
   [/^POST \/auth\/logout$/, /clearSession\(/],
   [/^GET \/auth\/me$/, /getCurrentUser\(/],
   [/^POST \/auth\/refresh$/, /refreshSession\(/],
-  [/^GET \/auth\/password-policy$/, /passwordPolicyPayload\(/],
-  [/^POST \/auth\/password\/change-expired$/, /verifyPassword\(input\.data\.currentPassword/],
   [/^PUT \/files\/:id\/content$/, /verifyToken\([^)]*"upload"/],
   [/^GET \/files\/:id\/content$/, /verifyToken\([^)]*"download"/],
 ];
@@ -100,7 +98,7 @@ describe("backend direct API permission guards", () => {
 
       assert.match(
         route.block,
-        /requireAuth\(|getCurrentUser\(|app\.inject\(/,
+        /requireAuth\(|app\.inject\(/,
         `${routeKey(route.method, route.path)} in ${route.filePath} must authenticate direct API calls or delegate to a guarded route`,
       );
     }

@@ -56,10 +56,6 @@ function excerptAt(text, index, length) {
   return text.slice(start, end).replace(/\s+/g, " ");
 }
 
-function issue(filePath, ruleId, message, excerpt = "") {
-  return { filePath, ruleId, message, excerpt };
-}
-
 export function scanArtifactText(text, filePath, rules = frontendArtifactRules) {
   return rules.flatMap((rule) => {
     const matches = [];
@@ -78,41 +74,6 @@ export function scanArtifactText(text, filePath, rules = frontendArtifactRules) 
   });
 }
 
-export function scanHostingPolicy(rootDir) {
-  const headersPath = resolve(rootDir, "_headers");
-  if (!existsSync(headersPath)) {
-    return [issue("_headers", "missing-hosting-headers", "frontend artifact must include hosting cache/security headers")];
-  }
-
-  const text = readFileSync(headersPath, "utf8");
-  const checks = [
-    {
-      ok: /Strict-Transport-Security:\s*max-age=31536000/i.test(text),
-      ruleId: "missing-hsts",
-      message: "Strict-Transport-Security with one-year max-age is required",
-    },
-    {
-      ok: /X-Content-Type-Options:\s*nosniff/i.test(text),
-      ruleId: "missing-nosniff",
-      message: "X-Content-Type-Options: nosniff is required",
-    },
-    {
-      ok: /\/index\.html[\s\S]*Cache-Control:\s*(?:no-store|no-cache|max-age=0)/i.test(text),
-      ruleId: "missing-index-cache-policy",
-      message: "index.html must use no-store/no-cache cache policy for fast rollback",
-    },
-    {
-      ok: /\/assets\/\*[\s\S]*Cache-Control:\s*public,\s*max-age=31536000,\s*immutable/i.test(text),
-      ruleId: "missing-immutable-assets-cache",
-      message: "hashed static assets must use one-year immutable cache policy",
-    },
-  ];
-
-  return checks
-    .filter((check) => !check.ok)
-    .map((check) => issue("_headers", check.ruleId, check.message, text.slice(0, 240).replace(/\s+/g, " ")));
-}
-
 export function scanArtifactDirectory(rootDir, options = {}) {
   const root = resolve(rootDir);
   if (!existsSync(root)) {
@@ -124,11 +85,10 @@ export function scanArtifactDirectory(rootDir, options = {}) {
     return size > 0 && size <= (options.maxFileBytes ?? 5_000_000) && isTextArtifact(path);
   });
 
-  const textIssues = files.flatMap((path) => {
+  const issues = files.flatMap((path) => {
     const text = readFileSync(path, "utf8");
     return scanArtifactText(text, relative(root, path).replaceAll("\\", "/"), options.rules ?? frontendArtifactRules);
   });
 
-  const hostingIssues = options.requireHostingPolicy ? scanHostingPolicy(root) : [];
-  return { root, scannedFiles: files.length, issues: [...textIssues, ...hostingIssues] };
+  return { root, scannedFiles: files.length, issues };
 }

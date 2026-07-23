@@ -41,7 +41,6 @@ describe("go-live readiness report", () => {
       source: syntheticChecklist(30),
       target: "audit",
       generatedAt: "2026-07-06T00:00:00.000Z",
-      approvalExceptions: [],
     });
     const markdown = renderGoLiveReadinessMarkdown(report);
 
@@ -58,7 +57,6 @@ describe("go-live readiness report", () => {
     const report = buildGoLiveReadinessReport({
       source: syntheticChecklist(1),
       target: "production-candidate",
-      approvalExceptions: [],
     });
 
     assert.equal(report.ok, false);
@@ -69,35 +67,6 @@ describe("go-live readiness report", () => {
     assert.ok(report.allOpenBlockers.some((blocker) => blocker.categories.includes("DB/E2E persistence evidence")));
   });
 
-  it("renders approved exception counts separately from unapproved blockers", () => {
-    const report = buildGoLiveReadinessReport({
-      source: syntheticChecklist(1),
-      target: "production-candidate",
-      approvalExceptions: [
-        {
-          id: "EXC-23-REMOTE",
-          decision: "conditional-approved",
-          targets: ["production-candidate"],
-          chapter: "23",
-          owner: "Release Owner",
-          dueDate: "2026-07-15",
-          userImpact: "Conditional until remote DB evidence is attached.",
-          mitigation: "Run remote DB persistence smoke before full use.",
-          approvalEvidence: "APPROVAL-1",
-        },
-      ],
-    });
-    const markdown = renderGoLiveReadinessMarkdown(report);
-
-    assert.equal(report.ok, true);
-    assert.equal(report.conditional, true);
-    assert.equal(report.targetOpenP0Count, 1);
-    assert.equal(report.targetApprovedExceptionCount, 1);
-    assert.equal(report.targetUnapprovedP0Count, 0);
-    assert.match(markdown, /CONDITIONAL/);
-    assert.match(markdown, /EXC-23-REMOTE/);
-  });
-
   it("writes JSON and Markdown artifacts for release evidence", () => {
     const root = makeRoot();
     try {
@@ -106,7 +75,6 @@ describe("go-live readiness report", () => {
         source: syntheticChecklist(2),
         target: "audit",
         generatedAt: "2026-07-06T00:00:00.000Z",
-        approvalExceptions: [],
       });
 
       const previousCwd = process.cwd();

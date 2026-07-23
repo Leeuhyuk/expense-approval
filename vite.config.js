@@ -1,27 +1,25 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-const apiProxy = {
-    "/api": {
-        target: process.env.VITE_DEV_API_PROXY_TARGET || "http://127.0.0.1:4000",
-        changeOrigin: true,
-    },
-};
+
+// ERP_PREVIEW_API_ORIGIN이 설정되면 `vite preview`가 /api를 해당 백엔드로 프록시한다.
+// production 형상(자기 origin /api) 아티팩트를 로컬 staging에서 그대로 서빙하기 위한 용도.
+const previewApiOrigin = process.env.ERP_PREVIEW_API_ORIGIN;
+
 export default defineConfig({
     plugins: [react()],
-    preview: {
-        host: "127.0.0.1",
-        port: 4173,
-        strictPort: true,
-        proxy: apiProxy,
-    },
     server: {
-        host: "127.0.0.1",
-        port: 3000,
-        strictPort: true,
-        proxy: apiProxy,
-
         watch: {
             ignored: ["**/generated-images/**", "**/dist/**"],
         },
     },
+    preview: previewApiOrigin
+        ? {
+            proxy: {
+                "/api": {
+                    target: previewApiOrigin,
+                    changeOrigin: false,
+                },
+            },
+        }
+        : undefined,
 });

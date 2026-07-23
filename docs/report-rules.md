@@ -20,9 +20,9 @@
 ## 다운로드
 
 - CSV/PDF 다운로드 버튼은 현재 화면 row를 브라우저에서 직접 파일로 조립하지 않고 `GET /reports/{name}/download?format=csv|pdf`를 호출한다.
-- backend는 `ReportRun.artifactKey`가 가리키는 object storage artifact를 우선 읽어 파일명, content type, base64 content, 생성 시각, artifact metadata를 응답한다.
+- backend는 저장된 `ReportRun`을 기준으로 파일 payload를 생성하고, 파일명, content type, base64 content, 생성 시각을 응답한다.
 - 다운로드 요청은 `report_run` 감사 로그에 `download_csv` 또는 `download_pdf` action으로 기록한다.
-- 보고서 생성과 예약 job 성공 run은 CSV/PDF payload를 하나의 JSON artifact로 object storage에 저장하고 `ReportRun.artifactKey`에 보관한다. 기존 run 중 artifactKey가 없는 보고서는 최초 다운로드 시 자동 보관한다.
+- report artifact를 object storage에 영구 저장하고 백업하는 작업은 production go-live 전 별도 과제로 남긴다.
 
 ## 권한별 조회 범위
 
@@ -38,5 +38,4 @@
 - 예약 수정은 수신자, 주기, 시간, 형식, 활성 상태를 `PATCH /reports/schedules/{id}`로 저장한다.
 - 예약 중지는 `ReportSchedule.isActive=false`, `nextRunAt=null`로 저장하며 감사 로그에 남긴다.
 - 예약 등록/수정/중지는 내부 알림을 생성해 운영자가 변경 사실을 확인할 수 있게 한다.
-- 예약 job worker는 `GET /operations/report-jobs` dry-run과 `POST /operations/report-jobs/run` 실행으로 연결하며, 성공 `ReportRun`, retry backoff, dead-letter 비활성화, circuit breaker, 감사 로그, 내부 알림을 남긴다.
-- 외부 이메일/메신저 실발송은 `REPORT_DELIVERY_MODE=webhook`과 운영 webhook adapter로 연결하며, production go-live 전 staging/prod 발송 리허설 증빙이 필요하다.
+- 외부 이메일/메신저 발송 adapter와 재시도 worker는 production go-live 전 별도 운영 과제로 남긴다.

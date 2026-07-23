@@ -34,8 +34,6 @@ export type AttachmentDraft = {
   byteSize: number;
   status: "ready" | "uploading" | "error";
   message?: string;
-  progressPercent?: number;
-  retryCount?: number;
   remoteId?: string;
   scanStatus?: "pending" | "clean" | "blocked";
   downloadUrl?: string;

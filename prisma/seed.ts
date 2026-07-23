@@ -37,8 +37,10 @@ const ids = {
   vendorCloud: "40000000-0000-4000-8000-000000000002",
   budgetMarketing: "50000000-0000-4000-8000-000000000001",
   budgetIt: "50000000-0000-4000-8000-000000000002",
+  budgetFinance: "50000000-0000-4000-8000-000000000003",
   budgetItemMarketingSaas: "51000000-0000-4000-8000-000000000001",
   budgetItemItLicense: "51000000-0000-4000-8000-000000000002",
+  budgetItemFinanceOps: "51000000-0000-4000-8000-000000000003",
   budgetAdjustmentMarketing: "52000000-0000-4000-8000-000000000001",
   paymentCloudInfra: "60000000-0000-4000-8000-000000000001",
   paymentErpLicense: "60000000-0000-4000-8000-000000000002",
@@ -249,6 +251,18 @@ async function main() {
       status: BudgetStatus.NORMAL,
     },
   });
+  await prisma.budget.upsert({
+    where: { departmentId_fiscalYear: { departmentId: ids.departmentFinance, fiscalYear: "2026" } },
+    update: { allocatedAmount: "150000000", usedAmount: "0", status: BudgetStatus.NORMAL },
+    create: {
+      id: ids.budgetFinance,
+      departmentId: ids.departmentFinance,
+      fiscalYear: "2026",
+      allocatedAmount: "150000000",
+      usedAmount: "0",
+      status: BudgetStatus.NORMAL,
+    },
+  });
 
   await prisma.budgetItem.upsert({
     where: { id: ids.budgetItemMarketingSaas },
@@ -271,6 +285,18 @@ async function main() {
       name: "SW/IT 비용",
       allocatedAmount: "90000000",
       usedAmount: "48600000",
+      status: BudgetStatus.NORMAL,
+    },
+  });
+  await prisma.budgetItem.upsert({
+    where: { id: ids.budgetItemFinanceOps },
+    update: { name: "일반 운영비", allocatedAmount: "150000000", usedAmount: "0", status: BudgetStatus.NORMAL },
+    create: {
+      id: ids.budgetItemFinanceOps,
+      budgetId: ids.budgetFinance,
+      name: "일반 운영비",
+      allocatedAmount: "150000000",
+      usedAmount: "0",
       status: BudgetStatus.NORMAL,
     },
   });

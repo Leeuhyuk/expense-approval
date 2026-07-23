@@ -30,8 +30,22 @@ export function readStringPatch(body: unknown): TableRow {
 
   return Object.entries(body as Record<string, unknown>).reduce<TableRow>((acc, [key, value]) => {
     if (typeof value === "string") acc[key] = value;
+    else if (typeof value === "number" && Number.isFinite(value)) acc[key] = String(value);
     return acc;
   }, {});
+}
+
+// content-length/transfer-encoding describe the ORIGINAL request body; internal
+// re-injects send a rebuilt payload, so forwarding them corrupts the new request.
+export function forwardableHeaders(headers: unknown) {
+  const { "content-length": _contentLength, "transfer-encoding": _transferEncoding, ...rest } = headers as Record<string, string>;
+  return rest;
+}
+
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isUuid(value: string) {
+  return uuidPattern.test(value);
 }
 
 export function readListFilters(query: unknown) {
@@ -55,20 +69,6 @@ function compare(a: string, b: string) {
   return a.localeCompare(b, "ko-KR");
 }
 
-function matchesFilter(row: TableRow, field: string, value: string) {
-  const [rawField, operator] = field.split("__");
-  const rowValue = row[rawField] ?? "";
-  if (operator === "in") {
-    return value.split(/[|,]/).map((item) => normalize(item)).filter(Boolean).some((item) => normalize(rowValue) === item);
-  }
-  const result = compare(rowValue, value);
-  if (operator === "lte") return result <= 0;
-  if (operator === "lt") return result < 0;
-  if (operator === "gte") return result >= 0;
-  if (operator === "gt") return result > 0;
-  return normalize(rowValue).includes(normalize(value));
-}
-
 export function filterAndSortRows(rows: TableRow[], query: ListQuery) {
   const search = normalize(query.search ?? "");
   const filters = Object.entries(query.filters ?? {}).filter(([, value]) => value);
@@ -76,7 +76,7 @@ export function filterAndSortRows(rows: TableRow[], query: ListQuery) {
     ? rows.filter((row) => Object.values(row).some((value) => normalize(value).includes(search)))
     : rows;
   const filtered = filters.length
-    ? filteredBySearch.filter((row) => filters.every(([field, value]) => matchesFilter(row, field, value)))
+    ? filteredBySearch.filter((row) => filters.every(([field, value]) => normalize(row[field] ?? "").includes(normalize(value))))
     : filteredBySearch;
 
   if (!query.sort) return filtered;
@@ -125,13 +125,6 @@ export function auditRequestContext(request: FastifyRequest) {
   };
 }
 
-export function forwardedInjectHeaders(headers: Record<string, string | string[] | undefined>) {
-  return Object.entries(headers).reduce<Record<string, string | string[]>>((acc, [key, value]) => {
-    if (value === undefined || key.toLowerCase() === "content-length" || key.toLowerCase() === "transfer-encoding") return acc;
-    acc[key] = value;
-    return acc;
-  }, {});
-}
 export function definedCookies(cookies: Record<string, string | undefined>): Record<string, string> {
   return Object.entries(cookies).reduce<Record<string, string>>((acc, [key, value]) => {
     if (typeof value === "string") acc[key] = value;

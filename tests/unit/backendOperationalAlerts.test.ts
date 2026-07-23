@@ -44,7 +44,7 @@ describe("backend operational alert checks", () => {
     assert.match(operationsRouteSource, /app\.get\("\/operations\/alerts"/, "operations alert endpoint must be registered");
     assert.match(operationsRouteSource, /requireAuth\(/, "operations alerts must require authentication");
     assert.match(operationsRouteSource, /hasPermission\(user, "system:manage"\)/, "operations alerts must require system management permission");
-    assert.match(operationsRouteSource, /app\.get\("\/operations\/alerts"[\s\S]*reply\.send\(success\(request, summary\)\)/, "alert findings must stay readable while summary.ok remains machine-detectable");
+    assert.match(operationsRouteSource, /reply\.code\(summary\.ok \? 200 : 503\)/, "triggered alerts must degrade HTTP status for monitors");
   });
 
   it("records slow Prisma queries without storing raw SQL or parameters", () => {

@@ -1,11 +1,10 @@
 import type { AttachmentDraft } from "../types";
 
-export const allowedAttachmentExtensions = ["pdf", "jpg", "jpeg", "png", "xlsx"] as const;
+export const allowedAttachmentExtensions = ["pdf", "jpg", "jpeg", "png", "xlsx", "txt", "log", "md", "csv", "json"] as const;
 export const maxAttachmentBytes = 10 * 1024 * 1024;
 export const attachmentSecurityPolicy = {
   virusScanRequired: true,
   pdfPreviewEnabled: true,
-  imagePreviewEnabled: true,
   taxInvoiceRetentionYears: 5,
   taxInvoiceRequiredKeywords: ["세금계산서", "tax-invoice", "invoice"],
 } as const;
@@ -43,9 +42,7 @@ export function shouldVirusScanAttachment(fileName: string) {
 }
 
 export function canPreviewAttachment(fileName: string) {
-  const extension = getExtension(fileName);
-  if (extension === "pdf") return attachmentSecurityPolicy.pdfPreviewEnabled;
-  return attachmentSecurityPolicy.imagePreviewEnabled && ["jpg", "jpeg", "png"].includes(extension);
+  return attachmentSecurityPolicy.pdfPreviewEnabled && getExtension(fileName) === "pdf";
 }
 
 export function classifyAttachmentFile(fileName: string) {
@@ -62,7 +59,6 @@ export function classifyAttachmentFile(fileName: string) {
 export function prepareAttachmentDrafts(files: File[]) {
   const accepted: AttachmentDraft[] = [];
   const rejected: string[] = [];
-  const selectedNameCounts = new Map<string, number>();
 
   files.forEach((file, index) => {
     const error = validateAttachmentFile(file);
@@ -71,15 +67,11 @@ export function prepareAttachmentDrafts(files: File[]) {
       return;
     }
 
-    const normalizedName = file.name.trim().toLowerCase();
-    const duplicateIndex = selectedNameCounts.get(normalizedName) ?? 0;
-    selectedNameCounts.set(normalizedName, duplicateIndex + 1);
     accepted.push({
       id: createAttachmentId(file, index),
       fileName: file.name,
       byteSize: file.size,
       status: "ready",
-      message: duplicateIndex > 0 ? `중복 파일명 ${duplicateIndex + 1}번째 - 저장소 ID로 구분` : undefined,
     });
   });
 

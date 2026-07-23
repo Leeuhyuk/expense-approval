@@ -2,12 +2,20 @@ import { extname } from "node:path";
 
 export const maxAttachmentBytes = 10 * 1024 * 1024;
 
+// 텍스트 계열은 OS/브라우저마다 Content-Type을 다르게(또는 비워서) 보내므로 관용적으로 허용한다.
+const textContentTypes = ["text/plain", "application/octet-stream", ""];
+
 export const allowedAttachmentContentTypesByExtension = new Map<string, string[]>([
   [".pdf", ["application/pdf"]],
   [".jpg", ["image/jpeg"]],
   [".jpeg", ["image/jpeg"]],
   [".png", ["image/png"]],
   [".xlsx", ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"]],
+  [".txt", textContentTypes],
+  [".log", textContentTypes],
+  [".md", ["text/markdown", ...textContentTypes]],
+  [".csv", ["text/csv", "application/vnd.ms-excel", ...textContentTypes]],
+  [".json", ["application/json", ...textContentTypes]],
 ]);
 
 export function attachmentExtension(fileName: string) {

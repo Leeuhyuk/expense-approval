@@ -1,6 +1,6 @@
 import { createHash, createHmac } from "node:crypto";
 import { mkdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
-import { dirname, extname, join, resolve } from "node:path";
+import { extname, join, resolve } from "node:path";
 
 export type StorageWriteResult = {
   checksum: string;
@@ -164,9 +164,8 @@ export async function writeStoredFile(storageKey: string, body: unknown, content
   if (isObjectStorageDriver()) {
     await s3Request("PUT", storageKey, buffer, contentType);
   } else {
-    const targetPath = localStoragePath(storageKey);
-    await mkdir(dirname(targetPath), { recursive: true });
-    await writeFile(targetPath, buffer);
+    await mkdir(resolve(storageRoot(), "attachments"), { recursive: true });
+    await writeFile(localStoragePath(storageKey), buffer);
   }
   return {
     checksum: sha256Hex(buffer),

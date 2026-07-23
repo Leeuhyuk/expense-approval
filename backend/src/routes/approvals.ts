@@ -5,7 +5,7 @@ import { hasPermission, requireAuth } from "../auth/session.js";
 import { notificationExpiresAt } from "../domain/notificationRetention.js";
 import { prisma } from "../db/prisma.js";
 import { fail, success } from "../utils/response.js";
-import { addDays, auditRequestContext, definedCookies, forwardedInjectHeaders, filterAndSortRows, formatDate, formatWon, jsonRow, paginateRows, readListFilters, readStringPatch, type TableRow } from "./rowUtils.js";
+import { addDays, auditRequestContext, definedCookies, filterAndSortRows, formatDate, formatWon, forwardableHeaders, jsonRow, paginateRows, readListFilters, readStringPatch, type TableRow } from "./rowUtils.js";
 
 const listQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
@@ -51,26 +51,6 @@ function toApprovalStatus(value: string) {
   return map[value];
 }
 
-function displayApprovalStepStatus(status: ApprovalStatus) {
-  const map: Record<ApprovalStatus, string> = {
-    PENDING: "승인 대기",
-    APPROVED: "승인 완료",
-    REJECTED: "반려",
-    HELD: "보류",
-    SKIPPED: "건너뜀",
-  };
-  return map[status];
-}
-
-function formatDateTime(value: Date | null) {
-  return value ? value.toISOString().slice(0, 16).replace("T", " ") : "";
-}
-
-function approvalStepLabel(stepOrder: number, totalSteps: number) {
-  if (totalSteps <= 1 || stepOrder === totalSteps) return "최종 결재";
-  return `${stepOrder}차 결재`;
-}
-
 function currentApprovalStep(item: ApprovalPaymentRequest) {
   return [...item.approvalSteps].sort((a, b) => a.stepOrder - b.stepOrder).find((step) => step.status === ApprovalStatus.PENDING) ?? [...item.approvalSteps].sort((a, b) => b.stepOrder - a.stepOrder)[0] ?? null;
 }
@@ -97,146 +77,11 @@ function budgetStatusFor(allocatedAmount: unknown, usedAmount: unknown) {
   return BudgetStatus.NORMAL;
 }
 
-function budgetStatusSeverity(status: BudgetStatus) {
-  if (status === BudgetStatus.EXCEEDED) return 2;
-  if (status === BudgetStatus.WARNING) return 1;
-  return 0;
-}
-
-function normalizeRolePermissions(value: unknown) {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
-}
-
-function canReceiveBudgetAlert(permissions: string[]) {
-  return permissions.includes("*") || permissions.includes("system:manage") || permissions.includes("budget:read");
-}
-
-async function findBudgetAlertRecipientIds(tx: Prisma.TransactionClient) {
-  const users = await tx.user.findMany({
-    where: { isActive: true },
-    select: {
-      id: true,
-      roles: {
-        select: {
-          role: {
-            select: {
-              isActive: true,
-              permissions: true,
-            },
-          },
-        },
-      },
-    },
-  });
-
-  return users
-    .filter((item) => item.roles.some(({ role }) => role.isActive && canReceiveBudgetAlert(normalizeRolePermissions(role.permissions))))
-    .map((item) => item.id);
-}
-
-type BudgetAlertEvent = {
-  entityType: "BUDGET" | "BUDGET_ITEM";
-  entityId: string;
-  title: string;
-  message: string;
-  status: "WARNING" | "EXCEEDED";
-};
-
-function budgetAlertEvent(input: {
-  entityType: BudgetAlertEvent["entityType"];
-  entityId: string;
-  label: string;
-  requestCode: string;
-  beforeStatus: BudgetStatus;
-  nextStatus: BudgetStatus;
-  allocatedAmount: unknown;
-  nextUsedAmount: number;
-  approvedAmount: number;
-}) {
-  if (budgetStatusSeverity(input.nextStatus) <= budgetStatusSeverity(input.beforeStatus) || budgetStatusSeverity(input.nextStatus) === 0) {
-    return null;
-  }
-  if (input.nextStatus !== BudgetStatus.WARNING && input.nextStatus !== BudgetStatus.EXCEEDED) {
-    return null;
-  }
-  const allocated = Number(input.allocatedAmount);
-  const usageRate = allocated > 0 ? Math.round((input.nextUsedAmount / allocated) * 100) : 0;
-  const isExceeded = input.nextStatus === BudgetStatus.EXCEEDED;
-  return {
-    entityType: input.entityType,
-    entityId: input.entityId,
-    status: input.nextStatus,
-    title: isExceeded ? "예산 초과" : "예산 주의",
-    message: `${input.requestCode} 승인 반영 후 ${input.label} 사용률이 ${usageRate}%입니다. 승인 금액 ${formatWon(input.approvedAmount)} 기준으로 backend 예산 rule이 ${isExceeded ? "초과" : "주의"} 상태를 생성했습니다.`,
-  } satisfies BudgetAlertEvent;
-}
-
-async function budgetAlertNotificationRows(tx: Prisma.TransactionClient, alerts: BudgetAlertEvent[]) {
-  if (alerts.length === 0) return [];
-  const recipientIds = await findBudgetAlertRecipientIds(tx);
-  if (recipientIds.length === 0) return [];
-
-  const alertEntityIds = alerts.map((alert) => `${alert.entityType}:${alert.entityId}:${alert.status}`);
-  const existing = await tx.notification.findMany({
-    where: {
-      userId: { in: recipientIds },
-      type: NotificationType.BUDGET_EXCEEDED,
-      entityId: { in: alertEntityIds },
-    },
-    select: {
-      userId: true,
-      entityId: true,
-    },
-  });
-  const existingKeys = new Set(existing.map((item) => `${item.userId}:${item.entityId}`));
-
-  return recipientIds.flatMap((userId) =>
-    alerts.flatMap((alert) => {
-      const entityId = `${alert.entityType}:${alert.entityId}:${alert.status}`;
-      if (existingKeys.has(`${userId}:${entityId}`)) return [];
-      return [{
-        userId,
-        type: NotificationType.BUDGET_EXCEEDED,
-        title: alert.title,
-        message: alert.message,
-        entityType: alert.entityType,
-        entityId,
-        linkPath: "#budget",
-        expiresAt: notificationExpiresAt(),
-      } satisfies Prisma.NotificationCreateManyInput];
-    }),
-  );
-}
-
 function toApprovalRow(item: ApprovalPaymentRequest): TableRow {
   const sortedSteps = [...item.approvalSteps].sort((a, b) => a.stepOrder - b.stepOrder);
   const currentStep = currentApprovalStep(item);
-  const currentPendingStep = isOpenApprovalStatus(item.status) ? currentPendingApprovalStep(item) : null;
   const remainingCount = sortedSteps.filter((step) => step.status === ApprovalStatus.PENDING).length;
   const assignee = currentStep?.approver.name ?? sortedSteps.at(-1)?.approver.name ?? "-";
-  const actedSteps = sortedSteps.filter((step) => step.actedAt || step.status !== ApprovalStatus.PENDING);
-  const lastActedStep = actedSteps.at(-1) ?? null;
-  const approvalStepRows = sortedSteps.map((step) => {
-    const status = displayApprovalStepStatus(step.status);
-    const actedAt = formatDateTime(step.actedAt);
-    return {
-      id: step.id,
-      stepOrder: String(step.stepOrder),
-      step: approvalStepLabel(step.stepOrder, sortedSteps.length),
-      approverId: step.approverId,
-      approverName: step.approver.name,
-      role: "승인자",
-      status,
-      reason: step.reason ?? "",
-      actedAt,
-      isCurrent: currentPendingStep?.id === step.id,
-      rowVersion: String(step.rowVersion),
-    };
-  });
-  const historyText = approvalStepRows
-    .filter((step) => step.actedAt || step.status !== "승인 대기")
-    .map((step) => `${step.actedAt || "-"} ${step.approverName} ${step.step} ${step.status}${step.reason ? ` - ${step.reason}` : ""}`)
-    .join(" | ");
 
   return {
     요청번호: item.requestCode,
@@ -249,11 +94,6 @@ function toApprovalRow(item: ApprovalPaymentRequest): TableRow {
     예산확인: item.budgetItemId ? "확인 완료" : "확인 전",
     결재선: remainingCount > 1 ? `${assignee} 외 ${remainingCount - 1}명` : assignee,
     처리기한: formatDate(addDays(item.requestedAt, 3)),
-    "요청 사유": item.reason,
-    "처리 사유": lastActedStep?.reason ?? "",
-    처리시간: formatDateTime(lastActedStep?.actedAt ?? null),
-    "처리 이력": historyText,
-    결재단계JSON: JSON.stringify(approvalStepRows),
     요청RowVersion: String(item.rowVersion),
     결재StepID: currentStep?.id ?? "",
     결재RowVersion: currentStep ? String(currentStep.rowVersion) : "",
@@ -316,7 +156,7 @@ async function applyBudgetUsageOnFinalApproval(
 
   const budgetItem = await tx.budgetItem.findUnique({
     where: { id: item.budgetItemId },
-    include: { budget: { include: { department: true } } },
+    include: { budget: true },
   });
   if (!budgetItem) throw new Error("BUDGET_ITEM_NOT_FOUND");
 
@@ -325,30 +165,6 @@ async function applyBudgetUsageOnFinalApproval(
   const nextBudgetUsed = Number(budgetItem.budget.usedAmount) + amount;
   const itemStatus = budgetStatusFor(budgetItem.allocatedAmount, nextItemUsed);
   const budgetStatus = budgetStatusFor(budgetItem.budget.allocatedAmount, nextBudgetUsed);
-  const alerts = [
-    budgetAlertEvent({
-      entityType: "BUDGET_ITEM",
-      entityId: budgetItem.id,
-      label: `${budgetItem.budget.department.name} ${budgetItem.name}`,
-      requestCode: item.requestCode,
-      beforeStatus: budgetItem.status,
-      nextStatus: itemStatus,
-      allocatedAmount: budgetItem.allocatedAmount,
-      nextUsedAmount: nextItemUsed,
-      approvedAmount: amount,
-    }),
-    budgetAlertEvent({
-      entityType: "BUDGET",
-      entityId: budgetItem.budgetId,
-      label: `${budgetItem.budget.department.name} 전체 예산`,
-      requestCode: item.requestCode,
-      beforeStatus: budgetItem.budget.status,
-      nextStatus: budgetStatus,
-      allocatedAmount: budgetItem.budget.allocatedAmount,
-      nextUsedAmount: nextBudgetUsed,
-      approvedAmount: amount,
-    }),
-  ].filter((alert): alert is BudgetAlertEvent => Boolean(alert));
 
   await tx.budgetItem.update({
     where: { id: budgetItem.id },
@@ -372,7 +188,6 @@ async function applyBudgetUsageOnFinalApproval(
     amount,
     itemStatus,
     budgetStatus,
-    alerts,
   };
 }
 
@@ -389,7 +204,10 @@ export const approvalRoutes: FastifyPluginAsync = async (app) => {
 
     const parsed = listQuerySchema.parse(request.query);
     const items = await prisma.paymentRequest.findMany({
-      where: canReadAll ? undefined : { approvalSteps: { some: { approverId: user.id } } },
+      // 소프트 삭제된 결제 요청은 승인 목록에서도 제외한다.
+      where: canReadAll
+        ? { deletedAt: null }
+        : { deletedAt: null, approvalSteps: { some: { approverId: user.id } } },
       include: {
         department: true,
         requester: true,
@@ -520,10 +338,6 @@ export const approvalRoutes: FastifyPluginAsync = async (app) => {
         const budgetUsage = await applyBudgetUsageOnFinalApproval(tx, before, nextPaymentStatus);
 
         const notificationRows: Prisma.NotificationCreateManyInput[] = [];
-        if (budgetUsage) {
-          const budgetNotificationRows = await budgetAlertNotificationRows(tx, budgetUsage.alerts);
-          notificationRows.push(...budgetNotificationRows);
-        }
         if (nextStepStatus === ApprovalStatus.REJECTED) {
           notificationRows.push({
             userId: before.requesterId,
@@ -648,7 +462,7 @@ export const approvalRoutes: FastifyPluginAsync = async (app) => {
     return app.inject({
       method: "PATCH",
       url: `/api/approvals/${encodeURIComponent(params.requestCode)}`,
-      headers: forwardedInjectHeaders(request.headers),
+      headers: forwardableHeaders(request.headers),
       cookies: definedCookies(request.cookies),
       payload: patch,
     }).then((response) => {

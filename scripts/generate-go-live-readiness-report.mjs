@@ -3,14 +3,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  defaultApprovalExceptionsPath,
-  evaluateGoLiveReadiness,
-  parseGoLiveChecklist,
-  readApprovalExceptions,
-  readinessTargets,
-  summarizeReadiness,
-} from "./goLiveReadiness.mjs";
+import { evaluateGoLiveReadiness, parseGoLiveChecklist, readinessTargets, summarizeReadiness } from "./goLiveReadiness.mjs";
 
 const defaultChecklistPath = "erp-system-checklist.md";
 const defaultJsonOutputPath = "release/go-live-readiness-report.json";
@@ -51,7 +44,7 @@ function blockerCategories(item) {
   return categories.length > 0 ? categories : ["operational evidence"];
 }
 
-function enrichBlocker(item, index, exception = null) {
+function enrichBlocker(item, index) {
   return {
     index: index + 1,
     chapter: item.chapter,
@@ -59,43 +52,6 @@ function enrichBlocker(item, index, exception = null) {
     sectionName: item.sectionName,
     text: item.text,
     categories: blockerCategories(item),
-    approvalExceptionId: exception?.id ?? null,
-    approvalOwner: exception?.owner ?? null,
-    approvalDueDate: exception?.dueDate ?? null,
-    userImpact: exception?.userImpact ?? null,
-    mitigation: exception?.mitigation ?? null,
-  };
-}
-
-function approvedExceptionMap(result) {
-  const map = new Map();
-  for (const approved of result.approvedBlockers) {
-    map.set(approved.item, approved.exception);
-  }
-  return map;
-}
-
-function exceptionSummary(approval) {
-  return {
-    path: approval.path ?? defaultApprovalExceptionsPath,
-    approvalId: approval.approvalId,
-    approver: approval.approver,
-    approvedAt: approval.approvedAt,
-    decision: approval.decision,
-    total: approval.exceptions.length,
-    invalidCount: approval.errors.length,
-    errors: approval.errors,
-  };
-}
-
-function targetResultSummary(result) {
-  return {
-    target: result.target,
-    ok: result.ok,
-    conditional: result.conditional,
-    openP0Count: result.openBlockers.length,
-    approvedExceptionCount: result.approvedBlockers.length,
-    unapprovedP0Count: result.blockers.length,
   };
 }
 
@@ -104,8 +60,6 @@ export function buildGoLiveReadinessReport({
   target = process.env.READINESS_TARGET ?? "audit",
   generatedAt = new Date().toISOString(),
   checklistPath = defaultChecklistPath,
-  approvalExceptions,
-  approvalExceptionsPath = process.env.READINESS_APPROVAL_EXCEPTIONS_PATH || defaultApprovalExceptionsPath,
 } = {}) {
   const normalizedTarget = String(target).trim().toLowerCase();
   if (!readinessTargets.has(normalizedTarget)) {
@@ -114,20 +68,16 @@ export function buildGoLiveReadinessReport({
 
   const checklistSource = source ?? readFileSync(resolve(process.cwd(), checklistPath), "utf8");
   const items = parseGoLiveChecklist(checklistSource);
-  const approval = approvalExceptions
-    ? { path: approvalExceptionsPath, approvalId: "inline", approver: "inline", approvedAt: "inline", decision: "inline", exceptions: approvalExceptions, errors: [] }
-    : readApprovalExceptions(approvalExceptionsPath);
-
-  const targetResult = evaluateGoLiveReadiness(items, normalizedTarget, { approvalExceptions: approval.exceptions });
-  const allResult = evaluateGoLiveReadiness(items, "audit", { approvalExceptions: approval.exceptions });
-  const allApproved = approvedExceptionMap(allResult);
-  const targetApproved = approvedExceptionMap(targetResult);
-  const allOpenBlockers = allResult.openBlockers.map((item, index) => enrichBlocker(item, index, allApproved.get(item)));
-  const targetBlockers = targetResult.blockers.map((item, index) => enrichBlocker(item, index));
-  const targetApprovedBlockers = targetResult.approvedBlockers.map(({ item, exception }, index) => enrichBlocker(item, index, exception));
+  const targetResult = evaluateGoLiveReadiness(items, normalizedTarget);
+  const allOpenBlockers = items.filter((item) => !item.checked).map(enrichBlocker);
+  const targetBlockers = targetResult.blockers.map(enrichBlocker);
   const targetResults = strictTargets.map((targetName) => {
-    const result = evaluateGoLiveReadiness(items, targetName, { approvalExceptions: approval.exceptions });
-    return targetResultSummary(result);
+    const result = evaluateGoLiveReadiness(items, targetName);
+    return {
+      target: targetName,
+      ok: result.ok,
+      openP0Count: result.blockers.length,
+    };
   });
 
   return {
@@ -136,41 +86,17 @@ export function buildGoLiveReadinessReport({
     checklistSha256: sha256(checklistSource),
     target: normalizedTarget,
     ok: targetResult.ok,
-    conditional: targetResult.conditional,
-    approvalExceptions: exceptionSummary({ ...approval, errors: [...approval.errors, ...targetResult.exceptionErrors] }),
     summaries: summarizeReadiness(items),
     targetResults,
     allOpenP0Count: allOpenBlockers.length,
-    targetOpenP0Count: targetResult.openBlockers.length,
-    targetApprovedExceptionCount: targetApproved.size,
-    targetUnapprovedP0Count: targetBlockers.length,
+    targetOpenP0Count: targetBlockers.length,
     targetBlockers,
-    targetApprovedBlockers,
     allOpenBlockers,
   };
 }
 
 function markdownTableRow(cells) {
   return `| ${cells.map((cell) => String(cell).replace(/\|/g, "\\|")).join(" | ")} |`;
-}
-
-function resultLabel(result) {
-  if (result.ok && result.conditional) return "CONDITIONAL";
-  if (result.ok) return "PASS";
-  return "BLOCKED";
-}
-
-function blockerRows(blockers, includeApproval = false) {
-  const headers = includeApproval ? ["#", "Section", "Category", "Approval", "Due", "Blocker"] : ["#", "Section", "Category", "Blocker"];
-  const lines = [markdownTableRow(headers), markdownTableRow(headers.map((header, index) => (index === 0 ? "---:" : "---")))];
-  for (const blocker of blockers) {
-    if (includeApproval) {
-      lines.push(markdownTableRow([blocker.index, blocker.section, blocker.categories.join(", "), blocker.approvalExceptionId ?? "", blocker.approvalDueDate ?? "", blocker.text]));
-    } else {
-      lines.push(markdownTableRow([blocker.index, blocker.section, blocker.categories.join(", "), blocker.text]));
-    }
-  }
-  return lines;
 }
 
 export function renderGoLiveReadinessMarkdown(report) {
@@ -185,63 +111,43 @@ export function renderGoLiveReadinessMarkdown(report) {
     "",
     `Target: \`${report.target}\``,
     "",
-    `Result: ${report.conditional ? "CONDITIONAL" : report.ok ? "PASS" : "BLOCKED"}`,
+    `Result: ${report.ok ? "PASS" : "BLOCKED"}`,
     "",
-    "## Approval Exceptions",
+    "## Chapter Summary",
     "",
-    markdownTableRow(["Approval ID", "Approver", "Approved At", "Decision", "Exception Count", "Invalid"]),
-    markdownTableRow(["---", "---", "---", "---", "---:", "---:"]),
-    markdownTableRow([
-      report.approvalExceptions.approvalId || "none",
-      report.approvalExceptions.approver || "none",
-      report.approvalExceptions.approvedAt || "none",
-      report.approvalExceptions.decision || "none",
-      report.approvalExceptions.total,
-      report.approvalExceptions.invalidCount,
-    ]),
+    markdownTableRow(["Chapter", "Complete", "Total", "Open"]),
+    markdownTableRow(["---", "---:", "---:", "---:"]),
   ];
-
-  if (report.approvalExceptions.errors.length > 0) {
-    lines.push("", "Invalid approval exception entries:");
-    for (const error of report.approvalExceptions.errors) lines.push(`- ${error}`);
-  }
-
-  lines.push("", "## Chapter Summary", "", markdownTableRow(["Chapter", "Complete", "Total", "Open"]), markdownTableRow(["---", "---:", "---:", "---:"]));
 
   for (const summary of report.summaries) {
     lines.push(markdownTableRow([summary.chapter, summary.checked, summary.total, summary.open]));
   }
 
-  lines.push(
-    "",
-    "## Target Results",
-    "",
-    markdownTableRow(["Target", "Result", "Open P0", "Approved Exceptions", "Unapproved P0"]),
-    markdownTableRow(["---", "---", "---:", "---:", "---:"]),
-  );
+  lines.push("", "## Target Results", "", markdownTableRow(["Target", "Result", "Open P0"]), markdownTableRow(["---", "---", "---:"]));
   for (const result of report.targetResults) {
-    lines.push(markdownTableRow([result.target, resultLabel(result), result.openP0Count, result.approvedExceptionCount, result.unapprovedP0Count]));
+    lines.push(markdownTableRow([result.target, result.ok ? "PASS" : "BLOCKED", result.openP0Count]));
   }
 
-  lines.push("", "## Target Unapproved Blockers", "");
+  lines.push("", "## Target Blockers", "");
   if (report.targetBlockers.length === 0) {
-    lines.push("No unapproved open P0 blockers remain in the selected target scope.");
+    lines.push("No open P0 blockers in the selected target scope.");
   } else {
-    lines.push(...blockerRows(report.targetBlockers));
-  }
-
-  lines.push("", "## Target Approved Exception Blockers", "");
-  if (report.targetApprovedBlockers.length === 0) {
-    lines.push("No open P0 blockers in the selected target scope are covered by approval exceptions.");
-  } else {
-    lines.push(...blockerRows(report.targetApprovedBlockers, true));
+    lines.push(markdownTableRow(["#", "Section", "Category", "Blocker"]));
+    lines.push(markdownTableRow(["---:", "---", "---", "---"]));
+    for (const blocker of report.targetBlockers) {
+      lines.push(markdownTableRow([blocker.index, blocker.section, blocker.categories.join(", "), blocker.text]));
+    }
   }
 
   lines.push("", "## All Open P0 Blockers", "");
   if (report.allOpenBlockers.length === 0) {
     lines.push("No open P0 blockers remain.");
   } else {
-    lines.push(...blockerRows(report.allOpenBlockers, true));
+    lines.push(markdownTableRow(["#", "Section", "Category", "Blocker"]));
+    lines.push(markdownTableRow(["---:", "---", "---", "---"]));
+    for (const blocker of report.allOpenBlockers) {
+      lines.push(markdownTableRow([blocker.index, blocker.section, blocker.categories.join(", "), blocker.text]));
+    }
   }
 
   lines.push("");
@@ -277,8 +183,8 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1
 
     const report = buildGoLiveReadinessReport({ checklistPath });
     const outputs = writeGoLiveReadinessReport({ report });
-    console.log(`[go-live-readiness-report] target=${report.target} result=${report.conditional ? "CONDITIONAL" : report.ok ? "PASS" : "BLOCKED"}`);
-    console.log(`[go-live-readiness-report] allOpenP0=${report.allOpenP0Count} targetOpenP0=${report.targetOpenP0Count} approved=${report.targetApprovedExceptionCount} unapproved=${report.targetUnapprovedP0Count}`);
+    console.log(`[go-live-readiness-report] target=${report.target} result=${report.ok ? "PASS" : "BLOCKED"}`);
+    console.log(`[go-live-readiness-report] allOpenP0=${report.allOpenP0Count} targetOpenP0=${report.targetOpenP0Count}`);
     console.log(`[go-live-readiness-report] wrote ${normalizePath(relative(process.cwd(), outputs.resolvedJson))}`);
     console.log(`[go-live-readiness-report] wrote ${normalizePath(relative(process.cwd(), outputs.resolvedMarkdown))}`);
     if (!report.ok) {

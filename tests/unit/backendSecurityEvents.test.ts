@@ -11,29 +11,8 @@ import {
   hasSecurityEventRecorded,
   securityEventTypeForFailure,
 } from "../../backend/src/security/securityEvents";
-import { createSafeLoggerOptions, maskSensitiveLogText, sanitizeLogValue } from "../../backend/src/security/logRedaction";
 
 describe("backend security event records", () => {
-  it("redacts sensitive values from backend logger output", () => {
-    const maskedUrl = maskSensitiveLogText("/api/files/20000000-0000-4000-8000-000000000001/content?download=1&token=secret&reason=view");
-    const sanitized = sanitizeLogValue({
-      headers: {
-        cookie: "erp_session=secret",
-        authorization: "Bearer secret",
-      },
-      bankAccount: "123-456-789012",
-      note: "account 123456789012 should not leak",
-    }) as Record<string, unknown>;
-    const loggerOptions = createSafeLoggerOptions();
-
-    assert.equal(maskedUrl, "/api/files/20000000-0000-4000-8000-000000000001/content?[redacted]");
-    assert.deepEqual(sanitized.headers, { cookie: "[redacted]", authorization: "[redacted]" });
-    assert.equal(sanitized.bankAccount, "[redacted]");
-    assert.equal(sanitized.note, "account [redacted-account] should not leak");
-    assert.match(JSON.stringify(loggerOptions.redact.paths), /authorization/);
-    assert.match(JSON.stringify(loggerOptions.redact.paths), /cookie/);
-  });
-
   it("redacts sensitive metadata while keeping operational context", () => {
     const record = buildSecurityEventRecord({
       eventType: "file_access_denied",

@@ -1362,7 +1362,8 @@ button:disabled {
   top: 0;
   z-index: 4;
   display: grid;
-  grid-template-columns: minmax(260px, 1fr) minmax(360px, 440px) 48px auto;
+  /* 제목 · 검색 · 알림 · 상세 표시 토글 · 프로필 */
+  grid-template-columns: minmax(260px, 1fr) minmax(360px, 440px) 48px auto auto;
   align-items: center;
   gap: 18px;
   height: 82px;
@@ -1795,9 +1796,52 @@ button:disabled {
 }
 
 .erp-profile small {
+  overflow: hidden;
   color: #77859a;
   font-size: 11px;
   font-weight: 800;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* 로그인 아이디(계정)는 부서명보다 또렷하게 보여준다. */
+.erp-profile-login {
+  color: #42526a;
+  font-weight: 900;
+}
+
+/* 우측 상세 패널 표시 모드 토글 (자동 / 항상 / 숨김) */
+.erp-detail-toggle {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 11px;
+  color: #42526a;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+  background: #fff;
+  border: 1px solid #d6e0ec;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.erp-detail-toggle:hover {
+  border-color: #b9c8db;
+}
+
+.erp-detail-toggle.mode-always {
+  color: #0f766e;
+  background: #ecfdf8;
+  border-color: #a7e0d3;
+}
+
+.erp-detail-toggle.mode-hidden {
+  color: #7a879a;
+  background: #f2f5f9;
+  border-color: #dbe3ed;
 }
 
 .erp-logout-button {
@@ -2148,108 +2192,6 @@ button:disabled {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 18px;
-}
-
-.dashboard-operational-card {
-  display: grid;
-  gap: 14px;
-  padding: 18px;
-}
-
-.dashboard-operational-card.attention {
-  border-color: #f0c36b;
-  background: #fffdf7;
-}
-
-.dashboard-operational-card header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.dashboard-operational-card header div {
-  display: grid;
-  gap: 4px;
-}
-
-.dashboard-operational-card header strong {
-  color: #0a1f42;
-  font-size: 15px;
-  font-weight: 900;
-}
-
-.dashboard-operational-card header span,
-.dashboard-operational-card small {
-  color: #6d7b90;
-  font-size: 12px;
-  font-weight: 850;
-}
-
-.dashboard-operational-card header button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  height: 34px;
-  padding: 0 12px;
-  color: #102747;
-  font-size: 12px;
-  font-weight: 900;
-  background: #fff;
-  border: 1px solid #d7e1ec;
-  border-radius: 6px;
-}
-
-.dashboard-operational-grid {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.dashboard-operational-grid article {
-  display: grid;
-  gap: 5px;
-  min-height: 76px;
-  padding: 12px;
-  background: #f8fafc;
-  border: 1px solid #dce5ef;
-  border-radius: 7px;
-}
-
-.dashboard-operational-grid span {
-  color: #6d7b90;
-  font-size: 12px;
-  font-weight: 850;
-}
-
-.dashboard-operational-grid strong {
-  color: #0a1f42;
-  font-size: 19px;
-  font-weight: 900;
-}
-
-.dashboard-operational-error {
-  margin: 0;
-  color: #b42318;
-  font-size: 12px;
-  font-weight: 900;
-}
-
-.dashboard-operational-triggered {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.dashboard-operational-triggered span {
-  padding: 6px 9px;
-  color: #7a3e00;
-  font-size: 12px;
-  font-weight: 900;
-  background: #fff4df;
-  border: 1px solid #f0c36b;
-  border-radius: 999px;
 }
 
 .dashboard-chart-card {
@@ -2983,39 +2925,54 @@ button:disabled {
   color: #102747;
 }
 
-.closed-detail-panel {
+.detail-filter-field {
   display: grid;
-  align-content: start;
-  gap: 10px;
-  min-height: 180px;
-  padding: 22px;
-  background: #fff;
-  border: 1px solid #dfe8f2;
-  border-radius: 8px;
+  gap: 5px;
+  padding: 10px;
+  background: #f8fafc;
+  border: 1px solid #e3ebf4;
+  border-radius: 7px;
 }
 
-.closed-detail-panel strong {
-  color: #0a1f42;
-  font-size: 16px;
-  font-weight: 900;
-}
-
-.closed-detail-panel span {
-  color: #6a7a90;
-  font-size: 13px;
+.detail-filter-field > b {
+  color: #4b5f7a;
+  font-size: 12px;
   font-weight: 800;
 }
 
-.closed-detail-panel button {
-  justify-self: start;
-  height: 36px;
-  padding: 0 13px;
-  color: #fff;
-  font-size: 12px;
-  font-weight: 900;
-  background: #078b7b;
-  border: 0;
-  border-radius: 7px;
+.detail-filter-field select {
+  width: 100%;
+  padding: 7px 8px;
+  color: #102747;
+  font-size: 13px;
+  font-weight: 700;
+  background: #fff;
+  border: 1px solid #cdd9e8;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.detail-filter-field select:hover {
+  border-color: #2f6bff;
+}
+
+.detail-filter-field > span {
+  padding: 0;
+  color: #102747;
+  font-size: 13px;
+  font-weight: 700;
+  background: none;
+  border: none;
+}
+
+/* 상세 패널은 행/항목을 선택할 때만 표시하고, 숨겨진 동안 목록을 전체 폭으로 둔다. */
+.payment-request-page.detail-hidden,
+.approval-management-page.detail-hidden,
+.disbursement-management-page.detail-hidden,
+.budget-management-page.detail-hidden,
+.vendor-management-page.detail-hidden,
+.favorites-management-page.detail-hidden {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .payment-request-page {
@@ -3040,11 +2997,21 @@ button:disabled {
 }
 
 .payment-filter-group {
-  display: grid;
-  grid-template-columns: minmax(220px, 1.34fr) minmax(136px, 0.86fr) minmax(136px, 0.86fr) 88px;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
   min-width: 0;
+}
+
+.payment-filter-group > .payment-filter {
+  width: auto;
+  flex: 1 1 168px;
+  min-width: 0;
+}
+
+.payment-filter-group > .payment-filter.compact {
+  flex: 0 0 auto;
 }
 
 .payment-toolbar-actions {
@@ -3113,6 +3080,38 @@ button:disabled {
 .payment-plain-button {
   width: 92px;
   justify-content: center;
+}
+
+/* 삭제처럼 되돌리기 어려운 동작은 붉은 톤으로 구분한다.
+   "삭제"와 "삭제 확인" 두 문구가 같은 폭에 들어가도록 고정해 툴바 줄바꿈을 막는다. */
+.payment-plain-button.danger {
+  gap: 6px;
+  width: 108px;
+  color: #b42318;
+  background: #fef3f2;
+  border-color: #f3c9c4;
+}
+
+/* 확인 대기 상태는 더 진하게 표시해 한 번 더 눌러야 함을 알린다. */
+.payment-plain-button.danger.is-armed {
+  color: #fff;
+  background: #d92d20;
+  border-color: #b42318;
+}
+
+.payment-plain-button.danger.is-armed:hover:not(:disabled) {
+  background: #b42318;
+}
+
+.payment-plain-button.danger:hover:not(:disabled) {
+  background: #fee4e2;
+  border-color: #eda29b;
+}
+
+.payment-plain-button.danger:disabled {
+  color: #b9a0a0;
+  background: #f7f4f4;
+  border-color: #e6dede;
 }
 
 .payment-icon-action {
@@ -3296,15 +3295,74 @@ button:disabled {
   box-shadow: 0 4px 10px rgba(18, 42, 72, 0.06);
 }
 
-.payment-pagination .rows-select {
+.payment-pagination .rows-select-dropdown {
   position: absolute;
   right: 10px;
+}
+
+.payment-pagination .rows-select {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
   width: 108px;
   border: 1px solid #d7e1ec;
+}
+
+/* 행수 선택 드롭다운: 목록 하단에 있으므로 옵션 메뉴가 위로 펼쳐진다. */
+.rows-select-dropdown {
+  position: relative;
+  display: inline-flex;
+}
+
+.rows-select-dropdown .rows-select {
+  width: 100%;
+  cursor: pointer;
+}
+
+.rows-select-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 40;
+  min-width: 100%;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  background: #fff;
+  border: 1px solid #d7e1ec;
+  border-radius: 9px;
+  box-shadow: 0 -10px 30px rgba(16, 39, 71, 0.16);
+}
+
+.rows-select-menu li {
+  list-style: none;
+}
+
+.rows-select-menu button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 8px 12px;
+  color: #234;
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.rows-select-menu button:hover {
+  background: #eef4ff;
+}
+
+.rows-select-menu button.active {
+  color: #1b52d6;
+  font-weight: 900;
+  background: #e8f0ff;
 }
 
 .payment-info-panel {
@@ -3476,11 +3534,10 @@ button:disabled {
 
 .uploaded-file-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) repeat(4, 24px);
+  grid-template-columns: auto minmax(0, 1fr) auto 18px 18px;
   align-items: center;
-  gap: 8px;
-  min-height: 42px;
-  padding-block: 6px;
+  gap: 10px;
+  min-height: 40px;
   padding-left: 14px;
   color: #334762;
   font-size: 12px;
@@ -3488,27 +3545,50 @@ button:disabled {
   border-left: 1px solid #dce5ef;
 }
 
-.uploaded-file-info {
-  display: grid;
-  gap: 3px;
-  min-width: 0;
-}
-
-.uploaded-file-info b {
+.uploaded-file-row .attachment-name {
   overflow: hidden;
-  color: #334762;
+  font-weight: 850;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.uploaded-file-info small {
-  overflow: hidden;
+.uploaded-file-row span {
   color: #7a879a;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-.uploaded-file-row button {
+.attachment-thumb {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  overflow: hidden;
+  background: #f1f5fb;
+  border: 1px solid #dce5ef;
+  border-radius: 7px;
+  cursor: zoom-in;
+}
+
+.attachment-thumb.file {
+  color: #7a879a;
+  cursor: default;
+}
+
+/* 미리보기 가능한 문서(PDF) 썸네일: 클릭하면 팝업이 열린다. */
+.attachment-thumb.doc {
+  color: #c2410c;
+  background: #fff3ec;
+  border-color: #f4d3bf;
+  cursor: zoom-in;
+}
+
+.attachment-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.uploaded-file-row button:not(.attachment-thumb) {
   display: grid;
   place-items: center;
   width: 18px;
@@ -3519,26 +3599,226 @@ button:disabled {
   border: 0;
 }
 
-.upload-progress-track {
-  display: block;
-  width: 100%;
-  height: 5px;
+/* 첨부 이미지 확대 팝업(하단 중앙 정렬 · 드래그 이동 · 휠 줌) */
+.image-lightbox-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 24px;
+  background: rgba(10, 22, 41, 0.78);
   overflow: hidden;
-  background: #e4edf4;
+}
+
+.image-lightbox-close {
+  position: absolute;
+  top: 18px;
+  right: 20px;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
+  border: 0;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.image-lightbox-close:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.image-lightbox-stage {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  width: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.image-lightbox-img {
+  max-width: 92vw;
+  max-height: 74vh;
+  border-radius: 6px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  transform-origin: bottom center;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.image-lightbox-img:active {
+  cursor: grabbing;
+}
+
+/* PDF 등 문서 첨부는 브라우저 내장 뷰어(iframe)로 렌더링한다. */
+.pdf-lightbox-frame {
+  width: min(92vw, 940px);
+  height: 74vh;
+  background: #fff;
+  border: 0;
+  border-radius: 6px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+}
+
+/* 텍스트 첨부는 내용을 스크롤 가능한 영역에 그대로 보여준다. */
+.text-lightbox-frame {
+  width: min(92vw, 940px);
+  max-width: 940px;
+  height: 74vh;
+  margin: 0;
+  padding: 20px 22px;
+  overflow: auto;
+  color: #1f2c3d;
+  font-family: "SFMono-Regular", ui-monospace, "Menlo", "Consolas", monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: #fff;
+  border-radius: 6px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+}
+
+.text-lightbox-status {
+  display: grid;
+  place-items: center;
+  color: #7a879a;
+  font-family: inherit;
+  font-weight: 700;
+}
+
+.image-lightbox-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 8px 14px;
+  color: #e8eefb;
+  font-size: 12px;
+  font-weight: 800;
+  background: rgba(255, 255, 255, 0.1);
   border-radius: 999px;
 }
 
-.upload-progress-track i {
-  display: block;
-  height: 100%;
-  background: #078f89;
-  border-radius: inherit;
+.image-lightbox-controls button {
+  display: grid;
+  place-items: center;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 10px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 900;
+  background: rgba(255, 255, 255, 0.14);
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
 }
 
-.upload-row-spacer {
-  display: block;
-  width: 24px;
-  height: 24px;
+.image-lightbox-controls button:hover {
+  background: rgba(255, 255, 255, 0.26);
+}
+
+.image-lightbox-controls small {
+  color: #b9c6dd;
+  font-weight: 700;
+}
+
+.image-lightbox-controls a {
+  padding: 6px 12px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 900;
+  text-decoration: none;
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+}
+
+.image-lightbox-controls a:hover {
+  background: rgba(255, 255, 255, 0.26);
+}
+
+.image-lightbox-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  z-index: 1;
+}
+
+.image-lightbox-nav:hover {
+  background: rgba(255, 255, 255, 0.26);
+}
+
+.image-lightbox-nav.prev {
+  left: 22px;
+}
+
+.image-lightbox-nav.next {
+  right: 22px;
+}
+
+.image-lightbox-thumbs {
+  display: flex;
+  gap: 8px;
+  max-width: 92vw;
+  margin-top: 12px;
+  padding: 6px;
+  overflow-x: auto;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+}
+
+.image-lightbox-thumbs button {
+  flex: 0 0 auto;
+  width: 54px;
+  height: 54px;
+  padding: 0;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.06);
+  border: 2px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.12s ease, border-color 0.12s ease;
+}
+
+.image-lightbox-thumbs button:hover {
+  opacity: 0.9;
+}
+
+.image-lightbox-thumbs button.active {
+  border-color: #4d8bff;
+  opacity: 1;
+}
+
+.image-lightbox-thumbs img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.image-lightbox-thumbs .thumb-doc {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  color: #f7b98c;
 }
 
 .reason-box {
@@ -3574,19 +3854,6 @@ button:disabled {
   color: #7a879a;
   font-size: 12px;
   font-weight: 800;
-}
-
-.field-error-text {
-  color: #d04545;
-  font-size: 11px;
-  font-weight: 850;
-}
-
-.field-control[aria-invalid="true"],
-.textarea-field[aria-invalid="true"],
-.field-control.with-unit.editable:has(input[aria-invalid="true"]) {
-  border-color: #d04545;
-  box-shadow: 0 0 0 2px rgba(208, 69, 69, 0.08);
 }
 
 .budget-check-card,
@@ -3787,11 +4054,91 @@ button:disabled {
 }
 
 .approval-filter-group {
-  display: grid;
-  grid-template-columns: minmax(230px, 1.25fr) minmax(140px, 0.82fr) minmax(140px, 0.82fr) 92px;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
   min-width: 0;
+}
+
+/* 필터 항목이 액션 버튼(내 요청 등)과 겹치지 않도록 폭이 부족하면 다음 줄로 넘긴다. */
+.approval-filter-group > .approval-filter {
+  width: auto;
+  flex: 1 1 168px;
+  min-width: 0;
+}
+
+.approval-filter-group > .approval-filter.compact {
+  flex: 0 0 auto;
+}
+
+/* 클릭 시 옵션 목록이 펼쳐지는 필터 드롭다운 */
+.filter-dropdown {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex: 1 1 168px;
+}
+
+.payment-filter-group > .filter-dropdown,
+.approval-filter-group > .filter-dropdown {
+  flex: 1 1 168px;
+}
+
+.disbursement-filter-group > .filter-dropdown,
+.management-filter-group > .filter-dropdown {
+  flex: 1 1 180px;
+}
+
+.filter-dropdown > button {
+  width: 100%;
+}
+
+.filter-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 40;
+  max-height: 260px;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid #d7e1ec;
+  border-radius: 9px;
+  box-shadow: 0 14px 34px rgba(16, 39, 71, 0.16);
+}
+
+.filter-dropdown-menu li {
+  list-style: none;
+}
+
+.filter-dropdown-menu button {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 9px 11px;
+  color: #234;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: left;
+  white-space: nowrap;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.filter-dropdown-menu button:hover {
+  background: #eef4ff;
+}
+
+.filter-dropdown-menu button.active {
+  color: #1b52d6;
+  font-weight: 900;
+  background: #e8f0ff;
 }
 
 .approval-toolbar-actions {
@@ -4322,24 +4669,35 @@ button:disabled {
 
 .disbursement-toolbar {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  align-items: start;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: center;
   gap: 14px;
   min-width: 0;
 }
 
 .disbursement-filter-group {
-  display: grid;
-  grid-template-columns: minmax(230px, 1.08fr) minmax(160px, 0.86fr) minmax(148px, 0.78fr) minmax(128px, 0.7fr) 82px;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
   min-width: 0;
 }
 
+.disbursement-filter-group > .disbursement-filter,
+.disbursement-filter-group > .disbursement-select-filter {
+  width: auto;
+  flex: 1 1 168px;
+  min-width: 0;
+}
+
+.disbursement-filter-group > .disbursement-filter.compact {
+  flex: 0 0 auto;
+}
+
 .disbursement-toolbar-actions {
   display: flex;
   align-items: center;
-  justify-self: start;
+  justify-self: end;
   gap: 10px;
 }
 
@@ -4974,22 +5332,34 @@ button:disabled {
 }
 
 .management-filter-group {
-  display: grid;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
   min-width: 0;
 }
 
-.budget-filter-group {
-  grid-template-columns: minmax(230px, 1fr) minmax(130px, 0.6fr) minmax(170px, 0.72fr) minmax(130px, 0.58fr) 82px;
+/* 필터 항목이 많은 화면에서 폭이 모자라면 다음 줄로 넘겨 액션 버튼과 겹치지 않게 한다.
+   (기본 규칙의 width:100%를 풀고 flex-basis로 한 줄에 여러 개가 나란히 배치되도록 한다.) */
+.management-filter-group > .management-filter,
+.management-filter-group > .management-select-filter {
+  width: auto;
+  flex: 1 1 168px;
+  min-width: 0;
 }
 
-.vendor-filter-group {
-  grid-template-columns: minmax(150px, 0.75fr) minmax(140px, 0.7fr) minmax(140px, 0.7fr) minmax(220px, 1fr) 82px;
+.management-filter-group > .management-filter.compact {
+  flex: 0 0 auto;
 }
 
-.reports-filter-group {
-  grid-template-columns: minmax(220px, 1fr) minmax(130px, 0.58fr) minmax(130px, 0.58fr) 256px 82px;
+.management-filter-group > .management-search-filter {
+  width: auto;
+  flex: 2 1 200px;
+  min-width: 150px;
+}
+
+.reports-filter-group > .report-type-tabs {
+  flex: 0 1 auto;
 }
 
 .management-toolbar-actions,
@@ -5092,7 +5462,6 @@ button:disabled {
 }
 
 .management-secondary-button {
-  gap: 8px;
   justify-content: center;
   min-width: 112px;
   padding: 0 18px;
@@ -5554,28 +5923,6 @@ button:disabled {
   font-weight: 850;
 }
 
-.budget-history-item {
-  display: grid;
-  gap: 6px;
-  padding: 8px 0;
-  border-top: 1px solid rgba(83, 98, 122, 0.14);
-}
-
-.budget-history-actions {
-  display: flex;
-  gap: 6px;
-}
-
-.budget-history-actions button {
-  border: 1px solid rgba(15, 118, 110, 0.28);
-  border-radius: 6px;
-  background: #f8fafc;
-  color: #0f766e;
-  font-size: 11px;
-  font-weight: 900;
-  padding: 5px 8px;
-}
-
 .budget-selected-card header,
 .linked-request-card header,
 .vendor-detail-section header,
@@ -5819,7 +6166,7 @@ button:disabled {
 
 .vendor-document-list article {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) repeat(4, 32px);
+  grid-template-columns: minmax(0, 1fr) 32px 32px;
   align-items: center;
   gap: 8px;
   min-height: 48px;
@@ -5829,7 +6176,7 @@ button:disabled {
   border-radius: 7px;
 }
 
-.vendor-document-list article > span {
+.vendor-document-list article span {
   display: grid;
   gap: 3px;
   min-width: 0;
@@ -5838,13 +6185,13 @@ button:disabled {
   font-weight: 850;
 }
 
-.vendor-document-list article > span > b {
+.vendor-document-list article b {
   color: #078f89;
   font-size: 11px;
   font-weight: 900;
 }
 
-.vendor-document-list article > span > small {
+.vendor-document-list article small {
   overflow: hidden;
   color: #6d7b90;
   font-size: 11px;
@@ -6236,117 +6583,6 @@ button:disabled {
   border-radius: 6px;
 }
 
-.audit-log-search-card {
-  display: grid;
-  gap: 12px;
-  padding: 16px;
-  overflow-x: auto;
-}
-
-.audit-log-search-card > header,
-.audit-log-search-controls,
-.audit-log-retention {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.audit-log-search-card > header div {
-  display: grid;
-  gap: 4px;
-}
-
-.audit-log-search-card strong {
-  color: #0a1f42;
-  font-size: 15px;
-  font-weight: 900;
-}
-
-.audit-log-search-card header span,
-.audit-log-retention span {
-  color: #64748b;
-  font-size: 12px;
-  font-weight: 850;
-}
-
-.audit-log-search-card button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 34px;
-  min-width: 34px;
-  color: #102747;
-  background: #fff;
-  border: 1px solid #d7e1ec;
-  border-radius: 6px;
-}
-
-.audit-log-search-controls label {
-  display: grid;
-  flex: 1;
-  gap: 5px;
-  color: #53627a;
-  font-size: 11px;
-  font-weight: 900;
-}
-
-.audit-log-search-controls input {
-  height: 38px;
-  padding: 0 12px;
-  color: #102747;
-  font-size: 13px;
-  font-weight: 850;
-  background: #fff;
-  border: 1px solid #d7e1ec;
-  border-radius: 6px;
-}
-
-.audit-log-retention {
-  align-items: flex-start;
-  padding: 10px 12px;
-  background: #f8fafc;
-  border: 1px solid #e3eaf3;
-  border-radius: 7px;
-}
-
-.audit-log-search-card table {
-  width: 100%;
-  min-width: 840px;
-  font-size: 12px;
-  border-collapse: collapse;
-}
-
-.audit-log-search-card th,
-.audit-log-search-card td {
-  padding: 9px 8px;
-  text-align: left;
-  border-bottom: 1px solid #e7edf5;
-}
-
-.audit-log-search-card th {
-  color: #53627a;
-  font-weight: 900;
-  background: #f8fafc;
-}
-
-.audit-log-search-card td {
-  color: #102747;
-  font-weight: 850;
-  vertical-align: top;
-}
-
-.audit-log-search-card td b,
-.audit-log-search-card td small {
-  display: block;
-}
-
-.audit-log-search-card td small {
-  margin-top: 3px;
-  color: #64748b;
-  font-size: 11px;
-}
-
 .reports-side-column {
   display: grid;
   gap: 22px;
@@ -6607,7 +6843,7 @@ button:disabled {
 
 .settings-top-tabs {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(5, 1fr);
   height: 48px;
   border-bottom: 1px solid #dce5ef;
 }
@@ -6672,7 +6908,7 @@ button:disabled {
 
 .settings-policy-grid {
   display: grid;
-  grid-template-columns: 1.05fr 1fr;
+  grid-template-columns: 1fr;
   gap: 18px;
 }
 
@@ -6700,17 +6936,7 @@ button:disabled {
 .settings-notification-card,
 .settings-integration-card,
 .settings-scope-card,
-.department-settings-card,
-.retention-policy-card,
-.account-lifecycle-card,
-.password-security-card,
-.operation-mode-card,
-.report-job-worker-card,
-.performance-policy-card,
-.capacity-planning-card,
-.manual-recovery-card,
-.financial-control-report-card,
-.financial-reconciliation-card {
+.department-settings-card {
   padding: 18px;
 }
 
@@ -6720,17 +6946,7 @@ button:disabled {
 .settings-notification-card header,
 .settings-integration-card header,
 .settings-scope-card header,
-.department-settings-card header,
-.retention-policy-card header,
-.account-lifecycle-card header,
-.password-security-card header,
-.operation-mode-card header,
-.report-job-worker-card header,
-.performance-policy-card header,
-.capacity-planning-card header,
-.manual-recovery-card header,
-.financial-control-report-card header,
-.financial-reconciliation-card header {
+.department-settings-card header {
   display: flex;
   justify-content: space-between;
   gap: 12px;
@@ -6744,17 +6960,7 @@ button:disabled {
 .settings-notification-card header div,
 .settings-integration-card header div,
 .settings-scope-card header,
-.department-settings-card header div,
-.retention-policy-card header div,
-.account-lifecycle-card header div,
-.password-security-card header div,
-.operation-mode-card header div,
-.report-job-worker-card header div,
-.performance-policy-card header div,
-.capacity-planning-card header div,
-.manual-recovery-card header div,
-.financial-control-report-card header div,
-.financial-reconciliation-card header div {
+.department-settings-card header div {
   display: grid;
   gap: 5px;
 }
@@ -6767,17 +6973,7 @@ button:disabled {
 .settings-notification-card strong,
 .settings-integration-card strong,
 .settings-scope-card strong,
-.department-settings-card strong,
-.retention-policy-card strong,
-.account-lifecycle-card strong,
-.password-security-card strong,
-.operation-mode-card strong,
-.report-job-worker-card strong,
-.performance-policy-card strong,
-.capacity-planning-card strong,
-.manual-recovery-card strong,
-.financial-control-report-card strong,
-.financial-reconciliation-card strong {
+.department-settings-card strong {
   color: #0a1f42;
   font-size: 15px;
   font-weight: 900;
@@ -6790,17 +6986,7 @@ button:disabled {
 .settings-notification-card header span,
 .settings-integration-card header span,
 .settings-scope-card header span,
-.department-settings-card header span,
-.retention-policy-card header span,
-.account-lifecycle-card header span,
-.password-security-card header span,
-.operation-mode-card header span,
-.report-job-worker-card header span,
-.performance-policy-card header span,
-.capacity-planning-card header span,
-.manual-recovery-card header span,
-.financial-control-report-card header span,
-.financial-reconciliation-card header span {
+.department-settings-card header span {
   color: #6d7b90;
   font-size: 12px;
   font-weight: 850;
@@ -6808,16 +6994,6 @@ button:disabled {
 
 .approval-limit-card header button,
 .role-permission-card header button,
-.retention-policy-card header button,
-.account-lifecycle-card header button,
-.password-security-card header button,
-.operation-mode-card header button,
-.report-job-worker-card header button,
-.performance-policy-card header button,
-.capacity-planning-card header button,
-.manual-recovery-card header button,
-.financial-control-report-card header button,
-.financial-reconciliation-card header button,
 .add-row-button,
 .settings-card-save {
   display: inline-flex;
@@ -6838,15 +7014,7 @@ button:disabled {
 .role-permission-card table,
 .user-permission-card table,
 .settings-integration-card table,
-.department-settings-card table,
-.retention-policy-card table,
-.account-lifecycle-card table,
-.manual-recovery-card table,
-.report-job-worker-card table,
-.performance-policy-card table,
-.capacity-planning-card table,
-.financial-control-report-card table,
-.financial-reconciliation-card table {
+.department-settings-card table {
   width: 100%;
   font-size: 12px;
   border-collapse: collapse;
@@ -6856,37 +7024,36 @@ button:disabled {
 .role-permission-card th,
 .user-permission-card th,
 .settings-integration-card th,
-.department-settings-card th,
-.retention-policy-card th,
-.account-lifecycle-card th,
-.manual-recovery-card th,
-.report-job-worker-card th,
-.performance-policy-card th,
-.capacity-planning-card th,
-.financial-control-report-card th,
-.financial-reconciliation-card th {
+.department-settings-card th {
   height: 34px;
   color: #53627a;
   font-weight: 900;
   text-align: left;
+  white-space: nowrap;
   background: #f8fafc;
   border-top: 1px solid #e3eaf3;
   border-bottom: 1px solid #e3eaf3;
+}
+
+/* 폭이 좁을 때 셀 내용이 세로로 깨지지 않도록 가로 스크롤로 처리한다. */
+.settings-table-scroll {
+  overflow-x: auto;
+}
+
+.settings-table-scroll > table {
+  min-width: 620px;
+}
+
+.approval-limit-card td:nth-child(3),
+.approval-limit-card td:nth-child(4) {
+  white-space: nowrap;
 }
 
 .approval-limit-card td,
 .role-permission-card td,
 .user-permission-card td,
 .settings-integration-card td,
-.department-settings-card td,
-.retention-policy-card td,
-.account-lifecycle-card td,
-.manual-recovery-card td,
-.report-job-worker-card td,
-.performance-policy-card td,
-.capacity-planning-card td,
-.financial-control-report-card td,
-.financial-reconciliation-card td {
+.department-settings-card td {
   height: 34px;
   color: #102747;
   font-weight: 850;
@@ -7124,6 +7291,8 @@ button:disabled {
   color: #102747;
   font-size: 11px;
   font-weight: 900;
+  white-space: nowrap;
+  flex-shrink: 0;
   background: #fff;
   border: 1px solid #d7e1ec;
   border-radius: 6px;
@@ -7228,105 +7397,6 @@ button:disabled {
   align-items: center;
   border-radius: 5px;
   background: #edf4ff;
-}
-
-.role-permission-code-count {
-  display: block;
-  margin-top: 5px;
-  color: #6d7b90;
-  font-size: 11px;
-  font-weight: 850;
-}
-
-.role-permission-detail-list {
-  display: grid;
-  gap: 12px;
-  margin-top: 14px;
-}
-
-.role-permission-detail-list article {
-  display: grid;
-  gap: 10px;
-  padding: 12px;
-  background: #f8fafc;
-  border: 1px solid #dce5ef;
-  border-radius: 7px;
-}
-
-.role-permission-detail-list header {
-  align-items: center;
-  margin-bottom: 0;
-}
-
-.role-permission-detail-list header span {
-  color: #53627a;
-  font-size: 11px;
-  font-weight: 900;
-}
-
-.role-permission-code-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.permission-code-toggle {
-  display: grid;
-  gap: 4px;
-  min-height: 78px;
-  padding: 9px 10px;
-  color: #21344f;
-  text-align: left;
-  background: #fff;
-  border: 1px solid #d7e1ec;
-  border-radius: 6px;
-}
-
-.permission-code-toggle.checked {
-  color: #063f3c;
-  background: #e8faf6;
-  border-color: #078f89;
-  box-shadow: inset 0 0 0 1px rgba(7, 143, 137, 0.18);
-}
-
-.permission-code-toggle b {
-  font-size: 12px;
-  font-weight: 950;
-}
-
-.permission-code-toggle small {
-  color: #6d7b90;
-  font-size: 10px;
-  font-weight: 850;
-  word-break: break-all;
-}
-
-.permission-code-toggle span {
-  justify-self: start;
-  height: 20px;
-  padding: 0 7px;
-  color: #53627a;
-  font-size: 10px;
-  font-weight: 900;
-  background: #eef4fb;
-  border-radius: 5px;
-}
-
-.permission-code-toggle.checked span {
-  color: #06665f;
-  background: #cff4ec;
-}
-
-@media (max-width: 1180px) {
-  .role-permission-code-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 760px) {
-  .role-permission-code-grid {
-    grid-template-columns: 1fr;
-  }
 }
 
 .role-permission-card p {
@@ -7438,601 +7508,6 @@ button:disabled {
   line-height: 1.55;
 }
 
-.retention-policy-card {
-  display: grid;
-  gap: 16px;
-}
-
-.retention-policy-card p,
-.operation-mode-card p,
-.report-job-worker-card p,
-.performance-policy-card p,
-.capacity-planning-card p {
-  margin: 0;
-  color: #53627a;
-  font-size: 13px;
-  font-weight: 850;
-}
-
-.operation-mode-card,
-.report-job-worker-card,
-.performance-policy-card,
-.capacity-planning-card {
-  display: grid;
-  gap: 14px;
-}
-
-.operation-mode-card.attention,
-.report-job-worker-card.attention,
-.performance-policy-card.attention,
-.capacity-planning-card.attention {
-  border-color: #f0c36b;
-  background: #fffdf7;
-}
-
-.operation-mode-summary {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.operation-mode-summary article {
-  display: grid;
-  gap: 5px;
-  padding: 12px;
-  background: #f8fafc;
-  border: 1px solid #dce5ef;
-  border-radius: 7px;
-}
-
-.operation-mode-summary span,
-.operation-mode-source span {
-  color: #6d7b90;
-  font-size: 12px;
-  font-weight: 850;
-}
-
-.operation-mode-summary strong {
-  font-size: 18px;
-}
-
-.operation-mode-source {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.operation-mode-source span {
-  padding: 6px 9px;
-  background: #eef4fb;
-  border: 1px solid #d9e5f1;
-  border-radius: 999px;
-}
-
-.report-job-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-.report-job-actions button:disabled {
-  color: #8a96a6;
-  cursor: not-allowed;
-  background: #f3f6fa;
-}
-
-.report-job-summary {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.performance-policy-grid {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.report-job-summary article,
-.performance-policy-grid article {
-  display: grid;
-  gap: 5px;
-  padding: 12px;
-  background: #f8fafc;
-  border: 1px solid #dce5ef;
-  border-radius: 7px;
-}
-
-.report-job-summary span,
-.performance-policy-grid span,
-.report-job-policy span,
-.performance-policy-grid small,
-.report-job-worker-card td small {
-  color: #6d7b90;
-  font-size: 12px;
-  font-weight: 850;
-}
-
-.report-job-summary strong,
-.performance-policy-grid strong {
-  font-size: 18px;
-}
-
-.report-job-policy {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.report-job-policy span {
-  padding: 6px 9px;
-  background: #eef4fb;
-  border: 1px solid #d9e5f1;
-  border-radius: 999px;
-}
-
-.capacity-planning-card {
-  display: grid;
-  gap: 14px;
-}
-
-.capacity-forecast-table {
-  width: 100%;
-  overflow-x: auto;
-}
-
-.capacity-forecast-table table {
-  min-width: 760px;
-}
-
-.capacity-forecast-table td {
-  white-space: nowrap;
-}
-
-.capacity-planning-actions {
-  display: grid;
-  gap: 7px;
-  margin: 0;
-  padding-left: 20px;
-  color: #53627a;
-  font-size: 12px;
-  font-weight: 800;
-  line-height: 1.55;
-}
-
-.capacity-planning-source {
-  color: #6d7b90;
-  font-size: 11px;
-  font-weight: 800;
-}
-.report-job-worker-card td {
-  vertical-align: top;
-  line-height: 1.45;
-}
-
-.report-job-worker-card td b,
-.report-job-worker-card td small {
-  display: block;
-}
-
-.retention-policy-card td {
-  vertical-align: top;
-  line-height: 1.45;
-}
-
-.retention-policy-card td b,
-.retention-policy-card td small {
-  display: block;
-}
-
-.retention-policy-card td small {
-  margin-top: 4px;
-  color: #6d7b90;
-  font-size: 11px;
-}
-
-.retention-summary-grid {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.retention-summary-grid article {
-  display: grid;
-  gap: 5px;
-  min-height: 70px;
-  padding: 12px;
-  background: #f8fafc;
-  border: 1px solid #dce5ef;
-  border-radius: 7px;
-}
-
-.retention-summary-grid span,
-.retention-check-grid span,
-.retention-check-grid small {
-  color: #6d7b90;
-  font-size: 12px;
-  font-weight: 850;
-  line-height: 1.45;
-}
-
-.retention-summary-grid strong {
-  font-size: 20px;
-}
-
-.retention-check-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.retention-check-grid article {
-  display: grid;
-  gap: 8px;
-  padding: 13px;
-  background: #fff;
-  border: 1px solid #dce5ef;
-  border-radius: 7px;
-}
-
-.retention-check-grid article.attention {
-  border-color: #f0c36b;
-  background: #fffaf0;
-}
-
-.retention-check-grid header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  margin: 0;
-}
-
-.retention-check-grid b {
-  color: #0a1f42;
-  font-size: 18px;
-  font-weight: 900;
-}
-
-.account-lifecycle-card {
-  display: grid;
-  gap: 14px;
-}
-
-.account-lifecycle-card p {
-  margin: 0;
-  color: #53627a;
-  font-size: 13px;
-  font-weight: 850;
-}
-
-.account-lifecycle-summary {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.account-lifecycle-summary article {
-  display: grid;
-  gap: 5px;
-  padding: 12px;
-  background: #f8fafc;
-  border: 1px solid #dce5ef;
-  border-radius: 7px;
-}
-
-.account-lifecycle-summary span {
-  color: #6d7b90;
-  font-size: 12px;
-  font-weight: 850;
-}
-
-.account-lifecycle-summary strong {
-  font-size: 18px;
-}
-
-.account-lifecycle-actions {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 12px;
-  align-items: end;
-}
-
-.account-lifecycle-actions label {
-  display: grid;
-  gap: 6px;
-  color: #53627a;
-  font-size: 12px;
-  font-weight: 900;
-}
-
-.account-lifecycle-actions input {
-  height: 38px;
-  padding: 0 12px;
-  color: #102747;
-  font-weight: 850;
-  border: 1px solid #d7e1ec;
-  border-radius: 7px;
-}
-
-.account-lifecycle-actions button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  height: 38px;
-  padding: 0 14px;
-  color: #fff;
-  font-size: 12px;
-  font-weight: 900;
-  background: #7c2d12;
-  border: 1px solid #7c2d12;
-  border-radius: 7px;
-}
-
-.account-lifecycle-actions button:disabled {
-  color: #8794a8;
-  background: #f1f5f9;
-  border-color: #d7e1ec;
-}
-
-.password-security-card {
-  display: grid;
-  gap: 14px;
-}
-
-.password-policy-summary {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.password-policy-summary article {
-  display: grid;
-  gap: 5px;
-  min-height: 74px;
-  padding: 12px;
-  background: #f8fafc;
-  border: 1px solid #dce5ef;
-  border-radius: 7px;
-}
-
-.password-policy-summary span,
-.password-policy-summary small,
-.password-change-grid label {
-  color: #6d7b90;
-  font-size: 12px;
-  font-weight: 850;
-}
-
-.password-policy-summary strong {
-  font-size: 18px;
-}
-
-.password-change-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.password-change-grid label {
-  display: grid;
-  gap: 6px;
-}
-
-.password-change-grid input {
-  height: 38px;
-  padding: 0 12px;
-  color: #102747;
-  font-weight: 850;
-  border: 1px solid #d7e1ec;
-  border-radius: 7px;
-}
-
-.financial-reconciliation-card {
-  display: grid;
-  gap: 14px;
-}
-
-.financial-reconciliation-card p {
-  margin: 0;
-  color: #53627a;
-  font-size: 13px;
-  font-weight: 850;
-}
-
-.financial-reconciliation-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-.financial-reconciliation-card header .financial-reconciliation-actions {
-  display: flex;
-  gap: 8px;
-}
-
-.financial-reconciliation-actions button:disabled {
-  color: #8794a8;
-  background: #f1f5f9;
-  border-color: #d7e1ec;
-}
-
-.financial-reconciliation-summary {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.financial-reconciliation-summary article {
-  display: grid;
-  gap: 5px;
-  min-height: 72px;
-  padding: 12px;
-  background: #f8fafc;
-  border: 1px solid #dce5ef;
-  border-radius: 7px;
-}
-
-.financial-reconciliation-summary span,
-.financial-reconciliation-card td small {
-  color: #6d7b90;
-  font-size: 12px;
-  font-weight: 850;
-}
-
-.financial-reconciliation-summary strong {
-  font-size: 18px;
-}
-
-.financial-reconciliation-card td b,
-.financial-reconciliation-card td small {
-  display: block;
-}
-
-.financial-reconciliation-card td small {
-  margin-top: 3px;
-  line-height: 1.35;
-}
-
-.manual-recovery-card {
-  display: grid;
-  gap: 14px;
-}
-
-.manual-recovery-grid {
-  display: grid;
-  grid-template-columns: 1.1fr repeat(3, minmax(130px, 0.7fr));
-  gap: 12px;
-}
-
-.manual-recovery-grid label,
-.manual-recovery-actions label {
-  display: grid;
-  gap: 6px;
-  color: #6d7b90;
-  font-size: 12px;
-  font-weight: 850;
-}
-
-.manual-recovery-grid input,
-.manual-recovery-grid select,
-.manual-recovery-actions input {
-  height: 38px;
-  padding: 0 12px;
-  color: #102747;
-  font-weight: 850;
-  background: #fff;
-  border: 1px solid #d7e1ec;
-  border-radius: 7px;
-}
-
-.manual-recovery-actions {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 12px;
-  align-items: end;
-}
-
-.manual-recovery-actions button,
-.manual-recovery-row-actions button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  height: 38px;
-  padding: 0 14px;
-  color: #fff;
-  font-size: 12px;
-  font-weight: 900;
-  background: #1f5f63;
-  border: 1px solid #1f5f63;
-  border-radius: 7px;
-}
-
-.manual-recovery-actions button:disabled,
-.manual-recovery-row-actions button:disabled {
-  color: #8794a8;
-  background: #f1f5f9;
-  border-color: #d7e1ec;
-}
-
-.manual-recovery-row-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.manual-recovery-row-actions button {
-  height: 30px;
-  padding: 0 10px;
-  color: #102747;
-  background: #fff;
-  border-color: #d7e1ec;
-}
-
-.manual-recovery-card td b,
-.manual-recovery-card td small {
-  display: block;
-}
-
-.manual-recovery-card td small {
-  margin-top: 3px;
-  color: #6d7b90;
-  line-height: 1.35;
-}
-
-.financial-control-report-card {
-  display: grid;
-  gap: 14px;
-}
-
-.financial-control-report-card p {
-  margin: 0;
-  color: #53627a;
-  font-size: 13px;
-  font-weight: 850;
-}
-
-.financial-control-summary {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.financial-control-summary article {
-  display: grid;
-  gap: 5px;
-  min-height: 72px;
-  padding: 12px;
-  background: #f8fafc;
-  border: 1px solid #dce5ef;
-  border-radius: 7px;
-}
-
-.financial-control-summary span,
-.financial-control-report-card td small {
-  color: #6d7b90;
-  font-size: 12px;
-  font-weight: 850;
-}
-
-.financial-control-summary strong {
-  font-size: 18px;
-}
-
-.financial-control-report-card td b,
-.financial-control-report-card td small {
-  display: block;
-}
-
-.financial-control-report-card td small {
-  margin-top: 3px;
-  line-height: 1.35;
-}
-
 .settings-actions {
   display: flex;
   justify-content: center;
@@ -8046,10 +7521,24 @@ button:disabled {
 .settings-history-panel {
   gap: 18px;
   margin-top: -26px;
+  align-content: start;
   border-left: 1px solid #dce5ef;
 }
 
-.settings-history-panel > header button {
+.settings-history-panel > header .filter-dropdown {
+  flex: 0 0 auto;
+}
+
+/* 우측 패널이므로 메뉴가 화면 밖으로 나가지 않게 오른쪽 기준으로 편다. */
+.settings-history-panel .filter-dropdown-menu {
+  left: auto;
+  right: 0;
+}
+
+.settings-history-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   height: 36px;
   padding: 0 12px;
   color: #102747;
@@ -8058,6 +7547,14 @@ button:disabled {
   background: #fff;
   border: 1px solid #d7e1ec;
   border-radius: 6px;
+  cursor: pointer;
+}
+
+.settings-history-empty {
+  padding: 14px 4px;
+  color: #6a7a90;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .settings-history-panel section {
@@ -8203,6 +7700,24 @@ button:disabled {
   box-shadow: 0 0 0 3px rgba(7, 143, 137, 0.14), var(--shadow-card);
 }
 
+/* 드래그 앤 드롭 순서 변경 피드백 */
+.favorite-card-grid button,
+.saved-filter-grid button {
+  transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease, opacity 0.12s ease;
+}
+
+.favorite-card-grid button[data-dragging="true"],
+.saved-filter-grid button[data-dragging="true"] {
+  opacity: 0.5;
+}
+
+.favorite-card-grid button[data-drag-over="true"],
+.saved-filter-grid button[data-drag-over="true"] {
+  border-color: #2f6bff;
+  box-shadow: 0 0 0 2px rgba(47, 107, 255, 0.25), var(--shadow-card);
+  transform: translateY(-2px);
+}
+
 .drag-handle {
   position: absolute;
   top: 72px;
@@ -8210,6 +7725,7 @@ button:disabled {
   color: #94a3b8;
   font-size: 14px;
   letter-spacing: -3px;
+  cursor: grab;
 }
 
 .favorite-icon {
@@ -8318,10 +7834,29 @@ button:disabled {
 
 .favorite-table tbody tr {
   cursor: pointer;
+  transition: background 0.12s ease, box-shadow 0.12s ease, opacity 0.12s ease;
 }
 
 .favorite-table tbody tr.selected {
   background: #eefbf8;
+}
+
+/* 최근 사용 테이블 드래그 앤 드롭 순서 변경 피드백 */
+.favorite-table tbody tr[data-dragging="true"] {
+  opacity: 0.5;
+}
+
+.favorite-table tbody tr[data-drag-over="true"] {
+  background: #eef4ff;
+  box-shadow: inset 0 2px 0 #2f6bff;
+}
+
+.favorite-table .drag-handle {
+  position: static;
+  color: #94a3b8;
+  font-size: 14px;
+  letter-spacing: -3px;
+  cursor: grab;
 }
 
 .favorite-table td:last-child button {
@@ -9242,18 +8777,6 @@ button:disabled {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .dashboard-operational-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .report-job-summary {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .performance-policy-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
   .payment-request-page {
     grid-template-columns: 1fr;
   }
@@ -9334,19 +8857,6 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 
-  .dashboard-operational-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .operation-mode-summary,
-  .report-job-summary,
-  .performance-policy-grid,
-  .retention-summary-grid,
-  .account-lifecycle-summary,
-  .financial-reconciliation-summary {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .page-head {
     align-items: flex-start;
     flex-direction: column;
@@ -9407,14 +8917,6 @@ button:disabled {
   .approval-queue,
   .shortcut-grid,
   .rules-grid,
-  .dashboard-operational-grid,
-  .operation-mode-summary,
-  .report-job-summary,
-  .performance-policy-grid,
-  .retention-summary-grid,
-  .retention-check-grid,
-  .account-lifecycle-summary,
-  .financial-reconciliation-summary,
   .input-grid,
   .budget-adjust-panel,
   .shortcut-draft-panel,
@@ -9430,4 +8932,21 @@ button:disabled {
   .erp-primary {
     flex: 1;
   }
+}
+
+.release-identity-warning {
+  position: fixed;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 0 0 10px 10px;
+  background: #7c2d12;
+  color: #fff7ed;
+  font-size: 12.5px;
+  box-shadow: 0 6px 18px rgba(124, 45, 18, 0.35);
 }

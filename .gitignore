@@ -41,4 +41,6 @@ out/
 *.tsbuildinfo
 next-env.d.ts
 .local-file-storage/
+.local-staging-file-storage/
+.local-test-file-storage/
 .playwright-cli/

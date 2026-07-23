@@ -109,7 +109,7 @@ describe("backend payment request flow integration", () => {
     let attachmentId = "";
     let requestCode = "";
 
-    const app = await buildApp({ logger: false });
+    const app = await buildApp({ logger: process.env.ERP_TEST_DEBUG === "1" ? true : false });
     try {
       const department = await prisma.department.create({ data: { name: departmentName } });
       departmentId = department.id;
@@ -295,7 +295,7 @@ describe("backend payment request flow integration", () => {
         },
       });
       const submitPayload = submit.json();
-      assert.equal(submit.statusCode, 200, JSON.stringify(submitPayload));
+      assert.equal(submit.statusCode, 200);
       assert.equal(submitPayload.status, "success");
       assert.equal(submitPayload.data.상태, "제출");
       assert.equal(submitPayload.meta.rowVersion, 2);

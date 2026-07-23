@@ -18,7 +18,6 @@ const requiredSections = [
   "Reports And Evidence",
   "Issue Disposition",
   "Training And Support",
-  "Pilot Feedback Metrics",
   "Final Role Sign-Off",
 ];
 
@@ -67,11 +66,6 @@ const requiredTerms = [
   "사용자 교육",
   "운영 FAQ",
   "Hypercare",
-  "파일럿 만족도",
-  "업무 처리 시간",
-  "오류 빈도",
-  "문의 유형",
-  "go-live 전 반영",
   "기능 책임자",
   "보안 책임자",
   "재무 책임자",

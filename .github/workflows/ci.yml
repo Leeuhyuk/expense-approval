@@ -66,9 +66,6 @@ jobs:
       - name: Verify Production Environment Inventory Template
         run: npm run release:environment-inventory
 
-      - name: Verify Environment Separation Matrix Template
-        run: npm run release:environment-separation
-
       - name: Verify Staging Smoke Evidence Template
         run: npm run release:staging-smoke-evidence
 
@@ -92,9 +89,6 @@ jobs:
 
       - name: Verify Go-Live Handoff Template
         run: npm run release:go-live-handoff
-
-      - name: Verify Release Note Template
-        run: npm run release:release-note
 
       - name: Run Release Gate
         run: npm run release:check

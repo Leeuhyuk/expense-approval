@@ -86,7 +86,7 @@ describe("backend notification and operations exception integration", () => {
     let roleId = "";
     let departmentId = "";
 
-    const app = await buildApp({ logger: false });
+    const app = await buildApp({ logger: process.env.ERP_TEST_DEBUG === "1" ? true : false });
     try {
       const department = await prisma.department.create({ data: { name: departmentName } });
       departmentId = department.id;

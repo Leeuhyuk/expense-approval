@@ -65,7 +65,11 @@ async function revokeSession(sessionId: string, now = new Date()) {
   });
 }
 
+const sessionIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 async function readValidSession(sessionId: string) {
+  // 세션 id는 UUID 컬럼이므로 위조/손상된 쿠키 값은 DB 조회 전에 무효 처리한다.
+  if (!sessionIdPattern.test(sessionId)) return null;
   const session = await prisma.authSession.findUnique({ where: { id: sessionId } });
   if (!session) return null;
 
@@ -135,7 +139,7 @@ export async function createSession(request: FastifyRequest, reply: FastifyReply
 
 export async function clearSession(request: FastifyRequest, reply: FastifyReply, allUserSessions = false) {
   const sessionId = request.cookies[sessionCookieName];
-  if (sessionId) {
+  if (sessionId && sessionIdPattern.test(sessionId)) {
     const now = new Date();
     if (allUserSessions) {
       const session = await prisma.authSession.findUnique({ where: { id: sessionId } });

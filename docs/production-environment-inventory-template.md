@@ -2,7 +2,7 @@
 
 작성일: 2026-07-06
 
-이 템플릿은 production release candidate 전에 실제 운영 환경 값을 확정하기 위한 인수 문서다. 실제 go-live 전에는 이 파일을 복사해 확정 값을 채우고 `PRODUCTION_ENVIRONMENT_INVENTORY_PATH`로 지정한다. `RELEASE_TARGET=production npm run release:check`는 strict mode로 이 문서를 검증하므로 `TBD`, `pending`, `<...>` 값이 남아 있으면 실패한다. 또한 production 도메인/API URL은 HTTPS non-local 값이어야 하고 `EXPECTED_*` 값과 일치해야 하며, `DATABASE_URL`과 application secret은 원문 값이 아니라 secret manager reference여야 한다. Object storage는 HTTPS endpoint, production bucket, public access block, server-side encryption, external malware scan endpoint를 증명해야 production inventory로 인정된다. Break-glass 계정은 일반 관리자 계정과 분리하고 time-boxed approval, audit evidence, revoke evidence를 남겨야 한다.
+이 템플릿은 production release candidate 전에 실제 운영 환경 값을 확정하기 위한 인수 문서다. 실제 go-live 전에는 이 파일을 복사해 확정 값을 채우고 `PRODUCTION_ENVIRONMENT_INVENTORY_PATH`로 지정한다. `RELEASE_TARGET=production npm run release:check`는 strict mode로 이 문서를 검증하므로 `TBD`, `pending`, `<...>` 값이 남아 있으면 실패한다. 또한 production 도메인/API URL은 HTTPS non-local 값이어야 하고 `EXPECTED_*` 값과 일치해야 하며, `DATABASE_URL`과 application secret은 원문 값이 아니라 secret manager reference여야 한다. Object storage는 HTTPS endpoint, production bucket, public access block, server-side encryption, external malware scan endpoint를 증명해야 production inventory로 인정된다.
 
 ## Environment Identity
 
@@ -26,9 +26,6 @@
 | Release branch or tag | TBD |
 | Branch protection evidence | TBD |
 | CDN provider and cache policy | TBD |
-| Frontend artifact versioning policy | release manifest hash + immutable hashed assets |
-| Frontend cache headers evidence | TBD |
-| Frontend rollback artifact evidence | TBD |
 | WAF or API gateway policy | TBD |
 
 ## Production Domains
@@ -89,9 +86,6 @@
 | 항목 | 값 |
 | --- | --- |
 | Monitoring tool | TBD |
-| APM/trace tool | TBD |
-| Trace redaction rule evidence | TBD |
-| APM trace masking verification | TBD |
 | Structured logs destination | TBD |
 | Alerting channel | TBD |
 | `requestId` search procedure | TBD |
@@ -111,8 +105,6 @@
 | `API_BODY_LIMIT_BYTES` | 11534336 |
 | `RATE_LIMIT_WINDOW_MS` | 60000 |
 | `RATE_LIMIT_MAX` | 600 |
-| API request timeout policy | 15s client read timeout, gateway/server timeout evidence TBD |
-| `SLOW_QUERY_MS` | 1000 |
 | Report worker/queue platform | TBD |
 | Health check path | `/api/health` |
 
@@ -123,11 +115,6 @@
 | Auth method | password hash or approved SSO |
 | MFA/SSO evidence | TBD |
 | Production access review ID | TBD |
-| General administrator account policy | TBD |
-| Break-glass account reference | TBD |
-| Break-glass approval workflow | time-boxed, multi-approval, audited |
-| Break-glass audit evidence | TBD |
-| Break-glass revoke evidence | TBD |
 | CSRF/CORS validation evidence | TBD |
 | TLS/HTTPS validation evidence | TBD |
 | WAF/API gateway rule set | TBD |

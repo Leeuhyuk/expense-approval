@@ -8,12 +8,10 @@ import { runFinalAcceptanceEvidenceChecks } from "./verify-final-acceptance-evid
 import { runGoLiveHandoffChecks } from "./verify-go-live-handoff.mjs";
 import { runPostGoLiveStabilizationEvidenceChecks } from "./verify-post-go-live-stabilization-evidence.mjs";
 import { runProductionGoLiveEvidenceChecks } from "./verify-production-go-live-evidence.mjs";
-import { runEnvironmentSeparationChecks } from "./verify-environment-separation.mjs";
 import { runProductionEnvironmentInventoryChecks } from "./verify-production-environment-inventory.mjs";
 import { runRoleUatEvidenceChecks } from "./verify-role-uat-evidence.mjs";
-import { runReleaseNoteChecks } from "./verify-release-note.mjs";
 import { runStagingSmokeEvidenceChecks } from "./verify-staging-smoke-evidence.mjs";
-import { evaluateGoLiveReadiness, readApprovalExceptions, readGoLiveChecklist } from "./goLiveReadiness.mjs";
+import { evaluateGoLiveReadiness, readGoLiveChecklist } from "./goLiveReadiness.mjs";
 import { scanSensitiveDataExposureProject } from "./sensitiveDataExposureScanner.mjs";
 import { verifyReleaseManifest } from "./verify-release-manifest.mjs";
 
@@ -325,37 +323,6 @@ function validateApiTrafficControls() {
   }
 }
 
-function validateDataQualityScheduler() {
-  const enabled = isTruthyEnvValue(env("DATA_QUALITY_JOB_ENABLED"));
-  const intervalMinutes = integerEnv("DATA_QUALITY_JOB_INTERVAL_MINUTES", 60);
-  const historyLimit = integerEnv("DATA_QUALITY_JOB_HISTORY_LIMIT", 30);
-  const runOnStart = isTruthyEnvValue(env("DATA_QUALITY_JOB_RUN_ON_START"));
-
-  if (!enabled) {
-    fail("DATA_QUALITY_JOB_ENABLED=true is required for staging/production recurring consistency checks.");
-  } else {
-    pass("Recurring data quality scheduler is enabled.");
-  }
-
-  if (!Number.isFinite(intervalMinutes) || intervalMinutes < 5 || intervalMinutes > 1440) {
-    fail("DATA_QUALITY_JOB_INTERVAL_MINUTES must be between 5 and 1440.");
-  } else {
-    pass("Data quality scheduler interval is within the allowed range.");
-  }
-
-  if (!Number.isFinite(historyLimit) || historyLimit < 10 || historyLimit > 500) {
-    fail("DATA_QUALITY_JOB_HISTORY_LIMIT must be between 10 and 500.");
-  } else {
-    pass("Data quality run history limit is within the allowed range.");
-  }
-
-  if (target === "production" && !runOnStart) {
-    fail("DATA_QUALITY_JOB_RUN_ON_START=true is required for production deployment verification.");
-  } else if (runOnStart) {
-    pass("Data quality startup verification is enabled.");
-  }
-}
-
 function validateAuditAppendOnly() {
   const result = scanAuditAppendOnlyProject(process.cwd());
   if (result.issues.length > 0) {
@@ -407,24 +374,14 @@ function validateProductionAccessApproval() {
 function validateProductionReadiness() {
   if (target !== "production") return;
 
-  const approval = readApprovalExceptions();
-  const result = evaluateGoLiveReadiness(readGoLiveChecklist(), "production-candidate", { approvalExceptions: approval.exceptions });
-  if (result.exceptionErrors.length > 0) {
-    fail(`Production readiness approval exceptions are invalid: ${result.exceptionErrors.slice(0, 5).join(" | ")}`);
-    return;
-  }
-
+  const result = evaluateGoLiveReadiness(readGoLiveChecklist(), "production-candidate");
   if (result.blockers.length === 0) {
-    if (result.approvedBlockers.length > 0) {
-      pass(`Production candidate readiness gate is conditionally cleared by ${result.approvedBlockers.length} approved P0 exception(s) from ${approval.path}.`);
-    } else {
-      pass("Production candidate readiness gate has no open P0 blockers in scope.");
-    }
+    pass("Production candidate readiness gate has no open P0 blockers in scope.");
     return;
   }
 
   const preview = result.blockers.slice(0, 5).map((item) => `${item.section} ${item.text}`).join(" | ");
-  fail(`Production readiness gate blocked by ${result.blockers.length} unapproved open P0 item(s): ${preview}`);
+  fail(`Production readiness gate blocked by ${result.blockers.length} open P0 item(s): ${preview}`);
 }
 
 function validateProductionGoLiveHandoff() {
@@ -455,19 +412,6 @@ function validateProductionEnvironmentInventory() {
   }
 }
 
-function validateProductionEnvironmentSeparation() {
-  if (target !== "production") return;
-
-  const result = runEnvironmentSeparationChecks({ strict: true });
-  if (result.ok) {
-    pass("Environment separation matrix has no unresolved placeholders and isolates dev/staging/production.");
-    return;
-  }
-
-  for (const failure of result.failures) {
-    fail(`Environment separation matrix is incomplete: ${failure.label} - ${failure.detail}`);
-  }
-}
 function validateProductionStagingSmokeEvidence() {
   if (target !== "production") return;
 
@@ -566,19 +510,6 @@ function validateFinalAcceptanceEvidence() {
   }
 }
 
-function validateProductionReleaseNote() {
-  if (target !== "production") return;
-
-  const result = runReleaseNoteChecks({ strict: true });
-  if (result.ok) {
-    pass("Release note has required sections and no unresolved placeholders.");
-    return;
-  }
-
-  for (const failure of result.failures) {
-    fail(`Release note is incomplete: ${failure.label} - ${failure.detail}`);
-  }
-}
 function validateProductionReleaseManifestEvidence() {
   if (target !== "production") return;
 
@@ -672,7 +603,6 @@ if (!allowedTargets.has(target)) {
 } else {
   validateSharedRemoteEnvironment();
   validateApiTrafficControls();
-  validateDataQualityScheduler();
   validateFrontendMockIsolation();
 
   if (env("NODE_ENV") === "production") {
@@ -698,13 +628,11 @@ validateAuditAppendOnly();
 validateSensitiveDataExposure();
 validateProductionAccessApproval();
 validateProductionEnvironmentInventory();
-validateProductionEnvironmentSeparation();
 validateProductionStagingSmokeEvidence();
 validateProductionBackupRestoreEvidence();
 validateProductionDataMigrationEvidence();
 validateProductionRoleUatEvidence();
 validateProductionGoLiveEvidence();
-validateProductionReleaseNote();
 validatePostGoLiveStabilizationEvidence();
 validateFinalAcceptanceEvidence();
 validateProductionReleaseManifestEvidence();

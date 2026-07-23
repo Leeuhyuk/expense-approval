@@ -23,8 +23,6 @@ describe("settings permission concurrency flow", () => {
 
   it("guards role and user permission mutations with rowVersion and idempotency keys", () => {
     assert.match(routeSource, /function toSettingRow[\s\S]*사용자RowVersion: String\(item\.rowVersion\)/, "settings rows must expose user rowVersion");
-    assert.match(routeSource, /function toSettingRow[\s\S]*사용자ID: item\.id/, "settings rows must expose the stable user id");
-    assert.match(routeSource, /function settingUserWhere[\s\S]*\? \{ id: identifier \}[\s\S]*: \{ name: identifier \}/, "settings mutations must resolve UUID identifiers without confusing duplicate names");
     assert.match(routeSource, /function toRoleSettingsDto[\s\S]*rowVersion: item\.rowVersion/, "role DTOs must expose role rowVersion");
     assert.match(routeSource, /app\.post\("\/settings\/roles"[\s\S]*findUnique\(\{ where: \{ idempotencyKey \} \}\)/, "role create must replay duplicate idempotency keys");
     assert.match(routeSource, /app\.patch\("\/settings\/roles\/:roleId"[\s\S]*expectedRowVersion !== before\.rowVersion/, "role update must reject stale rowVersion");
@@ -45,7 +43,5 @@ describe("settings permission concurrency flow", () => {
     assert.match(mainSource, /userPermissionMutationKey\(existingAssignment \? "update" : "create"/, "user permission save must send an idempotency key");
     assert.match(mainSource, /사용자RowVersion: existingAssignment\.rowVersion/, "user permission update must send rowVersion");
     assert.match(mainSource, /settingRowToAssignedUser\(response\.data \?\? userRow/, "user permission saves must refresh local rowVersion from the API response");
-    assert.match(mainSource, /id: row\.사용자ID \|\| row\.사용자/, "settings UI must key users by the backend id when available");
-    assert.match(mainSource, /updatePageRow\("settings", assignment\.id, userRow\)/, "settings UI must update the selected user by stable id");
   });
 });

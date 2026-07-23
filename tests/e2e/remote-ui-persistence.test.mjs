@@ -53,19 +53,15 @@ function commandForNpm(args) {
 
 function startProcess(args, env) {
   const command = commandForNpm(args);
-  const output = [];
   const child = spawn(command.command, command.args, {
     cwd: process.cwd(),
     env: { ...process.env, ...env },
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: "ignore",
   });
-  child.stdout?.on("data", (chunk) => output.push(String(chunk)));
-  child.stderr?.on("data", (chunk) => output.push(String(chunk)));
   child.unref();
 
   return {
     child,
-    output: () => output.join("").split(String.fromCharCode(10)).filter((line) => line.includes("/api/files") || line.includes('"level":50')).slice(-100).join(String.fromCharCode(10)),
     stop: () =>
       new Promise((resolve) => {
         if (child.exitCode !== null) {
@@ -411,9 +407,13 @@ test(
       const page = await context.newPage();
       const consoleErrors = [];
       page.on("console", (message) => {
-        if (message.type() === "error" && !message.text().includes("status of 401 (Unauthorized)")) consoleErrors.push(message.text());
+        if (message.type() === "error") consoleErrors.push(message.text());
       });
       page.on("pageerror", (error) => consoleErrors.push(error.message));
+      page.on("response", (response) => {
+        if (response.status() >= 400) consoleErrors.push(`HTTP ${response.status()} ${response.request().method()} ${response.url()}`);
+      });
+      page.on("requestfailed", (request) => consoleErrors.push(`REQUEST_FAILED ${request.method()} ${request.url()} ${request.failure()?.errorText ?? ""}`));
 
       await page.goto(`${uiBaseUrl}/#vendors`, { waitUntil: "networkidle" });
       await page.waitForSelector("input[aria-label='로그인 이메일']", { timeout: 15_000 });
@@ -470,7 +470,7 @@ test(
       const secondContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
       const secondPage = await secondContext.newPage();
       secondPage.on("console", (message) => {
-        if (message.type() === "error" && !message.text().includes("status of 401 (Unauthorized)")) consoleErrors.push(`second-browser:${message.text()}`);
+        if (message.type() === "error") consoleErrors.push(`second-browser:${message.text()}`);
       });
       secondPage.on("pageerror", (error) => consoleErrors.push(`second-browser:${error.message}`));
       await secondPage.goto(`${uiBaseUrl}/#vendors`, { waitUntil: "networkidle" });
@@ -501,7 +501,7 @@ test(
       const attachment = await seeded.prisma.attachment.findFirstOrThrow({
         where: { ownerType: "VENDOR", ownerId: vendor.id, fileName },
       });
-      assert.notEqual(attachment.checksum, "pending", backend?.output() || "");
+      assert.notEqual(attachment.checksum, "pending", `vendor attachment upload did not complete; console: ${JSON.stringify(consoleErrors)}`);
       assert.equal(attachment.uploadedBy.length > 0, true);
 
       const vendorAudit = await seeded.prisma.auditLog.findFirst({
@@ -562,7 +562,7 @@ test(
       const page = await context.newPage();
       const consoleErrors = [];
       page.on("console", (message) => {
-        if (message.type() === "error" && !message.text().includes("status of 401 (Unauthorized)")) consoleErrors.push(message.text());
+        if (message.type() === "error") consoleErrors.push(message.text());
       });
       page.on("pageerror", (error) => consoleErrors.push(error.message));
 
@@ -616,7 +616,7 @@ test(
       const secondContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
       const secondPage = await secondContext.newPage();
       secondPage.on("console", (message) => {
-        if (message.type() === "error" && !message.text().includes("status of 401 (Unauthorized)")) consoleErrors.push(`second-browser:${message.text()}`);
+        if (message.type() === "error") consoleErrors.push(`second-browser:${message.text()}`);
       });
       secondPage.on("pageerror", (error) => consoleErrors.push(`second-browser:${error.message}`));
       await secondPage.goto(`${uiBaseUrl}/#favorites`, { waitUntil: "networkidle" });
@@ -696,7 +696,7 @@ test(
       const page = await context.newPage();
       const consoleErrors = [];
       page.on("console", (message) => {
-        if (message.type() === "error" && !message.text().includes("status of 401 (Unauthorized)")) consoleErrors.push(message.text());
+        if (message.type() === "error") consoleErrors.push(message.text());
       });
       page.on("pageerror", (error) => consoleErrors.push(error.message));
 
@@ -755,7 +755,7 @@ test(
       const approverOneContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
       const approverOnePage = await approverOneContext.newPage();
       approverOnePage.on("console", (message) => {
-        if (message.type() === "error" && !message.text().includes("status of 401 (Unauthorized)")) consoleErrors.push(`approver-one:${message.text()}`);
+        if (message.type() === "error") consoleErrors.push(`approver-one:${message.text()}`);
       });
       approverOnePage.on("pageerror", (error) => consoleErrors.push(`approver-one:${error.message}`));
       await approverOnePage.goto(`${uiBaseUrl}/#approval`, { waitUntil: "networkidle" });
@@ -779,7 +779,7 @@ test(
       const approverTwoContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
       const approverTwoPage = await approverTwoContext.newPage();
       approverTwoPage.on("console", (message) => {
-        if (message.type() === "error" && !message.text().includes("status of 401 (Unauthorized)")) consoleErrors.push(`approver-two:${message.text()}`);
+        if (message.type() === "error") consoleErrors.push(`approver-two:${message.text()}`);
       });
       approverTwoPage.on("pageerror", (error) => consoleErrors.push(`approver-two:${error.message}`));
       await approverTwoPage.goto(`${uiBaseUrl}/#approval`, { waitUntil: "networkidle" });
@@ -803,7 +803,7 @@ test(
       const secondAdminContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
       const secondAdminPage = await secondAdminContext.newPage();
       secondAdminPage.on("console", (message) => {
-        if (message.type() === "error" && !message.text().includes("status of 401 (Unauthorized)")) consoleErrors.push(`second-admin:${message.text()}`);
+        if (message.type() === "error") consoleErrors.push(`second-admin:${message.text()}`);
       });
       secondAdminPage.on("pageerror", (error) => consoleErrors.push(`second-admin:${error.message}`));
       await secondAdminPage.goto(`${uiBaseUrl}/#payment-request`, { waitUntil: "networkidle" });
